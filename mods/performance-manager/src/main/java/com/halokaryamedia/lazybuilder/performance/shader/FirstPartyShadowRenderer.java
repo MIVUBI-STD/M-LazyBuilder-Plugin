@@ -49,6 +49,24 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             double cameraZ,
             long timeOfDay
     ) {
+        return render(
+                pipeline,
+                cameraX,
+                cameraY,
+                cameraZ,
+                timeOfDay,
+                DEFAULT_RESOLUTION
+        );
+    }
+
+    public Snapshot render(
+            FirstPartyShaderPipeline pipeline,
+            double cameraX,
+            double cameraY,
+            double cameraZ,
+            long timeOfDay,
+            int requestedResolution
+    ) {
         RenderSystem.assertOnRenderThread();
         if (pipeline == null || !pipeline.has("shadow")) {
             snapshot = Snapshot.EMPTY;
@@ -61,7 +79,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                     false,
                     "no-visible-terrain",
                     0,
-                    DEFAULT_RESOLUTION,
+                    Math.max(256, Math.min(4096, requestedResolution)),
                     new Matrix4f(),
                     0.0F,
                     0.0F,
@@ -103,7 +121,8 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         Matrix4f lightViewProjection = lightViewProjection(quantizedTime);
 
         try {
-            shadowMap.ensureSize(DEFAULT_RESOLUTION);
+            int shadowResolution = Math.max(256, Math.min(4096, requestedResolution));
+            shadowMap.ensureSize(shadowResolution);
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, shadowMap.framebufferId());
             GL11C.glViewport(0, 0, shadowMap.size(), shadowMap.size());
             GL11C.glEnable(GL11C.GL_DEPTH_TEST);
