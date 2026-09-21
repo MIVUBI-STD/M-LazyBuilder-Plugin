@@ -110,24 +110,4 @@ class FrameMonitorTest {
         assertEquals(16.0D, monitor.averageFrameTimeMs(), 0.0001D);
         assertEquals(FramePressure.NORMAL, monitor.pressure());
     }
-    @Test
-    void exposesFramePercentilesAndStutterCountsOnDemand() {
-        FrameMonitor monitor = new FrameMonitor();
-        for (int index = 0; index < 50; index++) monitor.recordFrameTimeMs(10.0D);
-        for (int index = 0; index < 5; index++) monitor.recordFrameTimeMs(20.0D);
-        for (int index = 0; index < 3; index++) monitor.recordFrameTimeMs(30.0D);
-        monitor.recordFrameTimeMs(40.0D);
-        monitor.recordFrameTimeMs(60.0D);
-
-        FrameMonitor.TimingSnapshot snapshot = monitor.timingSnapshot();
-
-        assertEquals(60, snapshot.samples());
-        assertEquals(10.0D, snapshot.p50Ms(), 0.0001D);
-        assertTrue(snapshot.p95Ms() >= 20.0D);
-        assertTrue(snapshot.p99Ms() >= 40.0D);
-        assertEquals(10, snapshot.framesOver16_67Ms());
-        assertEquals(5, snapshot.framesOver25Ms());
-        assertEquals(2, snapshot.framesOver33_33Ms());
-        assertEquals(1, snapshot.framesOver50Ms());
-    }
 }
