@@ -200,6 +200,13 @@ public final class FirstPartyShaderRuntime {
         }
     }
 
+    public void recompileIfEnabled() {
+        ShaderRuntimePreferences preferences = persisted;
+        if (preferences.enabled() && !preferences.selectedPackId().isBlank()) {
+            compileSelected();
+        }
+    }
+
     public synchronized void disable() {
         boolean restoreMinecraftTerrain = pipeline != null
                 || terrainVertexCompiled
