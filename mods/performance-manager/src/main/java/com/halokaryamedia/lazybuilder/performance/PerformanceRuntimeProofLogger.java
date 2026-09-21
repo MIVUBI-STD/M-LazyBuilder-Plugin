@@ -51,9 +51,16 @@ final class PerformanceRuntimeProofLogger {
         FirstPartyRendererReadiness.Snapshot readiness =
                 FirstPartyRendererReadiness.evaluate(renderer, ownership);
         var shader = PerformanceManagerClient.currentShaderSnapshot();
+        var shaderDiagnostics = PerformanceManagerClient.currentShaderDiagnostics();
         String shaderStage = shader.get("stage") instanceof String value ? value : "unknown";
         boolean shaderReady = shader.get("renderingReady") instanceof Boolean value && value;
         boolean terrainIntegrated = shader.get("terrainIntegrated") instanceof Boolean value && value;
+        long shadowReusedFrames = longValue(shaderDiagnostics, "shadowReusedFrames");
+        int shadowResolution = intValue(shaderDiagnostics, "shadowResolution");
+        long gbufferStaleRecoveries = longValue(shaderDiagnostics, "gbufferStaleFrameRecoveries");
+        long shaderCompileGeneration = longValue(shaderDiagnostics, "compileGeneration");
+        boolean terrainReloadPending =
+                shaderDiagnostics.get("terrainReloadPending") instanceof Boolean value && value;
 
         sample++;
         LOGGER.info(
@@ -64,7 +71,10 @@ final class PerformanceRuntimeProofLogger {
                         + "rebuild_deferrals={} rebuild_releases={} terrain_buffer_cache_hits={} "
                         + "multidraw_batches={} multidraw_commands={} multidraw_failures={} renderer={} "
                         + "standalone_renderer_ready={} renderer_readiness={} "
-                        + "shader_stage={} shader_ready={} shader_terrain={}",
+                        + "shader_stage={} shader_ready={} shader_terrain={} "
+                        + "shadow_reused_frames={} shadow_resolution={} "
+                        + "gbuffer_stale_recoveries={} shader_compile_generation={} "
+                        + "terrain_reload_pending={}",
                 sample,
                 snapshot.fps(),
                 snapshot.averageFrameTimeMs(),
@@ -93,7 +103,22 @@ final class PerformanceRuntimeProofLogger {
                 readiness.status(),
                 shaderStage,
                 shaderReady,
-                terrainIntegrated
+                terrainIntegrated,
+                shadowReusedFrames,
+                shadowResolution,
+                gbufferStaleRecoveries,
+                shaderCompileGeneration,
+                terrainReloadPending
         );
+    private static long longValue(java.util.Map<String, Object> values, String key) {
+        Object value = values.get(key);
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    private static int intValue(java.util.Map<String, Object> values, String key) {
+        Object value = values.get(key);
+        return value instanceof Number number ? number.intValue() : 0;
+    }
+
     }
 }
