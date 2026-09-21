@@ -17,7 +17,6 @@ import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.entity.Entity;
-import org.lwjgl.opengl.GL30C;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -113,16 +112,21 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null || client.getWindow() == null || client.getWindow().isMinimized()) return;
 
-        int width = client.getWindow().getFramebufferWidth();
-        int height = client.getWindow().getFramebufferHeight();
+        var framebuffer = client.getFramebuffer();
+        if (framebuffer == null) return;
+
+        int width = framebuffer.textureWidth;
+        int height = framebuffer.textureHeight;
         if (width <= 0 || height <= 0) return;
 
-        int targetFramebuffer = org.lwjgl.opengl.GL11C.glGetInteger(
-                GL30C.GL_DRAW_FRAMEBUFFER_BINDING
-        );
+        int targetFramebuffer = framebuffer.fbo;
+        int sourceDepthTexture = framebuffer.useDepthAttachment
+                ? framebuffer.getDepthAttachment()
+                : 0;
         float timeSeconds = (float) ((nowNanos / 1_000_000L) % 3_600_000L) / 1000.0F;
         shaders.renderPostProcess(
                 targetFramebuffer,
+                sourceDepthTexture,
                 width,
                 height,
                 timeSeconds
