@@ -53,6 +53,16 @@ public final class StageTimingMetrics {
         return counter.snapshot();
     }
 
+    /**
+     * Clears accumulated stage evidence when the active world/session changes.
+     *
+     * Instrumentation enablement is intentionally preserved: proof/metrics mode is
+     * process policy, while samples belong to one gameplay session.
+     */
+    public static void resetSession() {
+        COUNTERS.values().forEach(Counter::reset);
+    }
+
     static void resetForTest() {
         enabled = true;
         COUNTERS.values().forEach(Counter::reset);
