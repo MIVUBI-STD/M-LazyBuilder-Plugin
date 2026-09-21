@@ -723,6 +723,7 @@ public final class FirstPartyShaderRuntime {
         values.put("packNames", snapshot.packNames());
         values.put("shaderpacksDirectory", snapshot.shaderpacksDirectory().toString());
         values.put("lastError", snapshot.lastError());
+        values.put("invalidPacks", catalog.invalidEntries());
         Map<String, String> health = new LinkedHashMap<>();
         health.put("catalog", catalogError);
         health.put("compile", compileError);
