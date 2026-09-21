@@ -474,14 +474,14 @@ public final class LazyBuilderSettingsScreen extends Screen {
         if (shaderSupportAvailable()) {
             shaders.rows.add(Row.action(
                     "Shaders",
-                    "Manage the active shader and shader-specific visual options.",
+                    "Manage LazyBuilder shader packs, compilation, post-processing, and terrain shader integration.",
                     shaderSummary(),
                     this::openShaderManager
             ));
         } else {
             shaders.rows.add(Row.status(
-                    "Shader",
-                    "Shader support is not available in the current client. Install a compatible shader renderer to manage shaders here.",
+                    "Shaders",
+                    "First-party shader runtime is unavailable in this client package.",
                     "Unavailable"
             ));
         }
@@ -530,25 +530,41 @@ public final class LazyBuilderSettingsScreen extends Screen {
     }
 
     private static boolean shaderSupportAvailable() {
-        return FabricLoader.getInstance().isModLoaded("iris");
+        Object shared = FabricLoader.getInstance().getObjectShare()
+                .get("lazybuilder-performance-manager:shader-snapshot");
+        return shared instanceof Supplier<?>;
     }
 
     private String shaderSummary() {
-        if (!shaderSupportAvailable()) return "Unavailable";
-
-        try {
-            Class<?> apiClass = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
-            Object api = apiClass.getMethod("getInstance").invoke(null);
-            boolean inUse = (boolean) apiClass.getMethod("isShaderPackInUse").invoke(api);
-            if (inUse) return "Active";
-
-            Object config = apiClass.getMethod("getConfig").invoke(api);
-            Class<?> configClass = Class.forName("net.irisshaders.iris.api.v0.IrisApiConfig");
-            boolean enabled = (boolean) configClass.getMethod("areShadersEnabled").invoke(config);
-            return enabled ? "Enabled" : "Off";
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-            return "Available";
+        Object shared = FabricLoader.getInstance().getObjectShare()
+                .get("lazybuilder-performance-manager:shader-snapshot");
+        if (!(shared instanceof Supplier<?> supplier)) {
+            return FabricLoader.getInstance().isModLoaded("iris")
+                    ? "Iris Compatibility"
+                    : "Unavailable";
         }
+
+        Object value = supplier.get();
+        if (!(value instanceof Map<?, ?> map)) return "Available";
+
+        boolean terrain = booleanValue(map, "terrainIntegrated", false);
+        boolean rendering = booleanValue(map, "renderingReady", false);
+        boolean compiled = booleanValue(map, "compiledReady", false);
+        String active = stringValue(map, "activePackName", "");
+        String selected = stringValue(map, "selectedPackName", "");
+        String stage = stringValue(map, "stage", "");
+
+        if (terrain && !active.isBlank()) return active;
+        if (rendering && !active.isBlank()) return active + " (Post)";
+        if (compiled && !active.isBlank()) return active + " (Compiled)";
+        if (!selected.isBlank()) return selected;
+        if ("compile-error".equals(stage) || "render-error".equals(stage)) return "Error";
+        return "Off";
+    }
+
+    private static String stringValue(Map<?, ?> values, String key, String fallback) {
+        Object value = values.get(key);
+        return value instanceof String text ? text : fallback;
     }
 
     private void openShaderManager() {
