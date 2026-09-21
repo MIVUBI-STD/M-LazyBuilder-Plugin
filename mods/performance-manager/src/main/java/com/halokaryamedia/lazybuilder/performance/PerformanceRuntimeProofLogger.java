@@ -53,6 +53,11 @@ final class PerformanceRuntimeProofLogger {
         var shader = PerformanceManagerClient.currentShaderSnapshot();
         var shaderDiagnostics = PerformanceManagerClient.currentShaderDiagnostics();
         var cullingDiagnostics = PerformanceManagerClient.currentCullingDiagnostics();
+        FrameMonitor.TimingSnapshot timing = frameMonitor.timingSnapshot();
+        StageTimingMetrics.Snapshot entityCullTiming =
+                StageTimingMetrics.snapshot(StageTimingMetrics.Stage.ENTITY_CULLING);
+        StageTimingMetrics.Snapshot blockEntityCullTiming =
+                StageTimingMetrics.snapshot(StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING);
         String shaderStage = shader.get("stage") instanceof String value ? value : "unknown";
         boolean shaderReady = shader.get("renderingReady") instanceof Boolean value && value;
         boolean terrainIntegrated = shader.get("terrainIntegrated") instanceof Boolean value && value;
@@ -88,7 +93,11 @@ final class PerformanceRuntimeProofLogger {
                         + "invalid_shader_packs={} terrain_reload_pending={} "
                         + "entity_cull_cache_hit={} entity_cull_cache_stale={} "
                         + "block_entity_cull_cache_hit={} block_entity_cull_cache_stale={} "
-                        + "entity_cull_queue_drop={} block_entity_cull_queue_drop={}",
+                        + "entity_cull_queue_drop={} block_entity_cull_queue_drop={} "
+                        + "frame_p50_ms={} frame_p95_ms={} frame_p99_ms={} frame_p999_ms={} "
+                        + "stutter_16ms={} stutter_25ms={} stutter_33ms={} stutter_50ms={} "
+                        + "entity_cull_cpu_avg_ms={} entity_cull_cpu_max_ms={} "
+                        + "block_entity_cull_cpu_avg_ms={} block_entity_cull_cpu_max_ms={}",
                 sample,
                 snapshot.fps(),
                 snapshot.averageFrameTimeMs(),
@@ -131,7 +140,19 @@ final class PerformanceRuntimeProofLogger {
                 blockEntityCacheHits,
                 blockEntityCacheStales,
                 entityQueueDrops,
-                blockEntityQueueDrops
+                blockEntityQueueDrops,
+                timing.p50Ms(),
+                timing.p95Ms(),
+                timing.p99Ms(),
+                timing.p999Ms(),
+                timing.framesOver16_67Ms(),
+                timing.framesOver25Ms(),
+                timing.framesOver33_33Ms(),
+                timing.framesOver50Ms(),
+                entityCullTiming.averageMs(),
+                entityCullTiming.maxMs(),
+                blockEntityCullTiming.averageMs(),
+                blockEntityCullTiming.maxMs()
         );
     }
 
