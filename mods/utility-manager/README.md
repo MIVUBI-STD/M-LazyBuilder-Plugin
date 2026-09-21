@@ -4,7 +4,7 @@ LazyBuilder Utility Manager is the passive, non-building Fabric client convenien
 
 ## Boundary
 
-Approved scope includes window/client behavior, loading and reload UX, chat convenience, signing presentation/compatibility, accessibility helpers, reconnect behavior, preference persistence, notifications, screenshot convenience, creative-inventory convenience, compact builder-facing debug presentation, and small contextual clipboard actions.
+Approved scope includes window/client behavior, loading and reload UX, chat convenience, signing presentation/compatibility, accessibility helpers, reconnect behavior, preference persistence, notifications, screenshot/video capture, creative-inventory convenience, compact builder-facing debug presentation, and small contextual clipboard actions.
 
 It must not own building/editing tools, palettes, measurement, placement helpers, camera build tools, renderer internals, performance engines, or generic clipboard/history systems.
 
@@ -13,7 +13,7 @@ It must not own building/editing tools, palettes, measurement, placement helpers
 - one Utility Manager = one Fabric mod = one mod id = one output JAR;
 - passive client utility features must not be split into separate LazyBuilder mods when they fit the Utility Manager boundary;
 - third-party utility JARs are migration references only and must not be shaded, nested, unpacked, or copied into the Utility Manager artifact;
-- no mandatory default keybinds;
+- no non-remappable hardcoded hotkeys; capture actions use normal Minecraft/Fabric KeyBinding ownership and may provide conservative remappable defaults;
 - Minecraft `GameOptions` and `KeyBinding` objects remain the authoritative backend and persistence owners; LazyBuilder owns the unified user-facing settings presentation;
 - no dependency on Map Manager implementation packages;
 - no pollers/watchers/background workers unless an active feature proves they are required;
@@ -28,7 +28,7 @@ while Performance preferences are exposed through a narrow JDK-only Fabric Objec
 contract so Performance Manager keeps runtime/config ownership without a package dependency.
 
 The shell uses one visual language across Video, Audio, Controls, Chat, Interface,
-Accessibility, and Tools: sectioned single-column rows, contextual help, switches,
+Capture, Accessibility, and Tools: sectioned single-column rows, contextual help, switches,
 sliders, dropdowns, key capture, responsive scrolling, reset confirmation, and a
 fixed footer. Global Search is available from the footer and through Ctrl+F; selecting
 a result opens the owning category/page, scrolls the exact setting into view, and
@@ -57,7 +57,7 @@ The stable preset policy is conservative: High targets high detail with Minecraf
 - Accessibility exposes subtitles, narrator policy, readability, FOV/distortion comfort controls, lightning-flash reduction, and monochrome-logo behavior through existing Minecraft options.
 - Key Bindings support search plus All / Modified / Conflicts filters while Minecraft KeyBinding remains authoritative.
 - Reconnect behavior is discoverable under Interface > Multiplayer.
-- The legacy Screenshot Settings entry point redirects into Interface so there is only one visible settings system.
+- Capture owns screenshot and video quality controls. The legacy Screenshot Settings entry point redirects into Capture so there is only one visible settings system.
 - Non-instant changes use concise feedback: Resource Packs show an applying notice and the existing resource-reload listener reports completion; Borderless window changes state that the next launch is required.
 - Windowed/Fullscreen changes use a 15-second keep/revert confirmation so an unusable display change recovers automatically.
 - Shader management uses a LazyBuilder shell for first-party pack discovery, selection, compilation, enable/disable, folder access, runtime status, and failure/retry. Performance Manager owns the shader runtime; Utility Manager only presents its ObjectShare contract.
@@ -128,11 +128,12 @@ utility/
 │   ├── routing/
 │   └── signing/
 ├── accessibility/
+├── capture/
 ├── connection/
 ├── notification/
 ├── inventory/
 ├── debug/
-├── screenshot/
+├── screenshot/   # compatibility redirect only
 └── window/
 ```
 
@@ -155,7 +156,10 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 - Borderless Window: opt-in and applied once at client startup, using the monitor that contains most of the Minecraft window; exclusive fullscreen is left alone; changing this preference takes effect on the next client start rather than through a background window watcher;
 - Shared Notifications: Utility features use Minecraft's native system-toast surface instead of creating separate HUD or popup systems;
 - Resource Reload Notice: startup resource loading stays silent, while later client-resource reloads report completion through the shared notification surface;
-- Contextual Screenshot Names: opt-in and keeps the vanilla F2 capture path while adding a safe multiplayer/singleplayer context prefix to automatically named screenshots;
+- Screenshot Capture: F2 remains the familiar user action, but accepted captures use a bounded first-party encoder. Efficient and High write JPEG at different quality levels; Maximum writes lossless PNG. GPU readback happens synchronously only for the requested still frame, while compression and disk I/O run on one bounded worker. If that worker is saturated, vanilla screenshot handling remains the correctness fallback;
+- Contextual Capture Names: opt-in and adds a safe multiplayer/singleplayer context prefix to automatically named screenshots and video files;
+- Video Capture: the remappable recording action defaults to F9. Recording captures the current game-resolution framebuffer at a stable 30/60/120 FPS target, uses triple-buffered PBO readback with non-blocking fences, and drops capture work rather than stalling Minecraft when the GPU/encoder is behind. Automatic encoding validates NVENC, AMF, QSV, then libx264 in that order and uses the first encoder that can actually initialize. Recording writes a crash-tolerant Matroska working file and remuxes to MP4 on clean completion. The recorder has bounded CPU/GPU frame pools, no idle worker or PBO allocation, startup and low-rate in-session disk-space guards, and graceful shutdown;
+- Capture Scope: current realtime recording is video-only; microphone/game-audio capture, replay timelines, arbitrary replay cameras, and always-on replay buffers are not claimed by this subsystem;
 - Instant Creative Search: enabled by default; while the vanilla Creative inventory is open, typing a valid character switches to the vanilla Search Items tab, focuses its existing search field, and lets vanilla process the original character and subsequent query. Ctrl/Alt/Super-modified input and another focused UI element are left untouched;
 - Compact Debug: enabled by default and replaces the vanilla F3 information wall with a small Minecraft-native builder HUD. Coordinate is the first top-left block with explicit `X`, `Y`, and `Z`; client FPS/CPU/GPU/RAM and world Facing/Biome/Time remain on the left; server world/telemetry presentation stays on the right. Unsupported metrics are shown as unavailable rather than estimated.
 
@@ -163,7 +167,7 @@ Reconnect state is session-only. Utility Manager does not persist the last serve
 
 Borderless Window changes only window presentation. Focus-based FPS/resource throttling is explicitly owned by Performance Manager and must not be implemented here.
 
-Screenshot naming does not depend on Map Manager and does not create a replacement screenshot system. Explicit filenames supplied by Minecraft or another mod are left unchanged.
+Capture naming does not depend on Map Manager. Explicit screenshot filenames are constrained to the screenshot output directory and keep their requested basename while using the selected output format. Video output lives under `captures/videos`.
 
 Instant Creative Search does not replace the creative inventory or its search implementation. It only enters the existing vanilla search path earlier, and it adds no keybind or background tick loop.
 
@@ -221,7 +225,7 @@ Instant Creative Search targets `CreativeInventoryScreen.charTyped`, its existin
 
 Compact Debug targets `DebugHud.render` and the existing `Keyboard.onKey` debug-input path for Yarn 1.21.4. Treat Minecraft-version upgrades as verification points for these mixins. Keep the renderer thin and keep metric/telemetry state outside the mixin classes.
 
-Keep Chat Draft, chat search, chat timestamps, compact duplicate messages, reconnect actions, screenshot naming, reload notifications, instant creative search, compact debug, narrator suppression, signing-indicator suppression, report-button suppression, and borderless startup application are event/screen-driven. None of them require a client tick loop or background poller.
+Keep Chat Draft, chat search, chat timestamps, compact duplicate messages, reconnect actions, capture naming, reload notifications, instant creative search, compact debug, narrator suppression, signing-indicator suppression, report-button suppression, and borderless startup application are event/screen-driven. Video capture uses the normal client tick only for its remappable recording key and a frame-end hook only while evaluating capture state; FFmpeg, the encoder worker, and GPU readback resources exist only for an active recording.
 
 ## Preferences
 
@@ -243,6 +247,17 @@ screenshots.contextual_names=false
 inventory.instant_creative_search=true
 hud.compact_debug=true
 ```
+
+Capture-specific preferences are stored separately in `lazybuilder-capture.properties` so video/screenshot growth does not turn the general Utility preference record into a capture god-object:
+
+```properties
+screenshot.quality=high
+video.quality=high
+video.fps=fps_60
+video.encoder=automatic
+```
+
+Screenshot presets are **Efficient**, **High**, and **Maximum**. Video presets are **Efficient**, **High**, **Production**, and **Near Lossless**. The main UI exposes intent-level quality, FPS, and encoder selection; codec-specific rate-control values, PBO count, queue depth, and FFmpeg arguments remain internal.
 
 The previous `screenshots.organize_by_project` key is accepted as a read-only migration alias so existing local configs continue to work. New saves use `screenshots.contextual_names`.
 
