@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.utility.ui;
 
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.text.Text;
@@ -10,6 +11,7 @@ import org.lwjgl.glfw.GLFW;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 /** Custom key-binding editor using Minecraft's existing KeyBinding authority and persistence. */
 public final class LazyBuilderKeybindSettingsScreen extends Screen {
@@ -24,12 +26,34 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
     private static final int SECTION_GAP = 8;
     private static final int CONTROL_WIDTH = 150;
     private static final int FOOTER_HEIGHT = 40;
+    private static final int LIST_TOP = 112;
+
+    private enum BindingFilter {
+        ALL("All"),
+        MODIFIED("Modified"),
+        CONFLICTS("Conflicts");
+
+        private final String label;
+
+        BindingFilter(String label) {
+            this.label = label;
+        }
+
+        BindingFilter next() {
+            BindingFilter[] values = values();
+            return values[(ordinal() + 1) % values.length];
+        }
+    }
 
     private final Screen parent;
     private final List<Group> groups = new ArrayList<>();
     private KeyBinding capturing;
     private int scrollOffset;
     private int maxScroll;
+    private String query = "";
+    private BindingFilter filter = BindingFilter.ALL;
+    private boolean searchEditing;
+    private TextFieldWidget searchField;
 
     public LazyBuilderKeybindSettingsScreen(Screen parent) {
         super(Text.literal("Key Bindings"));
@@ -38,6 +62,48 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
 
     @Override
     protected void init() {
+        int left = panelLeft();
+        int panel = panelWidth();
+
+        searchField = new TextFieldWidget(
+                textRenderer,
+                left,
+                76,
+                Math.max(120, panel - 126),
+                22,
+                Text.literal("Search key bindings")
+        );
+        searchField.setPlaceholder(Text.literal("Search key bindings..."));
+        searchField.setMaxLength(80);
+        searchField.setText(query);
+        searchField.setChangedListener(value -> {
+            query = value;
+            scrollOffset = 0;
+            searchEditing = true;
+            clearAndInit();
+        });
+        addDrawableChild(searchField);
+        if (searchEditing) {
+            setInitialFocus(searchField);
+            searchField.setFocused(true);
+        }
+
+        addDrawableChild(new LazyBuilderSettingsControlWidget(
+                left + panel - 118,
+                76,
+                118,
+                22,
+                Text.literal("Filter: " + filter.label),
+                true,
+                LazyBuilderSettingsControlWidget.Kind.ACTION,
+                () -> {
+                    filter = filter.next();
+                    scrollOffset = 0;
+                    searchEditing = false;
+                    clearAndInit();
+                }
+        ));
+
         buildGroups();
         layoutRows();
 
@@ -74,10 +140,23 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
 
         Group current = null;
         String category = null;
+        String normalized = query.trim().toLowerCase(Locale.ROOT);
         for (KeyBinding binding : bindings) {
+            String displayName = Text.translatable(binding.getTranslationKey()).getString();
+            String displayCategory = Text.translatable(binding.getCategory()).getString();
+
+            if (!normalized.isEmpty()) {
+                String searchable = (displayName + " " + displayCategory + " "
+                        + binding.getBoundKeyLocalizedText().getString()).toLowerCase(Locale.ROOT);
+                if (!searchable.contains(normalized)) continue;
+            }
+
+            if (filter == BindingFilter.MODIFIED && isDefaultBinding(binding)) continue;
+            if (filter == BindingFilter.CONFLICTS && !hasConflict(binding)) continue;
+
             if (!binding.getCategory().equals(category)) {
                 category = binding.getCategory();
-                current = new Group(Text.translatable(category).getString());
+                current = new Group(displayCategory);
                 groups.add(current);
             }
             current.bindings.add(binding);
@@ -89,18 +168,18 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
         int width = panelWidth();
         int viewportBottom = viewportBottom();
         int contentHeight = totalContentHeight();
-        int viewportHeight = Math.max(1, viewportBottom - 76);
+        int viewportHeight = Math.max(1, viewportBottom - LIST_TOP);
         maxScroll = Math.max(0, contentHeight - viewportHeight);
         scrollOffset = Math.max(0, Math.min(maxScroll, scrollOffset));
 
-        int y = 84 - scrollOffset;
+        int y = LIST_TOP + 8 - scrollOffset;
         for (Group group : groups) {
             group.y = y;
             y += SECTION_HEIGHT;
 
             for (KeyBinding binding : group.bindings) {
                 int rowY = y;
-                if (rowY + ROW_HEIGHT > 76 && rowY < viewportBottom) {
+                if (rowY + ROW_HEIGHT > LIST_TOP && rowY < viewportBottom) {
                     boolean conflict = hasConflict(binding);
                     String label = capturing == binding
                             ? "Press a key..."
@@ -182,6 +261,12 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
             bind(InputUtil.fromKeyCode(keyCode, scanCode));
             return true;
         }
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE && searchField != null && searchField.isFocused() && !query.isBlank()) {
+            query = "";
+            searchEditing = false;
+            clearAndInit();
+            return true;
+        }
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
@@ -211,17 +296,17 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
         context.drawTextWithShadow(textRenderer, Text.literal("KEY BINDINGS"), left + 70, 49, LazyBuilderSettingsScreen.TEXT_PRIMARY);
         context.fill(left + 70, 63, left + 142, 65, LazyBuilderSettingsScreen.ACCENT);
 
-        context.enableScissor(left, 76, right, viewportBottom());
-        int y = 84 - scrollOffset;
+        context.enableScissor(left, LIST_TOP, right, viewportBottom());
+        int y = LIST_TOP + 8 - scrollOffset;
         for (Group group : groups) {
-            if (y + SECTION_HEIGHT > 76 && y < viewportBottom()) {
+            if (y + SECTION_HEIGHT > LIST_TOP && y < viewportBottom()) {
                 context.drawTextWithShadow(textRenderer, Text.literal(group.title), left, y + 4, LazyBuilderSettingsScreen.TEXT_SECONDARY);
             }
             y += SECTION_HEIGHT;
 
             for (KeyBinding binding : group.bindings) {
                 int rowY = y;
-                if (rowY + ROW_HEIGHT > 76 && rowY < viewportBottom()) {
+                if (rowY + ROW_HEIGHT > LIST_TOP && rowY < viewportBottom()) {
                     boolean hovered = mouseX >= left && mouseX < right && mouseY >= rowY && mouseY < rowY + ROW_HEIGHT;
                     context.fill(left, rowY, right, rowY + ROW_HEIGHT - 1, hovered ? ROW_HOVER : ROW_FILL);
                     context.fill(left, rowY + ROW_HEIGHT - 1, right, rowY + ROW_HEIGHT, DIVIDER);
@@ -242,9 +327,19 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
         }
         context.disableScissor();
 
+        if (groups.isEmpty()) {
+            context.drawCenteredTextWithShadow(
+                    textRenderer,
+                    Text.literal(filter == BindingFilter.ALL ? "No key bindings found." : "No " + filter.label.toLowerCase(Locale.ROOT) + " key bindings."),
+                    left + panelWidth() / 2,
+                    LIST_TOP + 28,
+                    LazyBuilderSettingsScreen.TEXT_MUTED
+            );
+        }
+
         renderScrollBar(context, right + 6);
         if (hasContextPane()) {
-            context.fill(right + 14, 76, right + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
+            context.fill(right + 14, LIST_TOP, right + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
         }
         renderHelp(context, right + 30);
         super.render(context, mouseX, mouseY, delta);
@@ -254,7 +349,7 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
         if (!hasContextPane()) return;
         int available = shellLeft() + shellWidth() - x - 8;
         if (available < 120) return;
-        context.drawTextWithShadow(textRenderer, Text.literal("KEY BINDINGS"), x, 88, LazyBuilderSettingsScreen.TEXT_PRIMARY);
+        context.drawTextWithShadow(textRenderer, Text.literal("KEY BINDINGS"), x, LIST_TOP + 12, LazyBuilderSettingsScreen.TEXT_PRIMARY);
         String copy;
         if (capturing != null) {
             copy = "Listening for input. Press Esc to cancel. Backspace/Delete clears the binding.";
@@ -263,11 +358,15 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
         } else {
             copy = "Select a binding, then press a keyboard or mouse button. Backspace/Delete clears a binding.";
         }
-        int y = 106;
+        int y = LIST_TOP + 30;
         for (var line : textRenderer.wrapLines(Text.literal(copy), available)) {
             context.drawTextWithShadow(textRenderer, line, x, y, LazyBuilderSettingsScreen.TEXT_MUTED);
             y += 11;
         }
+    }
+
+    private boolean isDefaultBinding(KeyBinding binding) {
+        return binding.getBoundKeyTranslationKey().equals(binding.getDefaultKey().getTranslationKey());
     }
 
     private boolean hasConflict(KeyBinding binding) {
@@ -290,7 +389,7 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
 
     private void renderScrollBar(DrawContext context, int x) {
         if (maxScroll <= 0) return;
-        int top = 76;
+        int top = LIST_TOP;
         int bottom = viewportBottom();
         int trackHeight = Math.max(1, bottom - top);
         int contentHeight = trackHeight + maxScroll;
@@ -315,7 +414,7 @@ public final class LazyBuilderKeybindSettingsScreen extends Screen {
     }
 
     private int viewportBottom() {
-        return Math.max(77, height - FOOTER_HEIGHT - 6);
+        return Math.max(LIST_TOP + 1, height - FOOTER_HEIGHT - 6);
     }
 
     private int shellWidth() {
