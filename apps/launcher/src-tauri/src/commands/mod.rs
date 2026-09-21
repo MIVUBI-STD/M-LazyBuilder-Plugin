@@ -11,6 +11,7 @@ pub mod server_manager;
 pub mod server_tools;
 pub mod startup;
 pub mod system;
+pub mod system_activity;
 pub mod workspace;
 pub mod workspace_creation;
 pub mod workspace_location;
