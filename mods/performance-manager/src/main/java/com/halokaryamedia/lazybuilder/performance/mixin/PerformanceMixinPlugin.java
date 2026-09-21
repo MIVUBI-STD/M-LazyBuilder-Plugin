@@ -26,6 +26,7 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
             Map.entry("WorldRendererTerrainSubmissionMixin", OptimizationDomain.TERRAIN_SUBMISSION),
             Map.entry("ShaderLoaderSourceMixin", OptimizationDomain.TERRAIN_SUBMISSION),
             Map.entry("CompiledShaderMixin", OptimizationDomain.TERRAIN_SUBMISSION),
+            Map.entry("ShaderProgramMixin", OptimizationDomain.TERRAIN_SUBMISSION),
             Map.entry("ChunkBuilderBuiltChunkMixin", OptimizationDomain.TERRAIN_BUILD),
             Map.entry("ChunkBuilderBackpressureMixin", OptimizationDomain.TERRAIN_BUILD),
             Map.entry("BuiltChunkStorageMixin", OptimizationDomain.TERRAIN_BUILD),
