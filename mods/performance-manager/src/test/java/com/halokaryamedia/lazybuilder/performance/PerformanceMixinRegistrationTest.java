@@ -17,6 +17,9 @@ final class PerformanceMixinRegistrationTest {
             String json = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
             assertTrue(json.contains("WorldRendererMixin"), "entity culling mixin must stay registered");
             assertTrue(json.contains("WorldRendererTerrainSubmissionMixin"), "terrain submission index mixin must stay registered");
+            assertTrue(json.contains("ShaderLoaderSourceMixin"), "terrain shader source ownership mixin must stay registered");
+            assertTrue(json.contains("CompiledShaderMixin"), "terrain shader compile fallback mixin must stay registered");
+            assertTrue(json.contains("ShaderProgramMixin"), "terrain shader link proof mixin must stay registered");
             assertTrue(json.contains("BlockEntityRenderDispatcherMixin"), "block entity culling mixin must stay registered");
             assertTrue(json.contains("TextRendererDrawerMixin"), "text render lookup mixin must stay registered");
             assertTrue(json.contains("VertexBufferMixin"), "terrain buffer recovery mixin must stay registered");
