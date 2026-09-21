@@ -137,17 +137,11 @@ public final class TerrainMultiDrawSubmissionBackend {
             return BindAction.NONE;
         }
 
-        for (int index = 0; index < run.commandCount(); index++) {
-            VertexBuffer member = run.sourceAt(index);
-            if (member == null || !TerrainPhysicalArenaManager.bind(member)) {
-                run.failed = true;
-                plannedRunCursor++;
-                packetCursor++;
-                status = "physical-residency-fallback";
-                return BindAction.NONE;
-            }
-        }
-        if (!TerrainPhysicalArenaManager.bind(source)) {
+        if (!TerrainPhysicalArenaManager.bindMultiDrawRun(
+                run.packet,
+                run.start,
+                run.end
+        )) {
             run.failed = true;
             plannedRunCursor++;
             packetCursor++;
