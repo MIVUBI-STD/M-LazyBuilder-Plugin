@@ -52,7 +52,7 @@ final class ShaderMemoryBudgetTest {
         );
 
         assertTrue(plan.allowed());
-        assertTrue(plan.resolution() <= 4096);
+        assertTrue(plan.resolution() < 4096, "shadow resolution should reduce before rejecting the frame");
         assertTrue(plan.resolution() >= 256);
     }
 
