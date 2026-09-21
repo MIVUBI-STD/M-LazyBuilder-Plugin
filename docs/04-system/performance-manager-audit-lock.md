@@ -172,6 +172,18 @@ are isolated to the affected resident whenever possible; repeated failures open 
 breaker that disables only the physical-arena fast path for that session. Vanilla terrain rendering
 remains authoritative fallback, and the breaker resets with safe terrain-session cleanup.
 
+
+Zero-waste measurement and optional-work policy are split deliberately:
+
+- the 60-frame primitive window is control-only and remains allocation-free on the governor path;
+- long-run proof percentiles use fixed histogram buckets and retain counts rather than frame history;
+- on-demand snapshots never activate instrumentation;
+- culling consumes fail-open vanilla section-openness hints before bounded ray refinement;
+- culling cost uses a recent EMA rather than a session-lifetime average;
+- multi-draw profitability combines draw-call savings with low-rate measured preparation cost;
+- shader subsystem errors have one health-state owner; no duplicated cached `lastError` authority is allowed;
+- GPU timer query objects have explicit shutdown ownership.
+
 ## Rejected by default
 
 Do not add merely to make Performance Manager appear feature-rich:
