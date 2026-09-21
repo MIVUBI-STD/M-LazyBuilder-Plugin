@@ -127,7 +127,7 @@ fn project_capabilities(
     runtimes: &[ServerRuntimeSummary],
     operations: &[OperationSnapshot],
 ) -> Vec<CapabilityStatus> {
-    let mut result = Vec::with_capacity(7);
+    let mut result = Vec::with_capacity(6);
     let active_id = workspace.map(|entry| entry.id.as_str());
     let workspace_busy = active_id.is_some_and(|id| {
         operations.iter().any(|entry| resource_targets_workspace(&entry.resource, id))
@@ -172,20 +172,6 @@ fn project_capabilities(
         "server.stop",
         has_workspace && server_running,
         if server_running { "A server runtime is active." } else { "No active server runtime." },
-    ));
-
-    result.push(capability(
-        "world.manage",
-        has_workspace && server_running && !workspace_busy,
-        if !has_workspace {
-            "Open a workspace first."
-        } else if workspace_busy {
-            "Wait for the active workspace operation to finish."
-        } else if !server_running {
-            "Start the Paper server first."
-        } else {
-            "World control can use the active Paper runtime."
-        },
     ));
 
     result.push(capability(
@@ -239,6 +225,5 @@ mod tests {
         assert_eq!(keys.len(), original_len);
         assert!(keys.contains(&"diagnostics.export"));
         assert!(keys.contains(&"server.start"));
-        assert!(keys.contains(&"world.manage"));
     }
 }
