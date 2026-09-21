@@ -250,6 +250,10 @@ public final class LazyBuilderShaderScreen extends Screen {
 
     private static String statusLabel(ShaderState state) {
         if (!state.available()) return "Unavailable";
+        if (state.terrainIntegrated() && state.postProcessReady() && state.renderingReady()) {
+            return "First-party terrain + post-process active";
+        }
+        if (state.terrainIntegrated()) return "First-party terrain active";
         if (state.renderingReady()) return "First-party post-process active";
         if (state.compiledReady() && state.postProcessReady()) return "Compiled — waiting for frame";
         if (state.compiledReady()) return "Compiled — no composite/final pass";
