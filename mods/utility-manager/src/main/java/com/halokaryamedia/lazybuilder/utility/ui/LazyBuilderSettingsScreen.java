@@ -946,6 +946,11 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 capture.screenshotQuality().label(),
                 this::openScreenshotQualityChoice
         ));
+        screenshot.rows.add(Row.status(
+                "Approx. Size",
+                "Estimated file size for the current game resolution. Actual size depends on scene detail.",
+                CaptureManager.estimatedScreenshotSizeLabel()
+        ));
         screenshot.rows.add(Row.toggle(
                 "Contextual Names",
                 "Add world or server context to screenshot filenames.",
@@ -962,6 +967,17 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 this::openVideoQualityChoice
         ));
         video.rows.add(Row.value(
+                "Video Resolution",
+                "Choose the output resolution. LazyBuilder only downscales; it never upscales beyond the game framebuffer.",
+                capture.videoResolution().label(),
+                this::openVideoResolutionChoice
+        ));
+        video.rows.add(Row.status(
+                "Effective Resolution",
+                "Actual recording size after applying the current game resolution limit.",
+                CaptureManager.effectiveVideoResolutionLabel()
+        ));
+        video.rows.add(Row.value(
                 "Frame Rate",
                 "Use a stable recording frame rate independent from Minecraft's current FPS.",
                 capture.videoFrameRate().label(),
@@ -972,6 +988,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 "Automatic prefers NVIDIA, AMD, or Intel hardware encoding and falls back to software.",
                 CaptureManager.videoEncoderLabel(),
                 this::openVideoEncoderChoice
+        ));
+        video.rows.add(Row.status(
+                "Approx. Size",
+                "Rough 10-minute storage estimate. Quality-based recording is variable, so actual size may differ.",
+                CaptureManager.estimatedVideoSizeLabel()
+        ));
+        video.rows.add(Row.status(
+                "Output",
+                "Recording is written safely to MKV first, then automatically remuxed to MP4.",
+                "MP4 · Safe"
         ));
         video.rows.add(Row.status(
                 "Recording",
@@ -1668,6 +1694,24 @@ public final class LazyBuilderSettingsScreen extends Screen {
         openDropdown("Video Quality", choices);
     }
 
+    private void openVideoResolutionChoice() {
+        CapturePreferences.VideoResolution current = CaptureManager.preferences().videoResolution();
+        List<DropdownChoice> choices = new ArrayList<>();
+        for (CapturePreferences.VideoResolution resolution : CapturePreferences.VideoResolution.values()) {
+            choices.add(new DropdownChoice(
+                    resolution.label(),
+                    resolution == current,
+                    () -> {
+                        CaptureManager.updatePreferences(
+                                CaptureManager.preferences().withVideoResolution(resolution)
+                        );
+                        refreshCategory();
+                    }
+            ));
+        }
+        openDropdown("Video Resolution", choices);
+    }
+
     private void openVideoFrameRateChoice() {
         CapturePreferences.VideoFrameRate current = CaptureManager.preferences().videoFrameRate();
         List<DropdownChoice> choices = new ArrayList<>();
@@ -2036,6 +2080,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     captureCurrent.screenshotQuality() != captureDefaults.screenshotQuality();
             case "Video Quality" ->
                     captureCurrent.videoQuality() != captureDefaults.videoQuality();
+            case "Video Resolution" ->
+                    captureCurrent.videoResolution() != captureDefaults.videoResolution();
             case "Frame Rate" ->
                     captureCurrent.videoFrameRate() != captureDefaults.videoFrameRate();
             case "Encoder" ->
