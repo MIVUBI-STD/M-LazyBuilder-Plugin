@@ -54,7 +54,7 @@
     };
   });
 
-  $: activeOperations = operations.filter(isActive);
+  $: activeOperations = operations.filter(launcherOperationActive);
   $: activeWorldTasks = worldTasks.filter(worldTaskActive);
   $: worldTaskHistory = worldTasks.filter((task) => !worldTaskActive(task));
   $: history = operations.filter((operation) => !launcherOperationActive(operation));
