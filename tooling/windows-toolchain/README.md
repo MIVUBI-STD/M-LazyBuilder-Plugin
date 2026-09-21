@@ -80,7 +80,7 @@ check
 
 - `toolchain.json` owns supported tool policy; scripts read it rather than maintaining shadow version lists.
 - Java build tools are wrapper-owned; global Maven/Gradle installations are not required.
-- wrapper downloads are checksum verified and cached below LazyBuilder-owned LocalAppData paths.
+- wrapper downloads use bounded retry for transient transport failures, remove partial files before retry, remain checksum verified, and are cached below LazyBuilder-owned LocalAppData paths.
 - frontend dependencies use `npm ci` and the committed lockfile.
 - Rust uses the committed dependency lock plus repository-pinned compiler.
 - expensive build work starts only after prerequisite validation.
