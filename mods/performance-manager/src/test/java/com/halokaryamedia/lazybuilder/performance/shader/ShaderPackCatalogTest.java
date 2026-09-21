@@ -134,4 +134,42 @@ final class ShaderPackCatalogTest {
         assertEquals(before, firstAfter);
         assertFalse(after.get(0).id().equals(after.get(1).id()));
     }
+    @Test
+    void explicitPackIdSurvivesSourceRename() throws Exception {
+        Path original = temp.resolve("Original Name");
+        Files.createDirectories(original.resolve("shaders"));
+        Files.writeString(original.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(original.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(original.resolve("shader.properties"), "id=mivubi.stable\n");
+
+        ShaderPackCatalog catalog = new ShaderPackCatalog(temp);
+        String before = catalog.scan().getFirst().id();
+
+        Path renamed = temp.resolve("Renamed Shader");
+        Files.move(original, renamed);
+        String after = catalog.scan().getFirst().id();
+
+        assertEquals("mivubi.stable", before);
+        assertEquals(before, after);
+    }
+
+    @Test
+    void duplicateExplicitPackIdsAreRejectedInsteadOfAliased() throws Exception {
+        for (String name : java.util.List.of("First", "Second")) {
+            Path pack = temp.resolve(name);
+            Files.createDirectories(pack.resolve("shaders"));
+            Files.writeString(pack.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+            Files.writeString(pack.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+            Files.writeString(pack.resolve("shader.properties"), "id=mivubi.duplicate\n");
+        }
+
+        ShaderPackCatalog catalog = new ShaderPackCatalog(temp);
+        var packs = catalog.scan();
+
+        assertTrue(packs.isEmpty());
+        assertEquals(2, catalog.invalidEntries().size());
+        assertTrue(catalog.invalidEntries().stream().allMatch(
+                value -> value.contains("duplicate shader pack id 'mivubi.duplicate'")
+        ));
+    }
 }
