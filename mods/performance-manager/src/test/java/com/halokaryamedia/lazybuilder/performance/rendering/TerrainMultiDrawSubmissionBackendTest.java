@@ -74,4 +74,32 @@ final class TerrainMultiDrawSubmissionBackendTest {
                 0
         );
     }
+    @Test
+    void splitsLargeCompatibleRunsAtPortableTransformCapacity() {
+        var arena = new TerrainRegionAllocationRegistry.ArenaKey(0, 0, 0, 0);
+        var state = state();
+        java.util.ArrayList<TerrainMultiDrawCommandStream.PackedCommand> commands =
+                new java.util.ArrayList<>();
+
+        for (int index = 0; index < 2050; index++) {
+            commands.add(packed(arena, state, index, index));
+        }
+
+        var packet = new TerrainMultiDrawCommandStream.LayerPacket(
+                0,
+                commands,
+                1,
+                commands.size() - 1L,
+                0L,
+                0L
+        );
+
+        List<TerrainMultiDrawSubmissionBackend.Run> runs =
+                TerrainMultiDrawSubmissionBackend.planRuns(packet);
+
+        assertEquals(3, runs.size());
+        assertEquals(1024, runs.get(0).commandCount());
+        assertEquals(1024, runs.get(1).commandCount());
+        assertEquals(2, runs.get(2).commandCount());
+    }
 }
