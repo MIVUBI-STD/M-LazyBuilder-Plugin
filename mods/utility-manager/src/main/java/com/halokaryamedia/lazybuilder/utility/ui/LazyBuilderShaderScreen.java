@@ -48,7 +48,9 @@ public final class LazyBuilderShaderScreen extends Screen {
         int left = (width - shell) / 2;
         int right = left + shell;
         boolean compact = shell < 540;
-        int listTop = compact ? 142 : 104;
+        int listTop = state.optionCount() > 0
+                ? (compact ? 170 : 126)
+                : (compact ? 142 : 104);
         int footerTop = height - FOOTER_HEIGHT;
 
         int footerX = left;
