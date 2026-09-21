@@ -1304,7 +1304,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
         if (category == Category.VIDEO) {
             switch (videoPage) {
-                case DISPLAY -> resetDisplay();
+                case DISPLAY -> {
+                    if (resetDisplay()) return;
+                }
                 case QUALITY -> resetQuality();
                 case VIEW -> resetView();
                 case PERFORMANCE -> resetPerformance();
@@ -1390,7 +1392,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         }
     }
 
-    private void resetDisplay() {
+    private boolean resetDisplay() {
         boolean previousFullscreen = client.options.getFullscreen().getValue();
 
         resetOption(client.options.getEnableVsync());
@@ -1405,6 +1407,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
         boolean defaultFullscreen = defaultValue(client.options.getFullscreen());
         if (previousFullscreen != defaultFullscreen) {
             client.options.getFullscreen().setValue(defaultFullscreen);
+            client.options.write();
+            client.options.sendClientSettings();
+
             LazyBuilderSettingsScreen returnScreen = new LazyBuilderSettingsScreen(
                     parent,
                     Category.VIDEO,
@@ -1426,9 +1431,11 @@ public final class LazyBuilderSettingsScreen extends Screen {
                         }
                     }
             ));
-        } else {
-            resetOption(client.options.getFullscreen());
+            return true;
         }
+
+        resetOption(client.options.getFullscreen());
+        return false;
     }
 
     private void resetQuality() {
