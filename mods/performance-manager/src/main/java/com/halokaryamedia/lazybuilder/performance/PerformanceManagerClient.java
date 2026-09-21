@@ -329,13 +329,29 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         return Map.copyOf(values);
     }
 
-    public static Map<String, Object> currentShaderDiagnostics() {
-        FirstPartyShaderRuntime shaders = shaderRuntime;
-        return shaders == null ? Map.of() : shaders.diagnosticsMap();
-    }
-
     public static Map<String, Object> currentShaderSnapshot() {
         return shaderSnapshot();
+    }
+
+    public static Map<String, Object> currentCullingDiagnostics() {
+        PerformanceRuntime current = runtime;
+        if (current == null) return Map.of();
+
+        var snapshot = current.cullingSnapshot();
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("trackedEntities", snapshot.trackedEntities());
+        values.put("trackedBlockEntities", snapshot.trackedBlockEntities());
+        values.put("queuedEntities", snapshot.queuedEntities());
+        values.put("queuedBlockEntities", snapshot.queuedBlockEntities());
+        values.put("entityCacheHits", snapshot.entityCacheHits());
+        values.put("entityCacheStales", snapshot.entityCacheStales());
+        values.put("blockEntityCacheHits", snapshot.blockEntityCacheHits());
+        values.put("blockEntityCacheStales", snapshot.blockEntityCacheStales());
+        values.put("entityEvaluations", snapshot.entityEvaluations());
+        values.put("blockEntityEvaluations", snapshot.blockEntityEvaluations());
+        values.put("entityQueueDrops", snapshot.entityQueueDrops());
+        values.put("blockEntityQueueDrops", snapshot.blockEntityQueueDrops());
+        return Map.copyOf(values);
     }
 
     public static Map<String, Object> currentShaderDiagnostics() {
