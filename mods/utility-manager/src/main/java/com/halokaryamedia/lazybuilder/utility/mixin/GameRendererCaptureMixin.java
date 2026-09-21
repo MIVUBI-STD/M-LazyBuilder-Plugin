@@ -43,7 +43,6 @@ abstract class GameRendererCaptureMixin {
 
     @Inject(method = "render", at = @At("RETURN"))
     private void lazybuilder$afterRenderedFrame(
-    private void lazybuilder$afterRenderedFrame(
             RenderTickCounter tickCounter,
             boolean tick,
             CallbackInfo ci
