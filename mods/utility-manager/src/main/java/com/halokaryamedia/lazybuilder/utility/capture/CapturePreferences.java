@@ -4,6 +4,7 @@ package com.halokaryamedia.lazybuilder.utility.capture;
 public record CapturePreferences(
         ScreenshotQuality screenshotQuality,
         VideoQuality videoQuality,
+        VideoResolution videoResolution,
         VideoFrameRate videoFrameRate,
         VideoEncoderMode videoEncoderMode
 ) {
@@ -11,6 +12,7 @@ public record CapturePreferences(
         return new CapturePreferences(
                 ScreenshotQuality.HIGH,
                 VideoQuality.HIGH,
+                VideoResolution.GAME,
                 VideoFrameRate.FPS_60,
                 VideoEncoderMode.AUTOMATIC
         );
@@ -19,24 +21,29 @@ public record CapturePreferences(
     public CapturePreferences {
         screenshotQuality = screenshotQuality == null ? ScreenshotQuality.HIGH : screenshotQuality;
         videoQuality = videoQuality == null ? VideoQuality.HIGH : videoQuality;
+        videoResolution = videoResolution == null ? VideoResolution.GAME : videoResolution;
         videoFrameRate = videoFrameRate == null ? VideoFrameRate.FPS_60 : videoFrameRate;
         videoEncoderMode = videoEncoderMode == null ? VideoEncoderMode.AUTOMATIC : videoEncoderMode;
     }
 
     public CapturePreferences withScreenshotQuality(ScreenshotQuality quality) {
-        return new CapturePreferences(quality, videoQuality, videoFrameRate, videoEncoderMode);
+        return new CapturePreferences(quality, videoQuality, videoResolution, videoFrameRate, videoEncoderMode);
     }
 
     public CapturePreferences withVideoQuality(VideoQuality quality) {
-        return new CapturePreferences(screenshotQuality, quality, videoFrameRate, videoEncoderMode);
+        return new CapturePreferences(screenshotQuality, quality, videoResolution, videoFrameRate, videoEncoderMode);
+    }
+
+    public CapturePreferences withVideoResolution(VideoResolution resolution) {
+        return new CapturePreferences(screenshotQuality, videoQuality, resolution, videoFrameRate, videoEncoderMode);
     }
 
     public CapturePreferences withVideoFrameRate(VideoFrameRate frameRate) {
-        return new CapturePreferences(screenshotQuality, videoQuality, frameRate, videoEncoderMode);
+        return new CapturePreferences(screenshotQuality, videoQuality, videoResolution, frameRate, videoEncoderMode);
     }
 
     public CapturePreferences withVideoEncoderMode(VideoEncoderMode encoderMode) {
-        return new CapturePreferences(screenshotQuality, videoQuality, videoFrameRate, encoderMode);
+        return new CapturePreferences(screenshotQuality, videoQuality, videoResolution, videoFrameRate, encoderMode);
     }
 
     public enum ScreenshotQuality {
@@ -76,6 +83,40 @@ public record CapturePreferences(
 
         public String label() { return label; }
         public int qualityValue() { return qualityValue; }
+    }
+
+    public enum VideoResolution {
+        GAME("Game Resolution", 0),
+        HD_1080("1080p", 1080),
+        QHD_1440("1440p", 1440),
+        UHD_4K("4K", 2160);
+
+        private final String label;
+        private final int targetHeight;
+
+        VideoResolution(String label, int targetHeight) {
+            this.label = label;
+            this.targetHeight = targetHeight;
+        }
+
+        public String label() { return label; }
+        public int targetHeight() { return targetHeight; }
+
+        public int[] resolve(int sourceWidth, int sourceHeight) {
+            int safeWidth = Math.max(2, sourceWidth);
+            int safeHeight = Math.max(2, sourceHeight);
+            if (targetHeight <= 0 || targetHeight >= safeHeight) {
+                return new int[]{even(safeWidth), even(safeHeight)};
+            }
+            double scale = targetHeight / (double) safeHeight;
+            int width = even((int) Math.round(safeWidth * scale));
+            int height = even(targetHeight);
+            return new int[]{Math.max(2, width), Math.max(2, height)};
+        }
+
+        private static int even(int value) {
+            return Math.max(2, value - Math.floorMod(value, 2));
+        }
     }
 
     public enum VideoFrameRate {
