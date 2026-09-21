@@ -175,33 +175,40 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
         this.width = width;
         this.height = height;
 
-        for (int index = 0; index < count; index++) {
-            int texture = GL11C.glGenTextures();
-            if (texture == 0) {
-                deleteTextures();
-                throw new IllegalStateException(
-                        "OpenGL could not allocate GBuffer texture " + (index + 1)
+        try {
+            for (int index = 0; index < count; index++) {
+                int texture = GL11C.glGenTextures();
+                if (texture == 0) {
+                    throw new IllegalStateException(
+                            "OpenGL could not allocate GBuffer texture " + (index + 1)
+                    );
+                }
+                textures[index] = texture;
+                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture);
+                GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_NEAREST);
+                GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_NEAREST);
+                GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_S, GL12C.GL_CLAMP_TO_EDGE);
+                GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_T, GL12C.GL_CLAMP_TO_EDGE);
+                GL11C.glTexImage2D(
+                        GL11C.GL_TEXTURE_2D,
+                        0,
+                        GL30C.GL_RGBA16F,
+                        width,
+                        height,
+                        0,
+                        GL11C.GL_RGBA,
+                        GL30C.GL_HALF_FLOAT,
+                        0L
                 );
             }
-            textures[index] = texture;
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture);
-            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_NEAREST);
-            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_NEAREST);
-            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_S, GL12C.GL_CLAMP_TO_EDGE);
-            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_T, GL12C.GL_CLAMP_TO_EDGE);
-            GL11C.glTexImage2D(
-                    GL11C.GL_TEXTURE_2D,
-                    0,
-                    GL30C.GL_RGBA16F,
-                    width,
-                    height,
-                    0,
-                    GL11C.GL_RGBA,
-                    GL30C.GL_HALF_FLOAT,
-                    0L
-            );
+        } catch (RuntimeException error) {
+            deleteTextures();
+            this.width = 0;
+            this.height = 0;
+            throw error;
+        } finally {
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
         }
-        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
     }
 
     private void releaseUnusedTextures(int count) {
