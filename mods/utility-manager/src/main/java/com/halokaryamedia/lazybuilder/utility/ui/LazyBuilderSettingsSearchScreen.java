@@ -204,7 +204,7 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
     private static List<SearchEntry> entries() {
         List<SearchEntry> values = new ArrayList<>();
 
-        values.add(e("Fullscreen", "window display", LazyBuilderSettingsScreen.Category.VIDEO, LazyBuilderSettingsScreen.VideoPage.DISPLAY));
+        values.add(e("Window Mode", "windowed borderless fullscreen display", LazyBuilderSettingsScreen.Category.VIDEO, LazyBuilderSettingsScreen.VideoPage.DISPLAY));
         values.add(e("V-Sync", "vsync display frame", LazyBuilderSettingsScreen.Category.VIDEO, LazyBuilderSettingsScreen.VideoPage.DISPLAY));
         values.add(e("Frame Rate Limit", "fps display", LazyBuilderSettingsScreen.Category.VIDEO, LazyBuilderSettingsScreen.VideoPage.DISPLAY));
         values.add(e("Brightness", "gamma display", LazyBuilderSettingsScreen.Category.VIDEO, LazyBuilderSettingsScreen.VideoPage.DISPLAY));
@@ -235,6 +235,10 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
 
         for (String controls : List.of("Sensitivity","Invert Mouse","Raw Input","Discrete Mouse Scroll","Mouse Wheel Sensitivity","Auto Jump","Toggle Sneak","Toggle Sprint","Key Bindings")) {
             values.add(e(controls, "controls input keyboard mouse", LazyBuilderSettingsScreen.Category.CONTROLS, LazyBuilderSettingsScreen.VideoPage.QUALITY));
+        }
+
+        for (String chat : List.of("Keep Unsent Message","Search Chat","Extended History","Timestamps","Chat Opacity","Chat Scale","Chat Width","Line Spacing","Show Signing Indicators","Show Report Button")) {
+            values.add(e(chat, "chat messages appearance privacy search", LazyBuilderSettingsScreen.Category.CHAT, LazyBuilderSettingsScreen.VideoPage.QUALITY));
         }
 
         for (String ui : List.of("GUI Scale","Compact Debug HUD","Contextual Screenshot Names","Quick Creative Search")) {
