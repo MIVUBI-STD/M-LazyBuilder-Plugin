@@ -18,6 +18,8 @@ import java.nio.IntBuffer;
  * returning so Minecraft's RenderSystem cache observes the same state it had on entry.
  */
 public final class FirstPartyShaderPostProcessor implements AutoCloseable {
+    private static final String[] POST_PROCESS_PROGRAMS = {"composite", "final"};
+
     private final FirstPartyShaderFramebuffer scene = new FirstPartyShaderFramebuffer();
     private final FirstPartyShaderFramebuffer scratch = new FirstPartyShaderFramebuffer();
     private int fullscreenVao;
@@ -195,7 +197,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             boolean shadowReady
     ) {
         int highest = 0;
-        for (String name : new String[]{"composite", "final"}) {
+        for (String name : POST_PROCESS_PROGRAMS) {
             FirstPartyShaderProgram program = pipeline.program(name);
             if (program == null) continue;
             if (sourceDepthTexture > 0
