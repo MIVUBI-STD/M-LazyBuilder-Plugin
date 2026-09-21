@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.performance.shader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Source-level compatibility gate for LazyBuilder-native Minecraft 1.21.4 terrain shaders.
@@ -12,6 +13,13 @@ import java.util.List;
  * render-type uniform definitions without a second material schema.
  */
 public final class TerrainShaderContract {
+    private static final Pattern GBUFFER_1 = Pattern.compile(
+            "layout\\s*\\(\\s*location\\s*=\\s*1\\s*\\)\\s*out\\s+vec4\\s+LazyBuilderGBuffer1\\s*;"
+    );
+    private static final Pattern GBUFFER_2 = Pattern.compile(
+            "layout\\s*\\(\\s*location\\s*=\\s*2\\s*\\)\\s*out\\s+vec4\\s+LazyBuilderGBuffer2\\s*;"
+    );
+
     private TerrainShaderContract() {
     }
 
@@ -44,11 +52,26 @@ public final class TerrainShaderContract {
         require(fragmentSource, "in vec2 texCoord0", "fragment varying texCoord0", missing);
         require(fragmentSource, "out vec4 fragColor", "fragment output fragColor", missing);
 
+        int gbufferAttachments = gbufferAttachmentCount(fragmentSource);
+        if (GBUFFER_2.matcher(fragmentSource == null ? "" : fragmentSource).find()
+                && gbufferAttachments < 2) {
+            missing.add("GBuffer2 requires GBuffer1");
+        }
+
         if (!missing.isEmpty()) {
             throw new IOException(
                     "Native terrain shader contract is incomplete: " + String.join(", ", missing)
             );
         }
+    }
+
+    public static int gbufferAttachmentCount(String fragmentSource) {
+        String source = fragmentSource == null ? "" : fragmentSource;
+        boolean first = GBUFFER_1.matcher(source).find();
+        boolean second = GBUFFER_2.matcher(source).find();
+        if (first && second) return 2;
+        if (first) return 1;
+        return 0;
     }
 
     private static void requireVersion(
