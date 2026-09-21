@@ -55,6 +55,7 @@ The snapshot currently composes:
 - server readiness;
 - live/detached server runtime summaries;
 - active Launcher operations;
+- Paper World Manager task activity when the active runtime bridge is available;
 - projected capabilities;
 - projection warnings.
 
@@ -113,7 +114,7 @@ BUSY represents a transition or conflicting active operation. DEGRADED means the
 3. No global mutable event bus is introduced.
 4. No idle poller or watcher is introduced merely to keep the snapshot fresh.
 5. UI may use capability/readiness projection for presentation, but execution commands revalidate.
-6. Cross-runtime capability claims must be added only when there is an authoritative observation source.
+6. Cross-runtime capability claims must be added only when there is an authoritative observation source; protocol versions alone are not feature flags.
 7. Unknown state fails closed into unavailable/degraded rather than optimistic readiness.
 8. Projection computation should stay cheap enough for explicit refresh or event-triggered refresh.
 
@@ -121,9 +122,10 @@ BUSY represents a transition or conflicting active operation. DEGRADED means the
 
 1. Launcher SystemSnapshot and local capability projection — implemented.
 2. Launcher shell consumes the snapshot for workspace/runtime composition instead of rebuilding those joins in Svelte — implemented.
-3. Paper task snapshots are projected into a unified activity view without moving task ownership — next.
-4. Cross-runtime capability handshake is added to the existing versioned protocols — later.
-5. Typed invalidation signals refresh only affected projections — later.
-6. Runtime proof verifies degraded/recovery transitions on a real Windows/Minecraft environment — acceptance layer.
+3. Paper task snapshots are projected into one Activity view with Launcher operations while Paper keeps task ownership — implemented.
+4. World Manager advertises explicit bridge capabilities; `world.manage` readiness is gated by that handshake rather than version guessing — implemented for the Desktop ↔ Paper boundary.
+5. Extend capability discovery to Fabric managers using their existing versioned boundaries — next.
+6. Typed invalidation signals refresh only affected projections — next.
+7. Runtime proof verifies degraded/recovery transitions on a real Windows/Minecraft environment — acceptance layer.
 
 Do not jump directly to a generic event bus, distributed state store, or universal scheduler.
