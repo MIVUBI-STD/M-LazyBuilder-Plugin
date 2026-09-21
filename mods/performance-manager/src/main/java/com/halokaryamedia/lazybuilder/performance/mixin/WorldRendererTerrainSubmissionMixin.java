@@ -11,6 +11,7 @@ import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawSubm
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPerDrawShaderBackend;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainSubmissionPolicy;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainVisibleDrawSnapshot;
 import com.mojang.blaze3d.systems.RenderSystem;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectListIterator;
@@ -50,6 +51,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Unique private VertexBuffer lazybuilder$physicalPreparedBuffer;
     @Unique private VertexBuffer lazybuilder$blockedVanillaFallbackBuffer;
     @Unique private TerrainDrawTransformStream.Builder[] lazybuilder$transformBuilders;
+    @Unique private long lazybuilder$visibleSnapshotRevision;
 
     @Inject(method = "applyFrustum", at = @At("TAIL"))
     private void lazybuilder$invalidateAfterFrustum(Frustum frustum, CallbackInfo ci) {
@@ -76,6 +78,14 @@ abstract class WorldRendererTerrainSubmissionMixin {
         this.lazybuilder$physicalPreparedBuffer = null;
         this.lazybuilder$blockedVanillaFallbackBuffer = null;
 
+        if (this.lazybuilder$cachedVisibleCount != this.builtChunks.size()) {
+            this.lazybuilder$submissionIndexDirty = true;
+        }
+
+        if (this.lazybuilder$submissionIndexDirty) {
+            this.lazybuilder$rebuildSubmissionIndex();
+        }
+
         if (!PerformanceManagerClient.preferences().renderingOptimizations()) {
             this.lazybuilder$submissionIndexActive = false;
             TerrainArenaDrawDiagnostics.clear();
@@ -92,13 +102,6 @@ abstract class WorldRendererTerrainSubmissionMixin {
             return;
         }
 
-        if (this.lazybuilder$cachedVisibleCount != this.builtChunks.size()) {
-            this.lazybuilder$submissionIndexDirty = true;
-        }
-
-        if (this.lazybuilder$submissionIndexDirty) {
-            this.lazybuilder$rebuildSubmissionIndex();
-        }
         this.lazybuilder$publishTransformStream(layer, x, y, z);
     }
 
@@ -291,7 +294,49 @@ abstract class WorldRendererTerrainSubmissionMixin {
                 layerEntries
         );
         this.lazybuilder$submissionIndexDirty = false;
+        this.lazybuilder$publishVisibleDrawSnapshot();
         this.lazybuilder$publishArenaDrawPlan();
+    }
+
+    @Unique
+    private void lazybuilder$publishVisibleDrawSnapshot() {
+        int expected = this.lazybuilder$solid.size()
+                + this.lazybuilder$cutoutMipped.size()
+                + this.lazybuilder$cutout.size()
+                + this.lazybuilder$translucent.size()
+                + this.lazybuilder$tripwire.size();
+
+        TerrainVisibleDrawSnapshot.Builder builder =
+                TerrainVisibleDrawSnapshot.builder(expected)
+                        .revision(++this.lazybuilder$visibleSnapshotRevision);
+
+        this.lazybuilder$appendVisibleSnapshotLayer(builder, this.lazybuilder$solid, RenderLayer.getSolid(), 0);
+        this.lazybuilder$appendVisibleSnapshotLayer(builder, this.lazybuilder$cutoutMipped, RenderLayer.getCutoutMipped(), 1);
+        this.lazybuilder$appendVisibleSnapshotLayer(builder, this.lazybuilder$cutout, RenderLayer.getCutout(), 2);
+        this.lazybuilder$appendVisibleSnapshotLayer(builder, this.lazybuilder$translucent, RenderLayer.getTranslucent(), 3);
+        this.lazybuilder$appendVisibleSnapshotLayer(builder, this.lazybuilder$tripwire, RenderLayer.getTripwire(), 4);
+
+        TerrainVisibleDrawSnapshot.publish(builder.finish());
+    }
+
+    @Unique
+    private void lazybuilder$appendVisibleSnapshotLayer(
+            TerrainVisibleDrawSnapshot.Builder builder,
+            ObjectArrayList<ChunkBuilder.BuiltChunk> chunks,
+            RenderLayer layer,
+            int layerSlot
+    ) {
+        for (ChunkBuilder.BuiltChunk chunk : chunks) {
+            VertexBuffer buffer = chunk.getBuffer(layer);
+            BlockPos origin = chunk.getOrigin();
+            builder.add(
+                    buffer,
+                    layerSlot,
+                    origin.getX(),
+                    origin.getY(),
+                    origin.getZ()
+            );
+        }
     }
 
     @Unique
