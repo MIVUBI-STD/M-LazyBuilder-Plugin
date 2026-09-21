@@ -54,11 +54,10 @@ public final class TerrainMultiDrawSubmissionBackend {
         List<Run> runs = planRuns(packet);
         for (Run run : runs) {
             if (run.commandCount() < 2 || !runtimeSourcesPresent(run)) continue;
-            VertexBuffer first = run.commandAt(0).source();
+            VertexBuffer first = run.sourceAt(0);
             STARTS.put(first, run);
             for (int index = 0; index < run.commandCount(); index++) {
-                TerrainMultiDrawCommandStream.PackedCommand command = run.commandAt(index);
-                MEMBERS.put(command.source(), run);
+                MEMBERS.put(run.sourceAt(index), run);
             }
         }
 
@@ -83,8 +82,8 @@ public final class TerrainMultiDrawSubmissionBackend {
         if (startRun == null || startRun.failed) return BindAction.NONE;
 
         for (int index = 0; index < startRun.commandCount(); index++) {
-            TerrainMultiDrawCommandStream.PackedCommand command = startRun.commandAt(index);
-            if (command.source() == null || !TerrainPhysicalArenaManager.bind(command.source())) {
+            VertexBuffer source = startRun.sourceAt(index);
+            if (source == null || !TerrainPhysicalArenaManager.bind(source)) {
                 startRun.failed = true;
                 status = "physical-residency-fallback";
                 return BindAction.NONE;
@@ -108,7 +107,7 @@ public final class TerrainMultiDrawSubmissionBackend {
 
         Run run = pendingRun;
         pendingRun = null;
-        if (run == null || run.failed || run.commandAt(0).source() != source) return DrawAction.NONE;
+        if (run == null || run.failed || run.sourceAt(0) != source) return DrawAction.NONE;
 
         if (!submit(run)) {
             run.failed = true;
@@ -128,37 +127,37 @@ public final class TerrainMultiDrawSubmissionBackend {
     }
 
     static List<Run> planRuns(TerrainMultiDrawCommandStream.LayerPacket packet) {
-        if (packet == null || packet.commands().isEmpty()) return List.of();
+        if (packet == null || packet.commandCount() == 0) return List.of();
 
-        List<TerrainMultiDrawCommandStream.PackedCommand> commands = packet.commands();
         List<Run> runs = new ArrayList<>();
         int runStart = -1;
-        TerrainMultiDrawCommandStream.PackedCommand previous = null;
 
-        for (int index = 0; index < commands.size(); index++) {
-            TerrainMultiDrawCommandStream.PackedCommand command = commands.get(index);
-            if (command == null) {
-                flushRun(runs, commands, runStart, index);
-                runStart = -1;
-                previous = null;
+        for (int index = 0; index < packet.commandCount(); index++) {
+            if (runStart < 0) {
+                runStart = index;
                 continue;
             }
 
-            if (previous == null || !sameRun(previous, command)) {
-                flushRun(runs, commands, runStart, index);
+            if (!sameRun(packet, index - 1, index)) {
+                flushRun(runs, packet, runStart, index);
                 runStart = index;
             }
-            previous = command;
         }
-        flushRun(runs, commands, runStart, commands.size());
+
+        flushRun(runs, packet, runStart, packet.commandCount());
         return runs;
     }
 
     private static boolean submit(Run run) {
         if (run == null || activeProgram == null || run.commandCount() < 2) return false;
-        TerrainMultiDrawCommandStream.PackedCommand first = run.commandAt(0);
-        TerrainArenaDrawStateRegistry.DrawState state = first.arenaCommand().state();
-        if (state == null || !TerrainPerDrawShaderBackend.beginMultiDraw(activeProgram, first.transformIndex())) {
+        TerrainArenaDrawPlanner.Command firstArena = run.arenaCommandAt(0);
+        TerrainArenaDrawStateRegistry.DrawState state =
+                firstArena == null ? null : firstArena.state();
+        if (state == null
+                || !TerrainPerDrawShaderBackend.beginMultiDraw(
+                activeProgram,
+                run.transformIndexAt(0)
+        )) {
             return false;
         }
 
@@ -177,10 +176,9 @@ public final class TerrainMultiDrawSubmissionBackend {
             IntBuffer baseVertices = stack.mallocInt(count);
 
             for (int commandIndex = 0; commandIndex < run.commandCount(); commandIndex++) {
-                TerrainMultiDrawCommandStream.PackedCommand command = run.commandAt(commandIndex);
-                counts.put(command.indexCount());
-                offsets.put(customIndices ? command.indexByteOffset() : 0L);
-                baseVertices.put(command.baseVertex());
+                counts.put(run.indexCountAt(commandIndex));
+                offsets.put(customIndices ? run.indexByteOffsetAt(commandIndex) : 0L);
+                baseVertices.put(run.baseVertexAt(commandIndex));
             }
             counts.flip();
             offsets.flip();
@@ -194,14 +192,14 @@ public final class TerrainMultiDrawSubmissionBackend {
                     baseVertices
             );
             TerrainPhysicalArenaManager.recordMultiDrawSuccess(
-                    run.commands,
+                    run.packet,
                     run.start,
                     run.end
             );
             return true;
         } catch (RuntimeException ex) {
             TerrainPhysicalArenaManager.recordMultiDrawFailure(
-                    run.commands,
+                    run.packet,
                     run.start,
                     run.end
             );
@@ -212,12 +210,14 @@ public final class TerrainMultiDrawSubmissionBackend {
     }
 
     private static boolean sameRun(
-            TerrainMultiDrawCommandStream.PackedCommand left,
-            TerrainMultiDrawCommandStream.PackedCommand right
+            TerrainMultiDrawCommandStream.LayerPacket packet,
+            int leftIndex,
+            int rightIndex
     ) {
-        if (left.orderIndex() + 1 != right.orderIndex()) return false;
-        TerrainArenaDrawPlanner.Command leftArena = left.arenaCommand();
-        TerrainArenaDrawPlanner.Command rightArena = right.arenaCommand();
+        if (packet.orderIndex(leftIndex) + 1 != packet.orderIndex(rightIndex)) return false;
+
+        TerrainArenaDrawPlanner.Command leftArena = packet.arenaCommand(leftIndex);
+        TerrainArenaDrawPlanner.Command rightArena = packet.arenaCommand(rightIndex);
         if (leftArena == null || rightArena == null
                 || leftArena.handle() == null || rightArena.handle() == null
                 || leftArena.state() == null || rightArena.state() == null) {
@@ -235,18 +235,18 @@ public final class TerrainMultiDrawSubmissionBackend {
 
     private static void flushRun(
             List<Run> runs,
-            List<TerrainMultiDrawCommandStream.PackedCommand> commands,
+            TerrainMultiDrawCommandStream.LayerPacket packet,
             int start,
             int end
     ) {
-        if (commands != null && start >= 0 && end - start > 1) {
-            runs.add(new Run(commands, start, end));
+        if (packet != null && start >= 0 && end - start > 1) {
+            runs.add(new Run(packet, start, end));
         }
     }
 
     private static boolean runtimeSourcesPresent(Run run) {
         for (int index = 0; index < run.commandCount(); index++) {
-            if (run.commandAt(index).source() == null) return false;
+            if (run.sourceAt(index) == null) return false;
         }
         return true;
     }
@@ -314,27 +314,44 @@ public final class TerrainMultiDrawSubmissionBackend {
     }
 
     static final class Run {
-        private final List<TerrainMultiDrawCommandStream.PackedCommand> commands;
+        private final TerrainMultiDrawCommandStream.LayerPacket packet;
         private final int start;
         private final int end;
         private boolean submitted;
         private boolean failed;
 
         private Run(
-                List<TerrainMultiDrawCommandStream.PackedCommand> commands,
+                TerrainMultiDrawCommandStream.LayerPacket packet,
                 int start,
                 int end
         ) {
-            this.commands = commands;
+            this.packet = packet;
             this.start = start;
             this.end = end;
         }
 
-        TerrainMultiDrawCommandStream.PackedCommand commandAt(int index) {
-            if (index < 0 || index >= commandCount()) {
-                throw new IndexOutOfBoundsException(index);
-            }
-            return commands.get(start + index);
+        VertexBuffer sourceAt(int index) {
+            return packet.source(start + index);
+        }
+
+        TerrainArenaDrawPlanner.Command arenaCommandAt(int index) {
+            return packet.arenaCommand(start + index);
+        }
+
+        int indexCountAt(int index) {
+            return packet.indexCount(start + index);
+        }
+
+        long indexByteOffsetAt(int index) {
+            return packet.indexByteOffset(start + index);
+        }
+
+        int baseVertexAt(int index) {
+            return packet.baseVertex(start + index);
+        }
+
+        int transformIndexAt(int index) {
+            return packet.transformIndex(start + index);
         }
 
         public int commandCount() {
