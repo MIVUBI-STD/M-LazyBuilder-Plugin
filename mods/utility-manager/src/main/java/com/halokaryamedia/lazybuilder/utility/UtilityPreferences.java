@@ -37,6 +37,23 @@ public record UtilityPreferences(
         );
     }
 
+    public UtilityPreferences withSuppressNarrator(boolean enabled) {
+        return new UtilityPreferences(
+                borderlessWindow,
+                extendedChatHistory,
+                keepChatDraft,
+                chatSearch,
+                chatTimestamps,
+                hideChatSigningIndicators,
+                hideChatReportButton,
+                enabled,
+                reconnectButton,
+                contextualScreenshotNames,
+                instantCreativeSearch,
+                compactDebugHud
+        );
+    }
+
     public UtilityPreferences withContextualScreenshotNames(boolean enabled) {
         return copy(enabled, instantCreativeSearch, compactDebugHud);
     }
