@@ -86,7 +86,9 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                 .registerReloadListener(new PerformanceShaderReloadInvalidator());
 
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
-            if (shaderRuntime != null) shaderRuntime.activateConfiguredSelection();
+            if (shaderRuntime != null && firstPartyShaderOwnershipAllowed()) {
+                shaderRuntime.activateConfiguredSelection();
+            }
         });
 
         WorldRenderEvents.START.register(context -> beginFirstPartyShaderFrame());
@@ -100,7 +102,9 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             runtime.tick(client);
             FirstPartyShaderRuntime shaders = shaderRuntime;
-            if (shaders != null && shaders.consumeTerrainReloadRequest()) {
+            if (firstPartyShaderOwnershipAllowed()
+                    && shaders != null
+                    && shaders.consumeTerrainReloadRequest()) {
                 client.reloadResources();
             }
         });
@@ -108,7 +112,11 @@ public final class PerformanceManagerClient implements ClientModInitializer {
 
     private static void renderFirstPartyShadow(WorldRenderContext context) {
         FirstPartyShaderRuntime shaders = shaderRuntime;
-        if (shaders == null || context == null || context.camera() == null || context.world() == null) {
+        if (!firstPartyShaderOwnershipAllowed()
+                || shaders == null
+                || context == null
+                || context.camera() == null
+                || context.world() == null) {
             return;
         }
 
@@ -123,7 +131,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
 
     private static void beginFirstPartyShaderFrame() {
         FirstPartyShaderRuntime shaders = shaderRuntime;
-        if (shaders == null) return;
+        if (!firstPartyShaderOwnershipAllowed() || shaders == null) return;
 
         FirstPartyShaderRuntime.Snapshot snapshot = shaders.snapshot();
         if (!snapshot.compiledReady()
@@ -150,7 +158,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
             long nowNanos
     ) {
         FirstPartyShaderRuntime shaders = shaderRuntime;
-        if (shaders == null) return;
+        if (!firstPartyShaderOwnershipAllowed() || shaders == null) return;
 
         FirstPartyShaderRuntime.Snapshot snapshot = shaders.snapshot();
         if (!snapshot.compiledReady() || !snapshot.postProcessReady()) return;
@@ -225,11 +233,30 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     }
 
     private static Map<String, Object> shaderSnapshot() {
-        return shaderRuntime == null ? Map.of(
-                "owner", "lazybuilder",
-                "stage", "runtime-unavailable",
-                "renderingReady", false
-        ) : shaderRuntime.snapshotMap();
+        if (shaderRuntime == null) {
+            return Map.of(
+                    "owner", "lazybuilder",
+                    "stage", "runtime-unavailable",
+                    "renderingReady", false
+            );
+        }
+
+        Map<String, Object> base = shaderRuntime.snapshotMap();
+        RendererCompatibility.Snapshot renderer = RendererCompatibility.detect();
+        if (firstPartyShaderOwnershipAllowed(renderer)) return base;
+
+        Map<String, Object> values = new LinkedHashMap<>(base);
+        values.put("stage", "external-owner");
+        values.put("renderingReady", false);
+        values.put("terrainIntegrated", false);
+        values.put("compatibilityBlocked", true);
+        values.put("compatibilityOwner", renderer.ownerSummary());
+        values.put(
+                "lastError",
+                "First-party shaders are disabled while " + renderer.ownerSummary()
+                        + " owns the renderer/shader path."
+        );
+        return Map.copyOf(values);
     }
 
     private static void refreshShaderPacks() {
@@ -241,7 +268,9 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     }
 
     private static void compileSelectedShaderPack() {
-        if (shaderRuntime != null) shaderRuntime.compileSelected();
+        if (shaderRuntime != null && firstPartyShaderOwnershipAllowed()) {
+            shaderRuntime.compileSelected();
+        }
     }
 
     private static void disableShaderPipeline() {
@@ -290,6 +319,17 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         values.put("dependencies", result.dependencies());
         values.put("error", result.error());
         return Map.copyOf(values);
+    }
+
+    private static boolean firstPartyShaderOwnershipAllowed() {
+        return firstPartyShaderOwnershipAllowed(RendererCompatibility.detect());
+    }
+
+    private static boolean firstPartyShaderOwnershipAllowed(RendererCompatibility.Snapshot renderer) {
+        return renderer != null
+                && !renderer.uncertain()
+                && !renderer.customRendererPresent()
+                && !renderer.irisPresent();
     }
 
     private static Map<String, Object> settingsSnapshot() {
