@@ -21,6 +21,10 @@ public final class PerformanceShaderReloadInvalidator implements SimpleSynchrono
 
     @Override
     public void reload(ResourceManager manager) {
+        invalidateShaderSensitiveState();
+    }
+
+    public static void invalidateShaderSensitiveState() {
         TerrainShaderCompileFallbackState.reset();
         TerrainShaderSourceTransformer.invalidateForResourceReload();
         TerrainMultiDrawSubmissionBackend.invalidateForShaderReload();
