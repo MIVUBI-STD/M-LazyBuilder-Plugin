@@ -42,6 +42,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     private static volatile long shaderOnlyReloadRequests;
     private static volatile long shaderOnlyReloadSuccesses;
     private static volatile long shaderOnlyReloadFailures;
+    private static volatile long shaderTerrainReloadGeneration = -1L;
     private static volatile boolean shaderTerrainReloadInFlight;
 
     @Override
@@ -117,6 +118,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
 
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             shaderTerrainReloadInFlight = false;
+            shaderTerrainReloadGeneration = -1L;
             FirstPartyShaderRuntime shaders = shaderRuntime;
             shaderRuntime = null;
             if (shaders != null) shaders.shutdown();
@@ -135,25 +137,32 @@ public final class PerformanceManagerClient implements ClientModInitializer {
             FirstPartyShaderRuntime shaders = shaderRuntime;
             if (firstPartyShaderOwnershipAllowed()
                     && shaders != null
-                    && !shaderTerrainReloadInFlight
-                    && shaders.consumeTerrainReloadRequest()) {
-                shaderTerrainReloadInFlight = true;
-                shaderOnlyReloadRequests++;
-                reloadMinecraftShaders(client).whenComplete((ignored, error) ->
-                        client.execute(() -> {
-                            shaderTerrainReloadInFlight = false;
-                            FirstPartyShaderRuntime current = shaderRuntime;
-                            if (current == null) return;
-                            Throwable cause = unwrap(error);
-                            if (cause == null) shaderOnlyReloadSuccesses++;
-                            else shaderOnlyReloadFailures++;
-                            current.recordTerrainReloadCompletion(
-                                    cause == null,
-                                    cause == null ? "" : safeThrowableMessage(cause),
-                                    TerrainShaderSourceTransformer.status()
-                            );
-                        })
-                );
+                    && !shaderTerrainReloadInFlight) {
+                long reloadGeneration = shaders.consumeTerrainReloadGeneration();
+                if (reloadGeneration >= 0L) {
+                    shaderTerrainReloadInFlight = true;
+                    shaderTerrainReloadGeneration = reloadGeneration;
+                    shaderOnlyReloadRequests++;
+                    reloadMinecraftShaders(client).whenComplete((ignored, error) ->
+                            client.execute(() -> {
+                                shaderTerrainReloadInFlight = false;
+                                if (shaderTerrainReloadGeneration == reloadGeneration) {
+                                    shaderTerrainReloadGeneration = -1L;
+                                }
+                                FirstPartyShaderRuntime current = shaderRuntime;
+                                if (current == null) return;
+                                Throwable cause = unwrap(error);
+                                if (cause == null) shaderOnlyReloadSuccesses++;
+                                else shaderOnlyReloadFailures++;
+                                current.recordTerrainReloadCompletion(
+                                        reloadGeneration,
+                                        cause == null,
+                                        cause == null ? "" : safeThrowableMessage(cause),
+                                        TerrainShaderSourceTransformer.status()
+                                );
+                            })
+                    );
+                }
             }
         });
     }
@@ -337,6 +346,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         values.put("shaderReloadSuccesses", shaderOnlyReloadSuccesses);
         values.put("shaderReloadFailures", shaderOnlyReloadFailures);
         values.put("shaderReloadInFlight", shaderTerrainReloadInFlight);
+        values.put("shaderReloadGeneration", shaderTerrainReloadGeneration);
         return Map.copyOf(values);
     }
 
@@ -403,15 +413,23 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         shaders.applyStagedOptions();
     }
 
+    private static long terrainCallbackGeneration(FirstPartyShaderRuntime shaders) {
+        long targeted = shaderTerrainReloadGeneration;
+        return targeted >= 0L ? targeted : shaders.currentTerrainGeneration();
+    }
+
     public static void invalidateShaderTerrainForResourceReload() {
         if (shaderRuntime != null) shaderRuntime.invalidateTerrainIntegrationForResourceReload();
     }
 
     public static FirstPartyShaderRuntime.TerrainSource firstPartyTerrainSource(boolean vertex) {
         FirstPartyShaderRuntime shaders = shaderRuntime;
-        return shaders == null
-                ? new FirstPartyShaderRuntime.TerrainSource(false, "", "", "Shader runtime unavailable.")
-                : shaders.terrainSource(vertex);
+        if (shaders == null) {
+            return new FirstPartyShaderRuntime.TerrainSource(
+                    false, "", "", "Shader runtime unavailable."
+            );
+        }
+        return shaders.terrainSource(vertex, terrainCallbackGeneration(shaders));
     }
 
     public static void recordFirstPartyTerrainCompile(
@@ -419,13 +437,22 @@ public final class PerformanceManagerClient implements ClientModInitializer {
             boolean success,
             String error
     ) {
-        if (shaderRuntime != null) {
-            shaderRuntime.recordTerrainCompile(vertex, success, error);
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        if (shaders != null) {
+            shaders.recordTerrainCompile(
+                    terrainCallbackGeneration(shaders),
+                    vertex,
+                    success,
+                    error
+            );
         }
     }
 
     public static void recordFirstPartyTerrainProgramLinked() {
-        if (shaderRuntime != null) shaderRuntime.recordTerrainProgramLinked();
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        if (shaders != null) {
+            shaders.recordTerrainProgramLinked(terrainCallbackGeneration(shaders));
+        }
     }
 
     private static Map<String, Object> preprocessShaderSource(String path) {
