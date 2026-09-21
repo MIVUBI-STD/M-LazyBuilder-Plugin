@@ -38,6 +38,8 @@ export type LauncherOperationSnapshot = {
 
 export type SystemReadiness = 'NO_WORKSPACE' | 'NEEDS_ATTENTION' | 'READY' | 'BUSY' | 'DEGRADED';
 export type CapabilityStatus = { key: string; available: boolean; reason: string };
+export type SystemActivitySnapshot = { launcherOperations: LauncherOperationSnapshot[]; worldTasks: WorldTaskSnapshot[]; worldTasksAvailable: boolean; warnings: string[] };
+
 export type SystemSnapshot = {
   readiness: SystemReadiness;
   workspace?: WorkspaceEntry | null;
