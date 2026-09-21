@@ -6,6 +6,8 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -73,12 +75,18 @@ public interface ShaderPackSource {
 
         @Override
         public String readText(String relativePath) throws IOException {
-            Path resolved = resolve(relativePath);
+            String normalized = normalizeRelativePath(relativePath);
+            String cached = textCache.get(normalized);
+            if (cached != null) return cached;
+
+            Path resolved = resolve(normalized);
             long size = Files.size(resolved);
             if (size > MAX_SOURCE_BYTES) {
                 throw new IOException("Shader source exceeds size limit: " + relativePath);
             }
-            return Files.readString(resolved, StandardCharsets.UTF_8);
+            String text = Files.readString(resolved, StandardCharsets.UTF_8);
+            textCache.put(normalized, text);
+            return text;
         }
 
         private Path resolve(String relativePath) {
@@ -92,6 +100,7 @@ public interface ShaderPackSource {
 
     final class DirectorySession implements Session {
         private final Path root;
+        private final Map<String, String> textCache = new HashMap<>();
 
         DirectorySession(Path root) {
             this.root = root.toAbsolutePath().normalize();
@@ -122,11 +131,13 @@ public interface ShaderPackSource {
 
         @Override
         public void close() {
+            textCache.clear();
         }
     }
 
     final class ZipSession implements Session {
         private final ZipFile file;
+        private final Map<String, String> textCache = new HashMap<>();
 
         ZipSession(Path zip) throws IOException {
             this.file = new ZipFile(zip.toFile());
@@ -141,6 +152,9 @@ public interface ShaderPackSource {
         @Override
         public String readText(String relativePath) throws IOException {
             String target = normalizeRelativePath(relativePath);
+            String cached = textCache.get(target);
+            if (cached != null) return cached;
+
             ZipEntry entry = file.getEntry(target);
             if (entry == null || entry.isDirectory()) {
                 throw new IOException("Missing shader source: " + relativePath);
@@ -167,12 +181,15 @@ public interface ShaderPackSource {
                     }
                     output.write(buffer, 0, read);
                 }
-                return output.toString(StandardCharsets.UTF_8);
+                String text = output.toString(StandardCharsets.UTF_8);
+                textCache.put(target, text);
+                return text;
             }
         }
 
         @Override
         public void close() throws IOException {
+            textCache.clear();
             file.close();
         }
     }
