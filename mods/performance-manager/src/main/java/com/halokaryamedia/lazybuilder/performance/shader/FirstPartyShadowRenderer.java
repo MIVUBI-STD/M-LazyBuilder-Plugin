@@ -117,19 +117,19 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                 throw new IllegalStateException("Shadow program lost LazyBuilderModelOffset");
             }
 
-            for (TerrainVisibleDrawSnapshot.Entry entry : visible.entries()) {
+            for (int index = 0; index < visible.size(); index++) {
                 // Only fully opaque terrain in the first native shadow stage.
-                if (entry.layerSlot() != 0 || !entry.usable()) {
+                if (visible.layerSlot(index) != 0 || !visible.usable(index)) {
                     skipped++;
                     continue;
                 }
 
-                VertexBuffer buffer = entry.buffer();
+                VertexBuffer buffer = visible.buffer(index);
                 GL20C.glUniform3f(
                         offsetLocation,
-                        entry.originX() - centerX,
-                        entry.originY() - centerY,
-                        entry.originZ() - centerZ
+                        visible.originX(index) - centerX,
+                        visible.originY(index) - centerY,
+                        visible.originZ(index) - centerZ
                 );
 
                 boolean rendered = false;
