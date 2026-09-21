@@ -241,6 +241,17 @@ public final class LazyBuilderShaderScreen extends Screen {
                         : 0xFFFFA7A7
         );
 
+        if (state.invalidPackCount() > 0) {
+            textY += 14;
+            context.drawTextWithShadow(
+                    textRenderer,
+                    Text.literal(state.invalidPackCount() + " invalid shader pack(s) skipped"),
+                    textX,
+                    textY,
+                    0xFFFFC97A
+            );
+        }
+
         if (compact) {
             textY += 14;
             String details = "Terrain " + yesNo(state.terrainIntegrated())
