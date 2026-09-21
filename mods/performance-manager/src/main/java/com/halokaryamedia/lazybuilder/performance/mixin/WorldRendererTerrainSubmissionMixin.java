@@ -16,6 +16,7 @@ import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArena
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainSubmissionPolicy;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainVisibleDrawSnapshot;
 import com.mojang.blaze3d.systems.RenderSystem;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectListIterator;
 import net.minecraft.client.gl.ShaderProgram;
@@ -36,7 +37,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-import java.util.HashSet;
 
 
 /** Builds indexed terrain submission and guarded physical/multi-draw execution paths. */
@@ -58,6 +58,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Unique private VertexBuffer lazybuilder$blockedVanillaFallbackBuffer;
     @Unique private TerrainDrawTransformStream.Builder[] lazybuilder$transformBuilders;
     @Unique private TerrainVisibleDrawSnapshot.Builder lazybuilder$visibleSnapshotBuilder;
+    @Unique private LongOpenHashSet lazybuilder$openSections;
     @Unique private long lazybuilder$terrainCpuStartNanos;
 
     @Inject(method = "applyFrustum", at = @At("TAIL"))
@@ -282,6 +283,9 @@ abstract class WorldRendererTerrainSubmissionMixin {
         if (this.lazybuilder$visibleSnapshotBuilder == null) {
             this.lazybuilder$visibleSnapshotBuilder = new TerrainVisibleDrawSnapshot.Builder();
         }
+        if (this.lazybuilder$openSections == null) {
+            this.lazybuilder$openSections = new LongOpenHashSet();
+        }
     }
 
     @Unique
@@ -298,7 +302,8 @@ abstract class WorldRendererTerrainSubmissionMixin {
         RenderLayer cutout = RenderLayer.getCutout();
         RenderLayer translucent = RenderLayer.getTranslucent();
         RenderLayer tripwire = RenderLayer.getTripwire();
-        HashSet<Long> openSections = new HashSet<>();
+        LongOpenHashSet openSections = this.lazybuilder$openSections;
+        openSections.clear();
 
         for (ChunkBuilder.BuiltChunk builtChunk : this.builtChunks) {
             ChunkBuilder.ChunkData data = builtChunk.getData();
