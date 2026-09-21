@@ -35,6 +35,19 @@ export type LauncherOperationSnapshot = {
   completedAtUnixSeconds?: number | null;
 };
 
+
+export type SystemReadiness = 'NO_WORKSPACE' | 'NEEDS_ATTENTION' | 'READY' | 'BUSY' | 'DEGRADED';
+export type CapabilityStatus = { key: string; available: boolean; reason: string };
+export type SystemSnapshot = {
+  readiness: SystemReadiness;
+  workspace?: WorkspaceEntry | null;
+  serverHealth?: ServerReadinessSnapshot | null;
+  runtimes: ServerRuntimeSummary[];
+  activeOperations: LauncherOperationSnapshot[];
+  capabilities: CapabilityStatus[];
+  warnings: string[];
+};
+
 export type WorkspaceEntry = { id: string; name: string; path: string; lastOpenedUnixSeconds: number };
 export type WorkspaceState = { active?: WorkspaceEntry | null; recent: WorkspaceEntry[] };
 export type WorkspaceDuplicateEstimate = { sourceBytes: number; requiredBytes: number; availableBytes?: number | null };
