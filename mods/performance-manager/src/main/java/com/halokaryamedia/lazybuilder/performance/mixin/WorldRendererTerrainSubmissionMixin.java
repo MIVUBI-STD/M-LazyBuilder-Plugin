@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawDiag
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlanner;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainDrawTransformStream;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyTracker;
+import com.halokaryamedia.lazybuilder.performance.rendering.GpuStageTimer;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawCommandStream;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawSubmissionBackend;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPerDrawShaderBackend;
@@ -104,6 +105,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
             return;
         }
 
+        GpuStageTimer.begin(GpuStageTimer.Stage.TERRAIN);
         this.lazybuilder$publishTransformStream(layer, x, y, z);
     }
 
@@ -142,6 +144,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
     ) {
         this.lazybuilder$physicalPreparedBuffer = null;
         this.lazybuilder$blockedVanillaFallbackBuffer = null;
+        GpuStageTimer.end(GpuStageTimer.Stage.TERRAIN);
         TerrainMultiDrawSubmissionBackend.finishLayer();
         TerrainPhysicalArenaManager.noteExternalBind();
     }
