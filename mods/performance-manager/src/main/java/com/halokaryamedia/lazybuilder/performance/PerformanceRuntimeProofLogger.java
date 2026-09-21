@@ -1,6 +1,10 @@
 package com.halokaryamedia.lazybuilder.performance;
 
+import com.halokaryamedia.lazybuilder.performance.compatibility.FirstPartyRendererReadiness;
+import com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility;
+import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +41,20 @@ final class PerformanceRuntimeProofLogger {
         PerformanceSnapshot snapshot = PerformanceSnapshotReader.capture(client, frameMonitor);
         if (snapshot == null) return;
 
+        RendererCompatibility.Snapshot renderer = RendererCompatibility.detect();
+        FabricLoader loader = FabricLoader.getInstance();
+        OptimizationCompatibility.Policy ownership = OptimizationCompatibility.evaluate(
+                renderer,
+                loader.isModLoaded("immediatelyfast"),
+                loader.isModLoaded("entityculling")
+        );
+        FirstPartyRendererReadiness.Snapshot readiness =
+                FirstPartyRendererReadiness.evaluate(renderer, ownership);
+        var shader = PerformanceManagerClient.currentShaderSnapshot();
+        String shaderStage = shader.get("stage") instanceof String value ? value : "unknown";
+        boolean shaderReady = shader.get("renderingReady") instanceof Boolean value && value;
+        boolean terrainIntegrated = shader.get("terrainIntegrated") instanceof Boolean value && value;
+
         sample++;
         LOGGER.info(
                 "LB_PERF_PROOF sample={} fps={} avg_ms={} worst_ms={} pressure={} chunks_upload={} "
@@ -44,7 +62,9 @@ final class PerformanceRuntimeProofLogger {
                         + "physical_draws={} exclusive_buffers={} retired_bytes={} promotions={} "
                         + "recoveries={} recovery_failures={} relocations={} relocation_fallbacks={} "
                         + "rebuild_deferrals={} rebuild_releases={} terrain_buffer_cache_hits={} "
-                        + "multidraw_batches={} multidraw_commands={} multidraw_failures={} renderer={}",
+                        + "multidraw_batches={} multidraw_commands={} multidraw_failures={} renderer={} "
+                        + "standalone_renderer_ready={} renderer_readiness={} "
+                        + "shader_stage={} shader_ready={} shader_terrain={}",
                 sample,
                 snapshot.fps(),
                 snapshot.averageFrameTimeMs(),
@@ -68,7 +88,12 @@ final class PerformanceRuntimeProofLogger {
                 snapshot.terrainMultiDrawSubmittedBatches(),
                 snapshot.terrainMultiDrawSubmittedCommands(),
                 snapshot.terrainMultiDrawSubmissionFailures(),
-                snapshot.rendererPipelineOwner()
+                snapshot.rendererPipelineOwner(),
+                readiness.ready(),
+                readiness.status(),
+                shaderStage,
+                shaderReady,
+                terrainIntegrated
         );
     }
 }
