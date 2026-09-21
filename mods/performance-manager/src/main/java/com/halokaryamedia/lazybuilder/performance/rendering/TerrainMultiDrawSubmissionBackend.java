@@ -31,7 +31,7 @@ public final class TerrainMultiDrawSubmissionBackend {
     private static Run submittedRunToSkip;
     private static int submittedSkipIndex;
     private static VertexBuffer skippedBindSource;
-    private static volatile boolean sessionDisabled;
+    private static final RuntimeCircuitBreaker FAILURE_BREAKER = new RuntimeCircuitBreaker(3);
     private static volatile String status = "inactive";
     private static volatile long prepareAttempts;
     private static volatile long preparedRuns;
@@ -47,8 +47,8 @@ public final class TerrainMultiDrawSubmissionBackend {
         prepareAttempts++;
         clearSession();
 
-        if (sessionDisabled) {
-            status = "session-disabled-after-failure";
+        if (!FAILURE_BREAKER.allow()) {
+            status = "circuit-open-after-failures";
             return false;
         }
 
@@ -176,8 +176,10 @@ public final class TerrainMultiDrawSubmissionBackend {
         if (!submit(run)) {
             run.failed = true;
             submissionFailures++;
-            sessionDisabled = true;
-            status = "session-disabled-after-failure";
+            boolean opened = FAILURE_BREAKER.recordFailure();
+            status = opened
+                    ? "circuit-open-after-failures"
+                    : "submission-failed-fallback";
             clearSession();
             return DrawAction.FALLBACK;
         }
@@ -351,20 +353,23 @@ public final class TerrainMultiDrawSubmissionBackend {
                 submittedCommands,
                 reducedDrawCalls,
                 submissionFailures,
-                sessionDisabled
+                FAILURE_BREAKER.open()
         );
     }
 
     public static void finishLayer() {
         if (activeProgram != null) TerrainPerDrawShaderBackend.endMultiDraw(activeProgram);
         clearSession();
-        if (!sessionDisabled && ("active".equals(status) || "ready".equals(status))) status = "inactive";
+        if (FAILURE_BREAKER.allow()
+                && ("active".equals(status) || "ready".equals(status))) {
+            status = "inactive";
+        }
     }
 
     public static void clear() {
         if (activeProgram != null) TerrainPerDrawShaderBackend.endMultiDraw(activeProgram);
         clearSession();
-        sessionDisabled = false;
+        FAILURE_BREAKER.reset();
         status = "inactive";
         prepareAttempts = 0L;
         preparedRuns = 0L;
@@ -380,7 +385,7 @@ public final class TerrainMultiDrawSubmissionBackend {
      */
     public static void invalidateForShaderReload() {
         clearSession();
-        sessionDisabled = false;
+        FAILURE_BREAKER.reset();
         status = "shader-reload";
     }
 
