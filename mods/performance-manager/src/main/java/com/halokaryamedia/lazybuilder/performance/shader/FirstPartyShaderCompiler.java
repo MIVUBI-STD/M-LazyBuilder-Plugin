@@ -26,8 +26,6 @@ public final class FirstPartyShaderCompiler {
             ShaderPipelineDefinition.Program program,
             Map<String, String> defines
     ) throws IOException, ShaderCompileException {
-        RenderSystem.assertOnRenderThread();
-
         ShaderSourcePreprocessor.Result vertex = ShaderSourcePreprocessor.preprocess(
                 source,
                 program.vertexPath(),
@@ -38,39 +36,55 @@ public final class FirstPartyShaderCompiler {
                 program.fragmentPath(),
                 defines
         );
+        validate(program.name(), vertex.source(), fragmentSource);
+        return compilePrepared(program.name(), vertex.source(), fragmentSource);
+    }
 
-        if ("terrain".equals(program.name())) {
-            TerrainShaderContract.validate(vertex.source(), fragment.source());
-        } else if ("shadow".equals(program.name())) {
-            ShadowShaderContract.validate(vertex.source(), fragment.source());
-        } else if ("composite".equals(program.name()) || "final".equals(program.name())) {
+    static void validate(
+            String programName,
+            String vertexSource,
+            String fragmentSource
+    ) throws IOException {
+        if ("terrain".equals(programName)) {
+            TerrainShaderContract.validate(vertexSource, fragmentSource);
+        } else if ("shadow".equals(programName)) {
+            ShadowShaderContract.validate(vertexSource, fragmentSource);
+        } else if ("composite".equals(programName) || "final".equals(programName)) {
             PostProcessShaderContract.validate(
-                    program.name(),
-                    vertex.source(),
-                    fragment.source()
+                    programName,
+                    vertexSource,
+                    fragmentSource
             );
         }
+    }
+
+    static FirstPartyShaderProgram compilePrepared(
+            String programName,
+            String vertexSource,
+            String fragmentSource
+    ) throws ShaderCompileException {
+        RenderSystem.assertOnRenderThread();
 
         int vertexShader = compileStage(
-                program.name() + ":vertex",
+                programName + ":vertex",
                 GL20C.GL_VERTEX_SHADER,
-                vertex.source()
+                vertexSource
         );
         int fragmentShader = 0;
         int linkedProgram = 0;
 
         try {
             fragmentShader = compileStage(
-                    program.name() + ":fragment",
+                    programName + ":fragment",
                     GL20C.GL_FRAGMENT_SHADER,
-                    fragment.source()
+                    fragmentSource
             );
 
             linkedProgram = GL20C.glCreateProgram();
             GL20C.glAttachShader(linkedProgram, vertexShader);
             GL20C.glAttachShader(linkedProgram, fragmentShader);
 
-            if ("terrain".equals(program.name()) || "shadow".equals(program.name())) {
+            if ("terrain".equals(programName) || "shadow".equals(programName)) {
                 VertexFormats.POSITION_COLOR_TEXTURE_LIGHT_NORMAL.bindAttributes(linkedProgram);
             }
 
@@ -79,13 +93,13 @@ public final class FirstPartyShaderCompiler {
             if (GL20C.glGetProgrami(linkedProgram, GL20C.GL_LINK_STATUS) == GL20C.GL_FALSE) {
                 String log = trimLog(GL20C.glGetProgramInfoLog(linkedProgram));
                 throw new ShaderCompileException(
-                        program.name(),
+                        programName,
                         Stage.LINK,
                         log.isBlank() ? "Shader program failed to link." : log
                 );
             }
 
-            return new FirstPartyShaderProgram(program.name(), linkedProgram);
+            return new FirstPartyShaderProgram(programName, linkedProgram);
         } catch (RuntimeException | ShaderCompileException error) {
             if (linkedProgram != 0) GL20C.glDeleteProgram(linkedProgram);
             throw error;
