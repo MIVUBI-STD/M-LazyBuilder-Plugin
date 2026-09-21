@@ -10,19 +10,22 @@ import org.lwjgl.system.MemoryStack;
 
 import java.nio.IntBuffer;
 import java.util.ArrayList;
-import java.util.IdentityHashMap;
 import java.util.List;
 
 /** Guarded true multi-draw submission for shaders satisfying the LazyBuilder transform contract. */
 public final class TerrainMultiDrawSubmissionBackend {
-    private static final IdentityHashMap<VertexBuffer, Run> STARTS = new IdentityHashMap<>();
-    private static final IdentityHashMap<VertexBuffer, Run> MEMBERS = new IdentityHashMap<>();
     private static final ArrayList<Run> RUN_POOL = new ArrayList<>();
     private static final ArrayList<Run> PLANNED_RUNS = new ArrayList<>();
     private static int runPoolCursor;
 
     private static ShaderProgram activeProgram;
+    private static TerrainMultiDrawCommandStream.LayerPacket activePacket;
+    private static int packetCursor;
+    private static int plannedRunCursor;
     private static Run pendingRun;
+    private static Run submittedRunToSkip;
+    private static int submittedSkipIndex;
+    private static VertexBuffer skippedBindSource;
     private static volatile boolean sessionDisabled;
     private static volatile String status = "inactive";
     private static volatile long prepareAttempts;
@@ -55,58 +58,111 @@ public final class TerrainMultiDrawSubmissionBackend {
         }
 
         List<Run> runs = planRuns(packet);
+        int usableRuns = 0;
         for (Run run : runs) {
-            if (run.commandCount() < 2 || !runtimeSourcesPresent(run)) continue;
-            VertexBuffer first = run.sourceAt(0);
-            STARTS.put(first, run);
-            for (int index = 0; index < run.commandCount(); index++) {
-                MEMBERS.put(run.sourceAt(index), run);
-            }
+            if (run.commandCount() >= 2 && runtimeSourcesPresent(run)) usableRuns++;
         }
 
-        if (STARTS.isEmpty()) {
+        if (usableRuns == 0) {
             status = "no-multi-draw-runs";
             return false;
         }
 
         activeProgram = program;
-        preparedRuns += STARTS.size();
+        activePacket = packet;
+        packetCursor = 0;
+        plannedRunCursor = 0;
+        submittedRunToSkip = null;
+        submittedSkipIndex = -1;
+        skippedBindSource = null;
+        preparedRuns += usableRuns;
         status = "ready";
         return true;
     }
 
     public static BindAction onBind(VertexBuffer source) {
-        if (source == null || activeProgram == null || !RenderSystem.isOnRenderThread()) return BindAction.NONE;
-        Run memberRun = MEMBERS.get(source);
-        if (memberRun == null) return BindAction.NONE;
-        if (memberRun.submitted) return BindAction.SKIP;
+        if (source == null
+                || activeProgram == null
+                || activePacket == null
+                || !RenderSystem.isOnRenderThread()) {
+            return BindAction.NONE;
+        }
 
-        Run startRun = STARTS.get(source);
-        if (startRun == null || startRun.failed) return BindAction.NONE;
+        // A submitted multi-draw run already rendered its remaining members.
+        // Skip those vanilla callbacks without any identity-map lookup.
+        Run skipRun = submittedRunToSkip;
+        if (skipRun != null && submittedSkipIndex >= 0 && submittedSkipIndex < skipRun.end) {
+            VertexBuffer expectedSkip = skipRun.packet.source(submittedSkipIndex);
+            if (source == expectedSkip) {
+                submittedSkipIndex++;
+                skippedBindSource = source;
+                if (submittedSkipIndex >= skipRun.end) {
+                    submittedRunToSkip = null;
+                    submittedSkipIndex = -1;
+                }
+                return BindAction.SKIP;
+            }
 
-        for (int index = 0; index < startRun.commandCount(); index++) {
-            VertexBuffer source = startRun.sourceAt(index);
-            if (source == null || !TerrainPhysicalArenaManager.bind(source)) {
-                startRun.failed = true;
+            // If vanilla has already advanced to the next packet command, some
+            // callbacks from the submitted range were omitted. They were already
+            // rendered by multi-draw, so retire the skip range and continue.
+            if (packetCursor < activePacket.commandCount()
+                    && source == activePacket.source(packetCursor)) {
+                submittedRunToSkip = null;
+                submittedSkipIndex = -1;
+            }
+        }
+
+        if (packetCursor >= activePacket.commandCount()) return BindAction.NONE;
+
+        VertexBuffer expected = activePacket.source(packetCursor);
+        if (source != expected) return BindAction.NONE;
+
+        while (plannedRunCursor < PLANNED_RUNS.size()
+                && PLANNED_RUNS.get(plannedRunCursor).end <= packetCursor) {
+            plannedRunCursor++;
+        }
+
+        Run run = plannedRunCursor < PLANNED_RUNS.size()
+                ? PLANNED_RUNS.get(plannedRunCursor)
+                : null;
+
+        if (run == null || run.start != packetCursor || run.failed) {
+            packetCursor++;
+            return BindAction.NONE;
+        }
+
+        for (int index = 0; index < run.commandCount(); index++) {
+            VertexBuffer member = run.sourceAt(index);
+            if (member == null || !TerrainPhysicalArenaManager.bind(member)) {
+                run.failed = true;
+                plannedRunCursor++;
+                packetCursor++;
                 status = "physical-residency-fallback";
                 return BindAction.NONE;
             }
         }
         if (!TerrainPhysicalArenaManager.bind(source)) {
-            startRun.failed = true;
+            run.failed = true;
+            plannedRunCursor++;
+            packetCursor++;
             status = "physical-residency-fallback";
             return BindAction.NONE;
         }
 
-        pendingRun = startRun;
+        pendingRun = run;
         return BindAction.START;
     }
 
     public static DrawAction onDraw(VertexBuffer source) {
-        if (source == null || activeProgram == null || !RenderSystem.isOnRenderThread()) return DrawAction.NONE;
-        Run memberRun = MEMBERS.get(source);
-        if (memberRun == null) return DrawAction.NONE;
-        if (memberRun.submitted) return DrawAction.SKIP;
+        if (source == null || activeProgram == null || !RenderSystem.isOnRenderThread()) {
+            return DrawAction.NONE;
+        }
+
+        if (skippedBindSource == source) {
+            skippedBindSource = null;
+            return DrawAction.SKIP;
+        }
 
         Run run = pendingRun;
         pendingRun = null;
@@ -122,6 +178,16 @@ public final class TerrainMultiDrawSubmissionBackend {
         }
 
         run.submitted = true;
+        submittedRunToSkip = run;
+        submittedSkipIndex = run.start + 1;
+        packetCursor = run.end;
+        plannedRunCursor++;
+
+        if (submittedSkipIndex >= run.end) {
+            submittedRunToSkip = null;
+            submittedSkipIndex = -1;
+        }
+
         submittedBatches++;
         submittedCommands += run.commandCount();
         reducedDrawCalls += run.commandCount() - 1L;
@@ -305,10 +371,14 @@ public final class TerrainMultiDrawSubmissionBackend {
     }
 
     private static void clearSession() {
-        STARTS.clear();
-        MEMBERS.clear();
         activeProgram = null;
+        activePacket = null;
+        packetCursor = 0;
+        plannedRunCursor = 0;
         pendingRun = null;
+        submittedRunToSkip = null;
+        submittedSkipIndex = -1;
+        skippedBindSource = null;
     }
 
     public enum BindAction {
