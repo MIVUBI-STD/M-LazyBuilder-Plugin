@@ -59,15 +59,15 @@ public final class PerformanceGovernor {
 
     private static boolean isProtective(Input input) {
         return input.pressure() == FramePressure.HEAVY
-                || input.frameP95Ms() >= 33.33D
+                || input.frameControlMs() >= 33.33D
                 || input.usedMemoryRatio() >= 0.90D
                 || (input.chunkUploadBacklog() >= 64 && input.freeChunkBuffers() <= 1);
     }
 
     private static boolean isRelaxed(Input input) {
         return input.pressure() == FramePressure.NORMAL
-                && input.frameP95Ms() > 0.0D
-                && input.frameP95Ms() < 18.0D
+                && input.frameControlMs() > 0.0D
+                && input.frameControlMs() < 18.0D
                 && input.usedMemoryRatio() < 0.75D
                 && input.chunkUploadBacklog() < 16
                 && input.chunkBuildBacklog() < 16;
@@ -112,7 +112,7 @@ public final class PerformanceGovernor {
 
     public record Input(
             FramePressure pressure,
-            double frameP95Ms,
+            double frameControlMs,
             int chunkUploadBacklog,
             int chunkBuildBacklog,
             int freeChunkBuffers,
@@ -126,7 +126,7 @@ public final class PerformanceGovernor {
 
         public Input {
             pressure = pressure == null ? FramePressure.NORMAL : pressure;
-            frameP95Ms = Math.max(0.0D, frameP95Ms);
+            frameControlMs = Math.max(0.0D, frameControlMs);
             chunkUploadBacklog = Math.max(0, chunkUploadBacklog);
             chunkBuildBacklog = Math.max(0, chunkBuildBacklog);
             freeChunkBuffers = Math.max(0, freeChunkBuffers);
