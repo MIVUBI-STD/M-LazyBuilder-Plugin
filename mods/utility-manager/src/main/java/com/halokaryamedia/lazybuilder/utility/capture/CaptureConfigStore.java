@@ -39,10 +39,28 @@ public final class CaptureConfigStore {
             return defaults;
         }
 
-        return new CapturePreferences(readQuality(
-                properties.getProperty("screenshot.quality"),
-                defaults.screenshotQuality()
-        ));
+        return new CapturePreferences(
+                readEnum(
+                        properties.getProperty("screenshot.quality"),
+                        CapturePreferences.ScreenshotQuality.class,
+                        defaults.screenshotQuality()
+                ),
+                readEnum(
+                        properties.getProperty("video.quality"),
+                        CapturePreferences.VideoQuality.class,
+                        defaults.videoQuality()
+                ),
+                readEnum(
+                        properties.getProperty("video.fps"),
+                        CapturePreferences.VideoFrameRate.class,
+                        defaults.videoFrameRate()
+                ),
+                readEnum(
+                        properties.getProperty("video.encoder"),
+                        CapturePreferences.VideoEncoderMode.class,
+                        defaults.videoEncoderMode()
+                )
+        );
     }
 
     public void save(CapturePreferences preferences) {
@@ -50,6 +68,18 @@ public final class CaptureConfigStore {
         properties.setProperty(
                 "screenshot.quality",
                 preferences.screenshotQuality().name().toLowerCase(Locale.ROOT)
+        );
+        properties.setProperty(
+                "video.quality",
+                preferences.videoQuality().name().toLowerCase(Locale.ROOT)
+        );
+        properties.setProperty(
+                "video.fps",
+                preferences.videoFrameRate().name().toLowerCase(Locale.ROOT)
+        );
+        properties.setProperty(
+                "video.encoder",
+                preferences.videoEncoderMode().name().toLowerCase(Locale.ROOT)
         );
 
         Path parent = configFile.getParent();
@@ -78,13 +108,14 @@ public final class CaptureConfigStore {
         return configFile;
     }
 
-    private static CapturePreferences.ScreenshotQuality readQuality(
+    private static <E extends Enum<E>> E readEnum(
             String raw,
-            CapturePreferences.ScreenshotQuality fallback
+            Class<E> type,
+            E fallback
     ) {
         if (raw == null || raw.isBlank()) return fallback;
         try {
-            return CapturePreferences.ScreenshotQuality.valueOf(raw.trim().toUpperCase(Locale.ROOT));
+            return Enum.valueOf(type, raw.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException ignored) {
             return fallback;
         }
