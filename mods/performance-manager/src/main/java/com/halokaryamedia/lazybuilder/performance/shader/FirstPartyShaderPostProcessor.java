@@ -48,13 +48,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         if (!hasComposite) scratch.release();
 
         boolean shadowReady = shadow != null && shadow.ready() && shadow.textureId() > 0;
-        int highestTextureUnit = highestUsedTextureUnit(
-                pipeline,
-                sourceDepthTexture,
-                gbufferTexture1,
-                gbufferTexture2,
-                shadowReady
-        );
+        int highestTextureUnit = highestUsedTextureUnit(pipeline);
 
         glState.capture(highestTextureUnit);
         try {
@@ -190,11 +184,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
     }
 
     private static int highestUsedTextureUnit(
-            FirstPartyShaderPipeline pipeline,
-            int sourceDepthTexture,
-            int gbufferTexture1,
-            int gbufferTexture2,
-            boolean shadowReady
+            FirstPartyShaderPipeline pipeline
     ) {
         int highest = 0;
         for (String name : POST_PROCESS_PROGRAMS) {
