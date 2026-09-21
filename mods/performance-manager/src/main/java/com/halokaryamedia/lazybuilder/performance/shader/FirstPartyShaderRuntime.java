@@ -204,22 +204,33 @@ public final class FirstPartyShaderRuntime {
             );
 
             synchronized (this) {
+                boolean changed = lastFrameApplied != applied;
                 lastFrameApplied = applied;
-                if (applied) {
-                    stage = "postprocess-active";
-                    lastError = "";
-                } else if ("postprocess-active".equals(stage)) {
-                    stage = "compiled";
+
+                String nextStage = applied
+                        ? "postprocess-active"
+                        : ("postprocess-active".equals(stage) ? "compiled" : stage);
+                if (!nextStage.equals(stage)) {
+                    stage = nextStage;
+                    changed = true;
                 }
-                revision++;
+                if (applied && !lastError.isEmpty()) {
+                    lastError = "";
+                    changed = true;
+                }
+                if (changed) revision++;
             }
             return applied;
         } catch (RuntimeException error) {
             synchronized (this) {
+                String nextError = safeMessage(error);
+                boolean changed = lastFrameApplied
+                        || !"render-error".equals(stage)
+                        || !nextError.equals(lastError);
                 lastFrameApplied = false;
-                lastError = safeMessage(error);
+                lastError = nextError;
                 stage = "render-error";
-                revision++;
+                if (changed) revision++;
             }
             return false;
         }
