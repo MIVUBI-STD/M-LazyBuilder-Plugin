@@ -62,6 +62,7 @@ final class VideoCaptureSession {
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Capture/Video");
     private static final int FRAME_POOL_SIZE = 3;
     private static final long MIN_FREE_DISK_BYTES = 1024L * 1024L * 1024L;
+    private static final long DISK_CHECK_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(5L);
 
     private final ArrayBlockingQueue<FramePacket> freeFrames = new ArrayBlockingQueue<>(FRAME_POOL_SIZE);
     private final ArrayBlockingQueue<FramePacket> readyFrames = new ArrayBlockingQueue<>(FRAME_POOL_SIZE);
@@ -82,6 +83,7 @@ final class VideoCaptureSession {
     private int sourceWidth;
     private int sourceHeight;
     private int fps;
+    private long nextDiskCheckNanos;
 
     State state() { return state; }
     String status() { return status; }
@@ -119,6 +121,7 @@ final class VideoCaptureSession {
         sourceHeight = height;
         fps = preferences.videoFrameRate().fps();
         nextCaptureNanos = 0L;
+        nextDiskCheckNanos = 0L;
         readyFrames.clear();
         freeFrames.clear();
 
@@ -301,6 +304,13 @@ final class VideoCaptureSession {
         try (OutputStream output = new BufferedOutputStream(ffmpeg.getOutputStream(), 1024 * 1024);
              WritableByteChannel channel = Channels.newChannel(output)) {
             while (true) {
+                if (!stopRequested && !diskSpaceHealthy(working.getParent())) {
+                    stopRequested = true;
+                    state = State.STOPPING;
+                    status = "Stopping · low disk space";
+                    publish(notifier, Text.literal("Recording stopped: disk space is running low."));
+                }
+
                 FramePacket packet = readyFrames.poll(100, TimeUnit.MILLISECONDS);
                 if (packet != null) {
                     try {
@@ -371,6 +381,19 @@ final class VideoCaptureSession {
             state = State.FINISHED;
             status = "Saved MKV · MP4 remux unavailable";
             publish(notifier, Text.literal("Recording saved as MKV: " + mkv.getFileName()));
+        }
+    }
+
+    private boolean diskSpaceHealthy(Path outputDirectory) {
+        long now = System.nanoTime();
+        if (nextDiskCheckNanos != 0L && now < nextDiskCheckNanos) return true;
+        nextDiskCheckNanos = now + DISK_CHECK_INTERVAL_NANOS;
+
+        try {
+            return Files.getFileStore(outputDirectory).getUsableSpace() >= MIN_FREE_DISK_BYTES;
+        } catch (IOException error) {
+            LOGGER.debug("Unable to inspect capture disk space for {}", outputDirectory, error);
+            return true;
         }
     }
 
