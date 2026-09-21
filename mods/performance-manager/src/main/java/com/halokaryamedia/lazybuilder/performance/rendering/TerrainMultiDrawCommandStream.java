@@ -22,78 +22,19 @@ public final class TerrainMultiDrawCommandStream {
     private static ByteBuffer transformScratch =
             ByteBuffer.allocateDirect(TRANSFORM_BYTES).order(ByteOrder.nativeOrder());
     private static final LayerPacket[] EMPTY_LAYERS = emptyLayers();
+    private static final PacketBuilder[] PACKET_BUILDERS = packetBuilders();
     private static volatile LayerPacket[] current = EMPTY_LAYERS.clone();
 
     private TerrainMultiDrawCommandStream() {
     }
 
     public static LayerPacket build(TerrainDrawTransformStream.LayerSnapshot layer) {
-        if (layer == null || layer.layerSlot() < 0 || layer.layerSlot() >= LAYER_COUNT) {
-            return LayerPacket.empty(layer == null ? -1 : layer.layerSlot());
-        }
-
-        int capacity = Math.max(0, layer.physicalReadyCommands());
-        VertexBuffer[] sources = new VertexBuffer[capacity];
-        TerrainArenaDrawPlanner.Command[] arenas = new TerrainArenaDrawPlanner.Command[capacity];
-        int[] indexCounts = new int[capacity];
-        long[] indexByteOffsets = new long[capacity];
-        int[] baseVertices = new int[capacity];
-        int[] transformIndices = new int[capacity];
-        int[] orderIndices = new int[capacity];
-        float[] offsetX = new float[capacity];
-        float[] offsetY = new float[capacity];
-        float[] offsetZ = new float[capacity];
-
-        int count = 0;
-        for (int orderIndex = 0; orderIndex < layer.commandCount(); orderIndex++) {
-            TerrainArenaDrawPlanner.Command arena = layer.arenaCommand(orderIndex);
-            if (!TerrainPhysicalArenaPolicy.isDrawReady(arena)) continue;
-
-            TerrainArenaDrawStateRegistry.DrawState state = arena == null ? null : arena.state();
-            if (arena == null || state == null) continue;
-
-            int baseVertex = TerrainPhysicalArenaPolicy.baseVertex(arena);
-            if (baseVertex < 0) continue;
-
-            long indexOffset = state.indexPayloadBytes() > 0 ? arena.indexByteOffset() : 0L;
-            if (indexOffset < 0L) continue;
-
-            sources[count] = layer.source(orderIndex);
-            arenas[count] = arena;
-            indexCounts[count] = state.indexCount();
-            indexByteOffsets[count] = indexOffset;
-            baseVertices[count] = baseVertex;
-            transformIndices[count] = count;
-            orderIndices[count] = orderIndex;
-            offsetX[count] = layer.modelOffsetX(orderIndex);
-            offsetY[count] = layer.modelOffsetY(orderIndex);
-            offsetZ[count] = layer.modelOffsetZ(orderIndex);
-            count++;
-        }
-
-        return new LayerPacket(
-                layer.layerSlot(),
-                sources,
-                arenas,
-                indexCounts,
-                indexByteOffsets,
-                baseVertices,
-                transformIndices,
-                orderIndices,
-                offsetX,
-                offsetY,
-                offsetZ,
-                count,
-                layer.multiDrawCandidateRuns(),
-                layer.potentialDrawCallReduction(),
-                (long) count * COMMAND_BYTES,
-                (long) count * TRANSFORM_BYTES
-        );
+        return new PacketBuilder().build(layer);
     }
 
     public static synchronized void publish(TerrainDrawTransformStream.LayerSnapshot layer) {
-        LayerPacket packet = build(layer);
-        if (packet.layerSlot() < 0 || packet.layerSlot() >= LAYER_COUNT) return;
+        if (layer == null || layer.layerSlot() < 0 || layer.layerSlot() >= LAYER_COUNT) return;
+        LayerPacket packet = PACKET_BUILDERS[layer.layerSlot()].build(layer);
         LayerPacket[] next = current.clone();
         next[packet.layerSlot()] = packet;
         current = next;
@@ -171,6 +112,143 @@ public final class TerrainMultiDrawCommandStream {
         LayerPacket[] layers = new LayerPacket[LAYER_COUNT];
         for (int i = 0; i < layers.length; i++) layers[i] = LayerPacket.empty(i);
         return layers;
+    }
+
+    private static PacketBuilder[] packetBuilders() {
+        PacketBuilder[] builders = new PacketBuilder[LAYER_COUNT];
+        for (int index = 0; index < builders.length; index++) {
+            builders[index] = new PacketBuilder();
+        }
+        return builders;
+    }
+
+    private static final class PacketBuilder {
+        private final PacketBuffer[] buffers = {new PacketBuffer(), new PacketBuffer()};
+        private int nextBuffer;
+
+        LayerPacket build(TerrainDrawTransformStream.LayerSnapshot layer) {
+            if (layer == null || layer.layerSlot() < 0 || layer.layerSlot() >= LAYER_COUNT) {
+                return LayerPacket.empty(layer == null ? -1 : layer.layerSlot());
+            }
+
+            PacketBuffer buffer = buffers[nextBuffer];
+            nextBuffer = (nextBuffer + 1) & 1;
+            buffer.reset(Math.max(0, layer.physicalReadyCommands()));
+
+            for (int orderIndex = 0; orderIndex < layer.commandCount(); orderIndex++) {
+                TerrainArenaDrawPlanner.Command arena = layer.arenaCommand(orderIndex);
+                if (!TerrainPhysicalArenaPolicy.isDrawReady(arena)) continue;
+
+                TerrainArenaDrawStateRegistry.DrawState state = arena == null ? null : arena.state();
+                if (arena == null || state == null) continue;
+
+                int baseVertex = TerrainPhysicalArenaPolicy.baseVertex(arena);
+                if (baseVertex < 0) continue;
+
+                long indexOffset = state.indexPayloadBytes() > 0 ? arena.indexByteOffset() : 0L;
+                if (indexOffset < 0L) continue;
+
+                buffer.append(
+                        layer.source(orderIndex),
+                        arena,
+                        state.indexCount(),
+                        indexOffset,
+                        baseVertex,
+                        orderIndex,
+                        layer.modelOffsetX(orderIndex),
+                        layer.modelOffsetY(orderIndex),
+                        layer.modelOffsetZ(orderIndex)
+                );
+            }
+
+            int count = buffer.count;
+            return new LayerPacket(
+                    layer.layerSlot(),
+                    buffer.sources,
+                    buffer.arenas,
+                    buffer.indexCounts,
+                    buffer.indexByteOffsets,
+                    buffer.baseVertices,
+                    buffer.transformIndices,
+                    buffer.orderIndices,
+                    buffer.offsetX,
+                    buffer.offsetY,
+                    buffer.offsetZ,
+                    count,
+                    layer.multiDrawCandidateRuns(),
+                    layer.potentialDrawCallReduction(),
+                    (long) count * COMMAND_BYTES,
+                    (long) count * TRANSFORM_BYTES
+            );
+        }
+    }
+
+    private static final class PacketBuffer {
+        private VertexBuffer[] sources = new VertexBuffer[0];
+        private TerrainArenaDrawPlanner.Command[] arenas =
+                new TerrainArenaDrawPlanner.Command[0];
+        private int[] indexCounts = new int[0];
+        private long[] indexByteOffsets = new long[0];
+        private int[] baseVertices = new int[0];
+        private int[] transformIndices = new int[0];
+        private int[] orderIndices = new int[0];
+        private float[] offsetX = new float[0];
+        private float[] offsetY = new float[0];
+        private float[] offsetZ = new float[0];
+        private int count;
+
+        void reset(int expected) {
+            count = 0;
+            ensureCapacity(expected);
+        }
+
+        void append(
+                VertexBuffer source,
+                TerrainArenaDrawPlanner.Command arena,
+                int indexCount,
+                long indexByteOffset,
+                int baseVertex,
+                int orderIndex,
+                float x,
+                float y,
+                float z
+        ) {
+            ensureCapacity(count + 1);
+            int index = count++;
+            sources[index] = source;
+            arenas[index] = arena;
+            indexCounts[index] = indexCount;
+            indexByteOffsets[index] = indexByteOffset;
+            baseVertices[index] = baseVertex;
+            transformIndices[index] = index;
+            orderIndices[index] = orderIndex;
+            offsetX[index] = x;
+            offsetY[index] = y;
+            offsetZ[index] = z;
+        }
+
+        private void ensureCapacity(int required) {
+            if (required <= sources.length) return;
+            int capacity = Math.max(16, sources.length);
+            while (capacity < required) {
+                int next = capacity << 1;
+                if (next <= capacity) {
+                    capacity = required;
+                    break;
+                }
+                capacity = next;
+            }
+            sources = java.util.Arrays.copyOf(sources, capacity);
+            arenas = java.util.Arrays.copyOf(arenas, capacity);
+            indexCounts = java.util.Arrays.copyOf(indexCounts, capacity);
+            indexByteOffsets = java.util.Arrays.copyOf(indexByteOffsets, capacity);
+            baseVertices = java.util.Arrays.copyOf(baseVertices, capacity);
+            transformIndices = java.util.Arrays.copyOf(transformIndices, capacity);
+            orderIndices = java.util.Arrays.copyOf(orderIndices, capacity);
+            offsetX = java.util.Arrays.copyOf(offsetX, capacity);
+            offsetY = java.util.Arrays.copyOf(offsetY, capacity);
+            offsetZ = java.util.Arrays.copyOf(offsetZ, capacity);
+        }
     }
 
     /**
