@@ -55,10 +55,14 @@ public final class ChunkRebuildBackpressure {
     }
 
     public static void drain(ChunkBuilder builder, FramePressure pressure) {
+        drain(builder, Math.max(1, ChunkRebuildBackpressurePolicy.releaseBudget(pressure)));
+    }
+
+    public static void drain(ChunkBuilder builder, int budget) {
         if (builder == null) return;
 
-        int budget = ChunkRebuildBackpressurePolicy.releaseBudget(pressure);
-        for (int released = 0; released < budget; released++) {
+        int boundedBudget = Math.max(1, budget);
+        for (int released = 0; released < boundedBudget; released++) {
             DeferredState state = stateIfPresent(builder);
             if (state == null) return;
 
