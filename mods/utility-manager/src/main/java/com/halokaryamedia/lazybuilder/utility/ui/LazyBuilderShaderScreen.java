@@ -389,6 +389,9 @@ public final class LazyBuilderShaderScreen extends Screen {
                     + (state.compatibilityOwner().isBlank() ? "external renderer" : state.compatibilityOwner());
         }
         if (!state.lastError().isBlank()) return "Error: " + state.lastError();
+        if ("preparing".equals(state.stage()) || "prepare-queued".equals(state.stage())) {
+            return "Preparing shader sources...";
+        }
         if ("compiling".equals(state.stage()) || "compile-queued".equals(state.stage())) {
             return "Compiling shader...";
         }
