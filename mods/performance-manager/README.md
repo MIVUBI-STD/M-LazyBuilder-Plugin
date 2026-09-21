@@ -191,7 +191,7 @@ baseline  -> rendering.optimizations=false
 optimized -> rendering.optimizations=true
 ```
 
-Correctness proof should show physical draws when the first-party path is active, exclusive promotion and retired bytes after the stability threshold, zero exclusive recovery failures, and no missing/corrupted terrain. Each structured sample also reports whether the strict standalone renderer is first-party-ready, its blocker/status string, the first-party shader stage, shader rendering readiness, terrain-shader integration, shadow-cache reuse, stale-GBuffer recovery, shader-only reload requests/failures, and invalid shader-pack count. FPS alone is not the acceptance criterion; average/worst frame time, ownership readiness, shader integration, and recovery health are equally important.
+Correctness proof should show physical draws when the first-party path is active, exclusive promotion and retired bytes after the stability threshold, zero exclusive recovery failures, and no missing/corrupted terrain. Each structured sample also reports whether the strict standalone renderer is first-party-ready, its blocker/status string, the first-party shader stage, shader rendering readiness, terrain-shader integration, shadow-cache reuse, stale-GBuffer recovery, shader-only reload requests/failures, invalid shader-pack count, culling cache hit/stale totals, and culling queue-drop totals. FPS alone is not the acceptance criterion; average/worst frame time, ownership readiness, shader integration, and recovery health are equally important.
 
 ## Migration rule
 
@@ -207,7 +207,7 @@ Current boundaries are explicit:
 - FerriteCore parity is partial. LazyBuilder owns baked-quad vertex-array canonicalization plus its own terrain/memory systems, but does not currently claim FerriteCore's broader blockstate/property, multipart-model/predicate, model-resource-string, or shape-cache memory optimizations.
 - The first-party shadow path supports opaque terrain by default and opt-in cutout terrain when the shadow program declares the complete LazyBuilder cutout contract. The pack must define `LAZYBUILDER_CUTOUT_SHADOWS 1`, pass `UV0` through `LazyBuilderShadowTexCoord`, and expose `LazyBuilderBlockAtlas` plus `LazyBuilderShadowAlphaCutoff`; otherwise the runtime remains safely `ready-solid-only`. Entity and block-entity shadow coverage remains separate work.
 - LazyBuilder-native shader packs are a first-party format. Existing Iris/OptiFine shader packs are not assumed compatible and must not be advertised as such until a verified compatibility/import layer exists.
-- Terrain-stage changes still require Minecraft client-resource shader reload. Fingerprinting and reload coalescing avoid unnecessary reloads, but a targeted terrain-program-only reload is not yet claimed.
+- Terrain-stage changes use Minecraft's own ShaderLoader resource-reloader directly. LazyBuilder invalidates only shader-sensitive terrain state and reloads the Minecraft shader cache without invoking full client resource reload; fingerprinting and generation coalescing avoid unnecessary or stale shader reloads.
 
 ### Pre-local-test acceptance gate
 
