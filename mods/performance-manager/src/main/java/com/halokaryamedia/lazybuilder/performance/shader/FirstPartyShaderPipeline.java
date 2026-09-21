@@ -23,19 +23,22 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
     private final String terrainSourceFingerprint;
     private final String terrainVertexSource;
     private final String terrainFragmentSource;
+    private final boolean cutoutShadowReady;
 
     private FirstPartyShaderPipeline(
             Map<String, FirstPartyShaderProgram> programs,
             int gbufferAttachments,
             String terrainSourceFingerprint,
             String terrainVertexSource,
-            String terrainFragmentSource
+            String terrainFragmentSource,
+            boolean cutoutShadowReady
     ) {
         this.programs = Collections.unmodifiableMap(new LinkedHashMap<>(programs));
         this.gbufferAttachments = Math.max(0, Math.min(2, gbufferAttachments));
         this.terrainSourceFingerprint = terrainSourceFingerprint == null ? "" : terrainSourceFingerprint;
         this.terrainVertexSource = terrainVertexSource == null ? "" : terrainVertexSource;
         this.terrainFragmentSource = terrainFragmentSource == null ? "" : terrainFragmentSource;
+        this.cutoutShadowReady = cutoutShadowReady;
     }
 
     public static FirstPartyShaderPipeline compile(ShaderPackSource source)
@@ -78,10 +81,18 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
         PreparedProgram terrain = programs.get("terrain");
         if (terrain == null) throw new IOException("Prepared terrain shader is unavailable.");
 
+        PreparedProgram shadow = programs.get("shadow");
+        boolean cutoutShadowReady = shadow != null
+                && ShadowShaderContract.supportsCutout(
+                        shadow.vertexSource(),
+                        shadow.fragmentSource()
+                );
+
         return new Prepared(
                 programs,
                 TerrainShaderContract.gbufferAttachmentCount(terrain.fragmentSource()),
-                fingerprint(terrain.vertexSource(), terrain.fragmentSource())
+                fingerprint(terrain.vertexSource(), terrain.fragmentSource()),
+                cutoutShadowReady
         );
     }
 
@@ -111,7 +122,8 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
                     prepared.gbufferAttachments(),
                     prepared.terrainSourceFingerprint(),
                     terrain.vertexSource(),
-                    terrain.fragmentSource()
+                    terrain.fragmentSource(),
+                    prepared.cutoutShadowReady()
             );
         } catch (FirstPartyShaderCompiler.ShaderCompileException | RuntimeException error) {
             for (FirstPartyShaderProgram program : compiled.values()) {
@@ -124,7 +136,8 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
     public record Prepared(
             Map<String, PreparedProgram> programs,
             int gbufferAttachments,
-            String terrainSourceFingerprint
+            String terrainSourceFingerprint,
+            boolean cutoutShadowReady
     ) {
         public Prepared {
             programs = programs == null
@@ -163,6 +176,10 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
 
     public String terrainSourceFingerprint() {
         return terrainSourceFingerprint;
+    }
+
+    public boolean cutoutShadowReady() {
+        return cutoutShadowReady;
     }
 
     public int gbufferAttachments() {
