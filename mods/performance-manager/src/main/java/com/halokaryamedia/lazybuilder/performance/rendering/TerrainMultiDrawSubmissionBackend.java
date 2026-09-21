@@ -32,6 +32,8 @@ public final class TerrainMultiDrawSubmissionBackend {
     private static int submittedSkipIndex;
     private static VertexBuffer skippedBindSource;
     private static final RuntimeCircuitBreaker FAILURE_BREAKER = new RuntimeCircuitBreaker(3);
+    private static final OptimizationProfitabilityWindow PROFITABILITY =
+            new OptimizationProfitabilityWindow(120, 240, 0.05D, 120L);
     private static volatile String status = "inactive";
     private static volatile long prepareAttempts;
     private static volatile long preparedRuns;
@@ -61,17 +63,27 @@ public final class TerrainMultiDrawSubmissionBackend {
             status = TerrainPerDrawShaderBackend.snapshot().status();
             return false;
         }
+        if (!PROFITABILITY.allowAttempt()) {
+            status = "profitability-cooldown";
+            return false;
+        }
 
         List<Run> runs = planRuns(packet);
         int usableRuns = 0;
+        long potentialSavings = 0L;
         for (Run run : runs) {
-            if (run.commandCount() >= 2 && runtimeSourcesPresent(run)) usableRuns++;
+            if (run.commandCount() >= 2 && runtimeSourcesPresent(run)) {
+                usableRuns++;
+                potentialSavings += run.commandCount() - 1L;
+            }
         }
 
         if (usableRuns == 0) {
+            PROFITABILITY.record(false, 0L);
             status = "no-multi-draw-runs";
             return false;
         }
+        PROFITABILITY.record(true, potentialSavings);
 
         activeProgram = program;
         activePacket = packet;
@@ -347,7 +359,8 @@ public final class TerrainMultiDrawSubmissionBackend {
                 submittedCommands,
                 reducedDrawCalls,
                 submissionFailures,
-                FAILURE_BREAKER.open()
+                FAILURE_BREAKER.open(),
+                PROFITABILITY.snapshot()
         );
     }
 
@@ -371,6 +384,7 @@ public final class TerrainMultiDrawSubmissionBackend {
         submittedCommands = 0L;
         reducedDrawCalls = 0L;
         submissionFailures = 0L;
+        PROFITABILITY.reset();
     }
 
     /**
@@ -462,7 +476,13 @@ public final class TerrainMultiDrawSubmissionBackend {
             long submittedCommands,
             long reducedDrawCalls,
             long submissionFailures,
-            boolean sessionDisabled
+            boolean sessionDisabled,
+            OptimizationProfitabilityWindow.Snapshot profitability
     ) {
+        public Snapshot {
+            profitability = profitability == null
+                    ? new OptimizationProfitabilityWindow.Snapshot(0, 0, 0L, 0)
+                    : profitability;
+        }
     }
 }
