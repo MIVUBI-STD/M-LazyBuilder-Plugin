@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.shader;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.render.VertexFormats;
 import org.lwjgl.opengl.GL20C;
 
 import java.io.IOException;
@@ -29,6 +30,8 @@ public final class FirstPartyShaderCompiler {
 
         if ("terrain".equals(program.name())) {
             TerrainShaderContract.validate(vertex.source(), fragment.source());
+        } else if ("shadow".equals(program.name())) {
+            ShadowShaderContract.validate(vertex.source(), fragment.source());
         } else if ("composite".equals(program.name()) || "final".equals(program.name())) {
             PostProcessShaderContract.validate(
                     program.name(),
@@ -55,6 +58,11 @@ public final class FirstPartyShaderCompiler {
             linkedProgram = GL20C.glCreateProgram();
             GL20C.glAttachShader(linkedProgram, vertexShader);
             GL20C.glAttachShader(linkedProgram, fragmentShader);
+
+            if ("terrain".equals(program.name()) || "shadow".equals(program.name())) {
+                VertexFormats.POSITION_COLOR_TEXTURE_LIGHT_NORMAL.bindAttributes(linkedProgram);
+            }
+
             GL20C.glLinkProgram(linkedProgram);
 
             if (GL20C.glGetProgrami(linkedProgram, GL20C.GL_LINK_STATUS) == GL20C.GL_FALSE) {
