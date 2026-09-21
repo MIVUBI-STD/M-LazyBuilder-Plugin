@@ -41,6 +41,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
     private static UtilityConfigStore configStore;
     private static UtilityPreferences preferences = UtilityPreferences.defaults();
     private static KeyBinding toggleRecordingKey;
+    private static KeyBinding cleanScreenshotKey;
 
     @Override
     public void onInitializeClient() {
@@ -74,9 +75,19 @@ public final class UtilityManagerClient implements ClientModInitializer {
                 GLFW.GLFW_KEY_F9,
                 "key.categories.lazybuilder"
         ));
+        cleanScreenshotKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.lazybuilder.capture.clean_screenshot",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_F10,
+                "key.categories.lazybuilder"
+        ));
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
-            if (toggleRecordingKey == null) return;
-            while (toggleRecordingKey.wasPressed()) CaptureManager.toggleVideo(client);
+            if (toggleRecordingKey != null) {
+                while (toggleRecordingKey.wasPressed()) CaptureManager.toggleVideo(client);
+            }
+            if (cleanScreenshotKey != null) {
+                while (cleanScreenshotKey.wasPressed()) CaptureManager.requestCleanScreenshot(client);
+            }
         });
 
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> CaptureManager.shutdown());
