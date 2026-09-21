@@ -85,6 +85,15 @@ public final class FirstPartyShaderFramebuffer implements AutoCloseable {
         return height;
     }
 
+    public void release() {
+        if (framebufferId == 0 && colorTextureId == 0) return;
+        if (!RenderSystem.isOnRenderThread()) {
+            RenderSystem.recordRenderCall(this::release);
+            return;
+        }
+        deleteNow();
+    }
+
     @Override
     public void close() {
         if (framebufferId == 0 && colorTextureId == 0) return;
