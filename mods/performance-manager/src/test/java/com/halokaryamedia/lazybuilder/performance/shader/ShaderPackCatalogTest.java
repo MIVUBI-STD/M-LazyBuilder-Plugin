@@ -25,9 +25,18 @@ final class ShaderPackCatalogTest {
             output.putNextEntry(new ZipEntry("shaders/terrain.vsh"));
             output.write("#version 150\n".getBytes());
             output.closeEntry();
+            output.putNextEntry(new ZipEntry("shaders/terrain.fsh"));
+            output.write("#version 150\n".getBytes());
+            output.closeEntry();
         }
 
         Files.writeString(temp.resolve("notes.txt"), "not a pack");
+        try (ZipOutputStream output = new ZipOutputStream(
+                Files.newOutputStream(temp.resolve("NotAShader.zip")))) {
+            output.putNextEntry(new ZipEntry("readme.txt"));
+            output.write("no shader stages".getBytes());
+            output.closeEntry();
+        }
 
         var packs = new ShaderPackCatalog(temp).scan();
 
