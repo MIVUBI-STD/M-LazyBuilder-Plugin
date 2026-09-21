@@ -6,6 +6,7 @@ import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatib
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.GpuCapabilityProfile;
 import com.halokaryamedia.lazybuilder.performance.rendering.GpuStageTimer;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainMultiDrawSubmissionBackend;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import org.slf4j.Logger;
@@ -89,8 +90,10 @@ final class PerformanceRuntimeProofLogger {
         long entityCacheStales = longValue(cullingDiagnostics, "entityCacheStales");
         long blockEntityCacheHits = longValue(cullingDiagnostics, "blockEntityCacheHits");
         long blockEntityCacheStales = longValue(cullingDiagnostics, "blockEntityCacheStales");
+        long sectionOpenBypasses = longValue(cullingDiagnostics, "sectionOpenBypasses");
         long entityQueueDrops = longValue(cullingDiagnostics, "entityQueueDrops");
         long blockEntityQueueDrops = longValue(cullingDiagnostics, "blockEntityQueueDrops");
+        var multiDrawHealth = TerrainMultiDrawSubmissionBackend.snapshot();
 
         sample++;
         LOGGER.info(
@@ -108,7 +111,8 @@ final class PerformanceRuntimeProofLogger {
                         + "invalid_shader_packs={} terrain_reload_pending={} "
                         + "entity_cull_cache_hit={} entity_cull_cache_stale={} "
                         + "block_entity_cull_cache_hit={} block_entity_cull_cache_stale={} "
-                        + "entity_cull_queue_drop={} block_entity_cull_queue_drop={} "
+                        + "section_open_bypass={} entity_cull_queue_drop={} block_entity_cull_queue_drop={} "
+                        + "multidraw_prepare_cost_samples={} multidraw_prepare_cost_ema_ms={} "
                         + "frame_p50_ms={} frame_p95_ms={} frame_p99_ms={} frame_p999_ms={} "
                         + "frame_proof_samples={} frame_proof_max_ms={} "
                         + "stutter_16ms={} stutter_25ms={} stutter_33ms={} stutter_50ms={} "
@@ -163,8 +167,11 @@ final class PerformanceRuntimeProofLogger {
                 entityCacheStales,
                 blockEntityCacheHits,
                 blockEntityCacheStales,
+                sectionOpenBypasses,
                 entityQueueDrops,
                 blockEntityQueueDrops,
+                multiDrawHealth.prepareCostSamples(),
+                multiDrawHealth.prepareCostEmaMs(),
                 timing.p50Ms(),
                 timing.p95Ms(),
                 timing.p99Ms(),
