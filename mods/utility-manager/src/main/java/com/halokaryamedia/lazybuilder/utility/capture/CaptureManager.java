@@ -145,6 +145,30 @@ public final class CaptureManager {
         return encoder.isBlank() ? preferences.videoEncoderMode().label() : encoder;
     }
 
+    public static String effectiveVideoResolutionLabel() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        Framebuffer framebuffer = client == null ? null : client.getFramebuffer();
+        int width = framebuffer == null ? 1920 : ((FramebufferAccessor) (Object) framebuffer).lazybuilder$getTextureWidth();
+        int height = framebuffer == null ? 1080 : ((FramebufferAccessor) (Object) framebuffer).lazybuilder$getTextureHeight();
+        return CaptureEstimates.effectiveVideoResolution(preferences, width, height);
+    }
+
+    public static String estimatedVideoSizeLabel() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        Framebuffer framebuffer = client == null ? null : client.getFramebuffer();
+        int width = framebuffer == null ? 1920 : ((FramebufferAccessor) (Object) framebuffer).lazybuilder$getTextureWidth();
+        int height = framebuffer == null ? 1080 : ((FramebufferAccessor) (Object) framebuffer).lazybuilder$getTextureHeight();
+        return CaptureEstimates.videoApproximation(preferences, width, height);
+    }
+
+    public static String estimatedScreenshotSizeLabel() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        Framebuffer framebuffer = client == null ? null : client.getFramebuffer();
+        int width = framebuffer == null ? 1920 : ((FramebufferAccessor) (Object) framebuffer).lazybuilder$getTextureWidth();
+        int height = framebuffer == null ? 1080 : ((FramebufferAccessor) (Object) framebuffer).lazybuilder$getTextureHeight();
+        return CaptureEstimates.screenshotApproximation(preferences.screenshotQuality(), width, height);
+    }
+
     public static long videoDroppedFrames() {
         return VIDEO.droppedFrames();
     }
