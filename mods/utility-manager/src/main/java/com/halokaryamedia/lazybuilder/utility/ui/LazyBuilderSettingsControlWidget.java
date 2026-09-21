@@ -13,7 +13,7 @@ final class LazyBuilderSettingsControlWidget extends PressableWidget {
     enum Kind { TOGGLE, ACTION, VALUE, KEY, STATUS, FOOTER }
 
     private final Runnable action;
-    private final boolean interactive;
+    private boolean interactive;
     private final Kind kind;
 
     LazyBuilderSettingsControlWidget(
@@ -30,6 +30,11 @@ final class LazyBuilderSettingsControlWidget extends PressableWidget {
         this.interactive = interactive;
         this.kind = Objects.requireNonNull(kind, "kind");
         this.action = Objects.requireNonNull(action, "action");
+        this.active = interactive;
+    }
+
+    void setInteractive(boolean interactive) {
+        this.interactive = interactive;
         this.active = interactive;
     }
 
