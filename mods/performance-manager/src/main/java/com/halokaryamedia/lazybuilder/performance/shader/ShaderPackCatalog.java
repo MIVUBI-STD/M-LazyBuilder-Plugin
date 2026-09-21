@@ -18,6 +18,7 @@ import java.util.zip.ZipFile;
 public final class ShaderPackCatalog {
     private final Path directory;
     private volatile String lastScanError = "";
+    private volatile List<String> invalidEntries = List.of();
 
     public ShaderPackCatalog(Path directory) {
         this.directory = directory;
@@ -31,19 +32,30 @@ public final class ShaderPackCatalog {
         try {
             Files.createDirectories(directory);
             try (Stream<Path> entries = Files.list(directory)) {
-                List<ShaderPackDescriptor> raw = entries
-                        .filter(this::isCandidate)
-                        .map(this::descriptor)
-                        .toList();
+                List<ShaderPackDescriptor> raw = new ArrayList<>();
+                List<String> invalid = new ArrayList<>();
+
+                entries.forEach(path -> {
+                    if (!looksLikePack(path)) return;
+                    if (isCandidate(path)) {
+                        raw.add(descriptor(path));
+                    } else {
+                        invalid.add(fileName(path));
+                    }
+                });
+
                 List<ShaderPackDescriptor> result = resolveIdCollisions(raw);
                 result.sort(Comparator.comparing(
                         ShaderPackDescriptor::displayName,
                         String.CASE_INSENSITIVE_ORDER
                 ));
+                invalid.sort(String.CASE_INSENSITIVE_ORDER);
+                invalidEntries = List.copyOf(invalid);
                 lastScanError = "";
                 return List.copyOf(result);
             }
         } catch (IOException error) {
+            invalidEntries = List.of();
             String message = error.getMessage();
             lastScanError = message == null || message.isBlank()
                     ? error.getClass().getSimpleName()
@@ -54,6 +66,19 @@ public final class ShaderPackCatalog {
 
     public String lastScanError() {
         return lastScanError;
+    }
+
+    public List<String> invalidEntries() {
+        return invalidEntries;
+    }
+
+    private boolean looksLikePack(Path path) {
+        if (Files.isDirectory(path)) {
+            return Files.isDirectory(path.resolve("shaders"))
+                    || Files.isRegularFile(path.resolve("shader.properties"));
+        }
+        String name = fileName(path).toLowerCase(Locale.ROOT);
+        return Files.isRegularFile(path) && name.endsWith(".zip");
     }
 
     private boolean isCandidate(Path path) {
