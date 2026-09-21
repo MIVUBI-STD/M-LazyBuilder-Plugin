@@ -42,6 +42,15 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Cache LazyBuilder Gradle runtime
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~\AppData\Local\LazyBuilder\build-tools\gradle-user-home
+            ~\AppData\Local\LazyBuilder\build-tools\gradle
+          key: ${{ runner.os }}-lazybuilder-gradle-${{ hashFiles('toolchain.json', 'mods/utility-manager/settings.gradle', 'mods/utility-manager/build.gradle', 'mods/utility-manager/gradle.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-lazybuilder-gradle-
       - name: Build and test Utility Manager
         shell: pwsh
         run: .\tooling\windows-toolchain\scripts\verify\invoke-gradle-build.ps1 -RepoRoot "." -ProjectPath "mods/utility-manager"
