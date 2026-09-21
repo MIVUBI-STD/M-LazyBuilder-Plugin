@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.utility.ui;
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.UtilityPreferences;
 import com.halokaryamedia.lazybuilder.utility.notification.UtilityNotifications;
+import com.halokaryamedia.lazybuilder.utility.window.BorderlessWindowController;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -279,7 +280,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         display.rows.add(Row.value(
                 "Window Mode",
                 "Choose Windowed, Borderless, or Fullscreen. Borderless mode is applied on the next game launch.",
-                currentWindowMode().label,
+                windowModeDisplayLabel(),
                 this::openWindowModeChoice
         ));
         display.rows.add(Row.toggle(
@@ -785,6 +786,18 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private void updateUtilityPreference(java.util.function.UnaryOperator<UtilityPreferences> updater) {
         UtilityManagerClient.updatePreferences(updater.apply(UtilityManagerClient.preferences()));
         refreshCategory();
+    }
+
+    private String windowModeDisplayLabel() {
+        WindowMode desired = currentWindowMode();
+        if (desired == WindowMode.FULLSCREEN) return desired.label;
+
+        boolean runtimeBorderless = BorderlessWindowController.isApplied();
+        boolean wantsBorderless = desired == WindowMode.BORDERLESS;
+        if (runtimeBorderless != wantsBorderless) {
+            return desired.label + " (Restart)";
+        }
+        return desired.label;
     }
 
     private WindowMode currentWindowMode() {
