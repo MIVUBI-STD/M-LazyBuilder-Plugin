@@ -160,19 +160,11 @@ public final class PaperLocalControlServer {
             sendError(exchange, 405, "method_not_allowed", "Only GET is supported.");
             return;
         }
-        sendJson(exchange, 200, new StatusResponse("ready", PROTOCOL_VERSION, List.of(
-                "world.list",
-                "world.create",
-                "world.settings",
-                "world.tasks",
-                "world.archive",
-                "world.restore",
-                "world.backup",
-                "world.duplicate",
-                "world.export",
-                "world.import",
-                "world.delete"
-        )));
+        sendJson(exchange, 200, new StatusResponse(
+                "ready",
+                PROTOCOL_VERSION,
+                WorldControlCapabilities.advertised()
+        ));
     }
 
     private void handleWorlds(HttpExchange exchange, String token) throws IOException {
