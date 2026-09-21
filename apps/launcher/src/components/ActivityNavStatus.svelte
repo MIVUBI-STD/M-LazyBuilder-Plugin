@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
-  import type { LauncherOperationSnapshot, StartupReport } from '../app/bridge/runtimeApi';
+  import type { LauncherOperationSnapshot, StartupReport, WorldTaskSnapshot } from '../app/bridge/runtimeApi';
 
   const ACTIVE_STATES = new Set(['QUEUED', 'RUNNING', 'CANCELLING']);
   const ACTIVE_POLL_MS = 3000;
@@ -9,27 +9,31 @@
 
   let operations = $state<LauncherOperationSnapshot[]>([]);
   let startup = $state<StartupReport | null>(null);
+  let worldTasks = $state<WorldTaskSnapshot[]>([]);
   let refreshInFlight = false;
 
-  let activeCount = $derived(operations.filter((operation) => ACTIVE_STATES.has(operation.state)).length);
+  let activeCount = $derived(operations.filter((operation) => ACTIVE_STATES.has(operation.state)).length + worldTasks.filter((task) => task.state === 'QUEUED' || task.state === 'RUNNING').length);
   let recoveryCount = $derived(operations.filter((operation) => operation.state === 'RECOVERY_REQUIRED').length);
   let startupWarningCount = $derived(startup?.steps.filter((step) => step.state === 'WARNING').length ?? 0);
   let attentionCount = $derived(recoveryCount + startupWarningCount);
   let label = $derived(
     activeCount > 0
-      ? `${activeCount} launcher task${activeCount === 1 ? '' : 's'} in progress`
+      ? `${activeCount} task${activeCount === 1 ? '' : 's'} in progress`
       : attentionCount > 0
-        ? `${attentionCount} launcher item${attentionCount === 1 ? '' : 's'} need attention`
-        : 'No launcher tasks in progress'
+        ? `${attentionCount} item${attentionCount === 1 ? '' : 's'} need attention`
+        : 'No tasks in progress'
   );
 
   async function refresh() {
     if (refreshInFlight) return;
     refreshInFlight = true;
     try {
-      operations = await runtimeProduct.operations.list();
+      const snapshot = await runtimeProduct.system.activity();
+      operations = snapshot.launcherOperations;
+      worldTasks = snapshot.worldTasks;
     } catch {
       operations = [];
+      worldTasks = [];
     } finally {
       refreshInFlight = false;
     }
