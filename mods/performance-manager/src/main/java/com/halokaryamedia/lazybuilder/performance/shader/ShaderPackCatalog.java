@@ -6,10 +6,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Stream;
 import java.util.zip.ZipFile;
@@ -56,7 +54,7 @@ public final class ShaderPackCatalog {
                     }
                 });
 
-                List<ShaderPackDescriptor> result = resolveIdCollisions(raw);
+                List<ShaderPackDescriptor> result = new ArrayList<>(raw);
                 result.sort(Comparator.comparing(
                         ShaderPackDescriptor::displayName,
                         String.CASE_INSENSITIVE_ORDER
@@ -131,7 +129,7 @@ public final class ShaderPackCatalog {
                 ? fileName.substring(0, fileName.length() - 4)
                 : fileName;
         ShaderPackDescriptor draft = new ShaderPackDescriptor(
-                stableId(fileName),
+                persistentId(fileName),
                 display,
                 path,
                 zip ? ShaderPackDescriptor.Kind.ZIP : ShaderPackDescriptor.Kind.DIRECTORY
@@ -155,38 +153,18 @@ public final class ShaderPackCatalog {
         }
     }
 
-    private static List<ShaderPackDescriptor> resolveIdCollisions(
-            List<ShaderPackDescriptor> descriptors
-    ) {
-        if (descriptors == null || descriptors.isEmpty()) return new ArrayList<>();
-
-        Map<String, Integer> counts = new HashMap<>();
-        for (ShaderPackDescriptor descriptor : descriptors) {
-            counts.merge(descriptor.id(), 1, Integer::sum);
-        }
-
-        List<ShaderPackDescriptor> resolved = new ArrayList<>(descriptors.size());
-        for (ShaderPackDescriptor descriptor : descriptors) {
-            if (counts.getOrDefault(descriptor.id(), 0) <= 1) {
-                resolved.add(descriptor);
-                continue;
-            }
-
-            String suffix = pathFingerprint(descriptor.path());
-            resolved.add(new ShaderPackDescriptor(
-                    descriptor.id() + "-" + suffix,
-                    descriptor.displayName(),
-                    descriptor.path(),
-                    descriptor.kind(),
-                    descriptor.manifest()
-            ));
-        }
-        return resolved;
+    static String persistentId(String fileName) {
+        String base = stableId(fileName);
+        return base + "-" + nameFingerprint(fileName);
     }
 
-    private static String pathFingerprint(Path path) {
-        Path fileName = path == null ? null : path.getFileName();
-        String stableName = fileName == null ? String.valueOf(path) : fileName.toString();
+    static String legacyId(ShaderPackDescriptor descriptor) {
+        if (descriptor == null || descriptor.path() == null) return "";
+        return stableId(fileName(descriptor.path()));
+    }
+
+    private static String nameFingerprint(String fileName) {
+        String stableName = fileName == null ? "" : fileName;
         String uuid = UUID.nameUUIDFromBytes(
                 stableName.getBytes(StandardCharsets.UTF_8)
         ).toString();
