@@ -558,12 +558,16 @@ public final class FirstPartyShaderRuntime {
                 FirstPartyShadowRenderer previous = shadowRenderer;
                 shadowRenderer = null;
                 if (previous != null) previous.close();
-                shadowError = shadowPlan.status()
+
+                String nextShadowError = shadowPlan.status()
                         + ":" + shadowPlan.estimatedBytes()
                         + "/" + shadowPlan.limitBytes();
+                boolean changed = !nextShadowError.equals(shadowError)
+                        || !"memory-budget".equals(stage);
+                shadowError = nextShadowError;
                 lastError = primaryError();
                 stage = "memory-budget";
-                revision++;
+                if (changed) revision++;
                 return FirstPartyShadowRenderer.emptySnapshot();
             }
 
@@ -581,10 +585,12 @@ public final class FirstPartyShaderRuntime {
 
         synchronized (this) {
             if (!result.ready() && !"no-visible-terrain".equals(result.status())) {
+                boolean changed = !result.status().equals(shadowError)
+                        || !"shadow-error".equals(stage);
                 shadowError = result.status();
                 lastError = primaryError();
                 stage = "shadow-error";
-                revision++;
+                if (changed) revision++;
             } else if (result.ready() && "shadow-error".equals(stage)) {
                 shadowError = "";
                 lastError = primaryError();
@@ -680,12 +686,16 @@ public final class FirstPartyShaderRuntime {
                 FirstPartyShaderGBuffer previous = gbuffer;
                 gbuffer = null;
                 if (previous != null) previous.close();
-                gbufferError = budget.status()
+
+                String nextGbufferError = budget.status()
                         + ":" + budget.estimatedBytes()
                         + "/" + budget.limitBytes();
+                boolean changed = !nextGbufferError.equals(gbufferError)
+                        || !"memory-budget".equals(stage);
+                gbufferError = nextGbufferError;
                 lastError = primaryError();
                 stage = "memory-budget";
-                revision++;
+                if (changed) revision++;
                 return false;
             }
 
@@ -708,10 +718,13 @@ public final class FirstPartyShaderRuntime {
             return begun;
         } catch (RuntimeException error) {
             synchronized (this) {
-                gbufferError = safeMessage(error);
+                String nextError = safeMessage(error);
+                boolean changed = !nextError.equals(gbufferError)
+                        || !"gbuffer-error".equals(stage);
+                gbufferError = nextError;
                 lastError = primaryError();
                 stage = "gbuffer-error";
-                revision++;
+                if (changed) revision++;
             }
             return false;
         }
@@ -772,13 +785,18 @@ public final class FirstPartyShaderRuntime {
                 FirstPartyShaderPostProcessor previous = postProcessor;
                 postProcessor = null;
                 if (previous != null) previous.close();
-                lastFrameApplied = false;
-                postProcessError = budget.status()
+
+                String nextPostError = budget.status()
                         + ":" + budget.estimatedBytes()
                         + "/" + budget.limitBytes();
+                boolean changed = lastFrameApplied
+                        || !nextPostError.equals(postProcessError)
+                        || !"memory-budget".equals(stage);
+                lastFrameApplied = false;
+                postProcessError = nextPostError;
                 lastError = primaryError();
                 stage = "memory-budget";
-                revision++;
+                if (changed) revision++;
                 return false;
             }
         }
