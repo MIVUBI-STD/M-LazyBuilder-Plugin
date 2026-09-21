@@ -62,12 +62,28 @@ public final class ShaderPackCatalog {
         String display = zip && fileName.toLowerCase(Locale.ROOT).endsWith(".zip")
                 ? fileName.substring(0, fileName.length() - 4)
                 : fileName;
-        return new ShaderPackDescriptor(
+        ShaderPackDescriptor draft = new ShaderPackDescriptor(
                 stableId(fileName),
                 display,
                 path,
                 zip ? ShaderPackDescriptor.Kind.ZIP : ShaderPackDescriptor.Kind.DIRECTORY
         );
+        try {
+            ShaderPackManifest manifest = ShaderPackManifest.load(
+                    ShaderPackSource.open(draft),
+                    display
+            );
+            String manifestName = manifest.name().isBlank() ? display : manifest.name();
+            return new ShaderPackDescriptor(
+                    draft.id(),
+                    manifestName,
+                    path,
+                    draft.kind(),
+                    manifest
+            );
+        } catch (IOException ignored) {
+            return draft;
+        }
     }
 
     static String stableId(String fileName) {
