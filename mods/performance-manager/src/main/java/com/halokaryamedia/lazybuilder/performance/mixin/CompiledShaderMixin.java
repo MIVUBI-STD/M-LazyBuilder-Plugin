@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainShaderCompileFallbackState;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainShaderSourceTransformer;
 import com.mojang.blaze3d.platform.GlStateManager;
 import net.minecraft.client.gl.CompiledShader;
@@ -8,20 +9,12 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-
 /**
  * Substitutes/augments terrain source and retries the exact original Minecraft
  * source if the transformed first-party stage fails compilation.
  */
 @Mixin(CompiledShader.class)
-public abstract class CompiledShaderMixin {
-    private static final Map<Integer, OriginalSource> lazybuilder$originalSources =
-            new ConcurrentHashMap<>();
-    private static final Map<CompiledShader.Type, RestorableStage> lazybuilder$successfulFirstPartyStages =
-            new ConcurrentHashMap<>();
-
+abstract class CompiledShaderMixin {
     @Redirect(
             method = "compile",
             at = @At(
@@ -38,13 +31,11 @@ public abstract class CompiledShaderMixin {
     ) {
         String transformed = TerrainShaderSourceTransformer.transform(id, type, source);
         if (!transformed.equals(source)) {
-            lazybuilder$originalSources.put(
+            TerrainShaderCompileFallbackState.rememberOriginal(
                     shaderHandle,
-                    new OriginalSource(
-                            source,
-                            type,
-                            TerrainShaderSourceTransformer.firstPartyApplied(type)
-                    )
+                    source,
+                    type,
+                    TerrainShaderSourceTransformer.firstPartyApplied(type)
             );
         }
         GlStateManager.glShaderSource(shaderHandle, transformed);
@@ -65,15 +56,17 @@ public abstract class CompiledShaderMixin {
     ) {
         GlStateManager.glCompileShader(shaderHandle);
 
-        OriginalSource original = lazybuilder$originalSources.remove(shaderHandle);
+        TerrainShaderCompileFallbackState.OriginalSource original =
+                TerrainShaderCompileFallbackState.takeOriginal(shaderHandle);
         if (original == null) return;
 
         boolean success = GlStateManager.glGetShaderi(shaderHandle, 35713) != 0;
         if (success) {
             if (original.firstParty()) {
-                lazybuilder$successfulFirstPartyStages.put(
-                        original.type(),
-                        new RestorableStage(shaderHandle, original.source(), original.type())
+                TerrainShaderCompileFallbackState.rememberSuccessfulFirstPartyStage(
+                        shaderHandle,
+                        original.source(),
+                        original.type()
                 );
                 TerrainShaderSourceTransformer.recordCompileSuccess(original.type());
             }
@@ -83,58 +76,7 @@ public abstract class CompiledShaderMixin {
         TerrainShaderSourceTransformer.recordCompileFallback(original.type());
         GlStateManager.glShaderSource(shaderHandle, original.source());
         GlStateManager.glCompileShader(shaderHandle);
-        lazybuilder$restoreOtherFirstPartyStages(original.type());
+        TerrainShaderCompileFallbackState.restoreOtherFirstPartyStages(original.type());
     }
 
-    public static void lazybuilder$resetTerrainFallbackState() {
-        lazybuilder$originalSources.clear();
-        lazybuilder$successfulFirstPartyStages.clear();
-    }
-
-    static void lazybuilder$clearTerrainFallbackStateAfterLink() {
-        lazybuilder$successfulFirstPartyStages.clear();
-    }
-
-    static boolean lazybuilder$restoreFirstPartyStagesForLinkFallback() {
-        if (lazybuilder$successfulFirstPartyStages.isEmpty()) return false;
-
-        boolean restored = false;
-        for (RestorableStage stage : lazybuilder$successfulFirstPartyStages.values()) {
-            GlStateManager.glShaderSource(stage.shaderHandle(), stage.originalSource());
-            GlStateManager.glCompileShader(stage.shaderHandle());
-
-            boolean success = GlStateManager.glGetShaderi(stage.shaderHandle(), 35713) != 0;
-            if (success) {
-                restored = true;
-                TerrainShaderSourceTransformer.recordCompileFallback(stage.type());
-            }
-        }
-        lazybuilder$successfulFirstPartyStages.clear();
-        return restored;
-    }
-
-    private static void lazybuilder$restoreOtherFirstPartyStages(CompiledShader.Type failedType) {
-        for (RestorableStage stage : lazybuilder$successfulFirstPartyStages.values()) {
-            if (stage.type() == failedType) continue;
-
-            GlStateManager.glShaderSource(stage.shaderHandle(), stage.originalSource());
-            GlStateManager.glCompileShader(stage.shaderHandle());
-            TerrainShaderSourceTransformer.recordCompileFallback(stage.type());
-        }
-        lazybuilder$successfulFirstPartyStages.clear();
-    }
-
-    private record RestorableStage(
-            int shaderHandle,
-            String originalSource,
-            CompiledShader.Type type
-    ) {
-    }
-
-    private record OriginalSource(
-            String source,
-            CompiledShader.Type type,
-            boolean firstParty
-    ) {
-    }
 }
