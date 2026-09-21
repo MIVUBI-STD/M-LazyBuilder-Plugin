@@ -893,6 +893,14 @@ public final class LazyBuilderSettingsScreen extends Screen {
                             value -> value == 0 ? "Auto" : Integer.toString(value)
                     )
             ));
+            interfaceScale.rows.add(Row.action(
+                    "Language",
+                    "Choose the language used by Minecraft menus and translated game text.",
+                    currentLanguageLabel(),
+                    () -> {
+                        if (client != null) client.setScreen(new LazyBuilderLanguageScreen(this));
+                    }
+            ));
             sections.add(interfaceScale);
         }
 
@@ -931,6 +939,15 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 enabled -> updateInterface(prefs.withReconnectButton(enabled))
         ));
         sections.add(multiplayer);
+    }
+
+    private String currentLanguageLabel() {
+        if (client == null) return "Unavailable";
+        String code = client.getLanguageManager().getLanguage();
+        var definition = client.getLanguageManager().getLanguage(code);
+        if (definition == null) return code;
+        String name = definition.getName();
+        return name == null || name.isBlank() ? code : name;
     }
 
     private void buildAccessibilitySections() {
