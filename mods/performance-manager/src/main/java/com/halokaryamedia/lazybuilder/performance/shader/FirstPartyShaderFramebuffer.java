@@ -18,6 +18,8 @@ public final class FirstPartyShaderFramebuffer implements AutoCloseable {
         int safeHeight = Math.max(1, height);
         if (framebufferId != 0 && this.width == safeWidth && this.height == safeHeight) return;
 
+        int oldFramebuffer = framebufferId;
+        int oldColorTexture = colorTextureId;
         int previousReadFramebuffer = GL11C.glGetInteger(GL30C.GL_READ_FRAMEBUFFER_BINDING);
         int previousDrawFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
         int previousTexture = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
@@ -72,9 +74,19 @@ public final class FirstPartyShaderFramebuffer implements AutoCloseable {
             deleteNow();
             throw error;
         } finally {
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
-            GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, previousReadFramebuffer);
-            GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, previousDrawFramebuffer);
+            int restoreTexture = previousTexture == oldColorTexture
+                    ? colorTextureId
+                    : previousTexture;
+            int restoreRead = previousReadFramebuffer == oldFramebuffer
+                    ? framebufferId
+                    : previousReadFramebuffer;
+            int restoreDraw = previousDrawFramebuffer == oldFramebuffer
+                    ? framebufferId
+                    : previousDrawFramebuffer;
+
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, Math.max(0, restoreTexture));
+            GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, Math.max(0, restoreRead));
+            GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, Math.max(0, restoreDraw));
         }
     }
 
