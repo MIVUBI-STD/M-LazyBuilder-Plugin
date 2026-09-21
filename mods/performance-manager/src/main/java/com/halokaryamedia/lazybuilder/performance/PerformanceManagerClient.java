@@ -349,6 +349,8 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         values.put("blockEntityCacheStales", snapshot.blockEntityCacheStales());
         values.put("entityEvaluations", snapshot.entityEvaluations());
         values.put("blockEntityEvaluations", snapshot.blockEntityEvaluations());
+        values.put("entityOccludedDecisions", snapshot.entityOccludedDecisions());
+        values.put("blockEntityOccludedDecisions", snapshot.blockEntityOccludedDecisions());
         values.put("entityQueueDrops", snapshot.entityQueueDrops());
         values.put("blockEntityQueueDrops", snapshot.blockEntityQueueDrops());
         return Map.copyOf(values);
