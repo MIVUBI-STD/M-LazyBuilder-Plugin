@@ -28,7 +28,8 @@ public final class GpuCapabilityProfile {
                     version,
                     caps.OpenGL33,
                     caps.OpenGL46 || caps.GL_ARB_shader_draw_parameters,
-                    caps.OpenGL32
+                    caps.OpenGL32,
+                    reportedVramBytes(caps)
             );
         } catch (RuntimeException error) {
             snapshot = Snapshot.UNKNOWN;
@@ -39,6 +40,20 @@ public final class GpuCapabilityProfile {
 
     public static void invalidate() {
         cached = null;
+    }
+
+    private static long reportedVramBytes(Object capabilities) {
+        // NVX_gpu_memory_info is the only common desktop extension that exposes a
+        // useful total-memory figure. Reflection keeps this optional capability from
+        // becoming a compile/runtime requirement on non-NVIDIA drivers.
+        try {
+            var field = capabilities.getClass().getField("GL_NVX_gpu_memory_info");
+            if (!field.getBoolean(capabilities)) return 0L;
+            int totalKiB = GL11C.glGetInteger(0x9048); // GPU_MEMORY_INFO_TOTAL_AVAILABLE_MEMORY_NVX
+            return totalKiB <= 0 ? 0L : totalKiB * 1024L;
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return 0L;
+        }
     }
 
     private static String safeString(String value) {
@@ -52,15 +67,17 @@ public final class GpuCapabilityProfile {
             String version,
             boolean timerQueries,
             boolean drawId,
-            boolean baseVertex
+            boolean baseVertex,
+            long reportedVramBytes
     ) {
         private static final Snapshot UNKNOWN =
-                new Snapshot(false, "", "", "", false, false, false);
+                new Snapshot(false, "", "", "", false, false, false, 0L);
 
         public Snapshot {
             vendor = vendor == null ? "" : vendor;
             renderer = renderer == null ? "" : renderer;
             version = version == null ? "" : version;
+            reportedVramBytes = Math.max(0L, reportedVramBytes);
         }
 
         public String tier() {
