@@ -9,6 +9,7 @@
     "WorldRendererTerrainSubmissionMixin",
     "ShaderLoaderSourceMixin",
     "CompiledShaderMixin",
+    "ShaderProgramMixin",
     "BlockEntityRenderDispatcherMixin",
     "TextRendererDrawerMixin",
     "VertexBufferMixin",
