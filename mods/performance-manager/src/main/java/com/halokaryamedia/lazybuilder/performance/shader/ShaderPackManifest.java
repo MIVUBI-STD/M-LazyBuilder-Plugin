@@ -26,6 +26,7 @@ public record ShaderPackManifest(
         List<Option> options
 ) {
     private static final String FILE = "shader.properties";
+    private static final int MAX_OPTIONS = 128;
 
     public ShaderPackManifest {
         name = clean(name);
@@ -47,10 +48,18 @@ public record ShaderPackManifest(
         for (String key : properties.stringPropertyNames()) {
             if (!key.startsWith("option.") || !key.endsWith(".type")) continue;
             String id = key.substring("option.".length(), key.length() - ".type".length()).trim();
-            if (!validId(id)) continue;
+            if (!validId(id)) {
+                throw new IOException("Invalid shader option id: " + id);
+            }
 
             Option option = parseOption(properties, id);
-            if (option != null) options.add(option);
+            if (option == null) {
+                throw new IOException("Invalid shader option definition: " + id);
+            }
+            options.add(option);
+            if (options.size() > MAX_OPTIONS) {
+                throw new IOException("Shader option count exceeds " + MAX_OPTIONS);
+            }
         }
         options.sort(Comparator.comparing(Option::id));
 
