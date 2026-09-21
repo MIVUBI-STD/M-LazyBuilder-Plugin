@@ -144,4 +144,36 @@ final class ShaderPackManifestTest {
                 )
         );
     }
+    @Test
+    void rejectsExcessiveOptionCount() throws Exception {
+        Files.createDirectories(temp.resolve("shaders"));
+        Files.writeString(temp.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(temp.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+
+        StringBuilder properties = new StringBuilder();
+        for (int index = 0; index < 129; index++) {
+            properties.append("option.opt")
+                    .append(index)
+                    .append(".type=boolean\n")
+                    .append("option.opt")
+                    .append(index)
+                    .append(".default=true\n");
+        }
+        Files.writeString(temp.resolve("shader.properties"), properties);
+
+        ShaderPackDescriptor descriptor = new ShaderPackDescriptor(
+                "large-pack",
+                "Large Pack",
+                temp,
+                ShaderPackDescriptor.Kind.DIRECTORY
+        );
+
+        assertThrows(
+                java.io.IOException.class,
+                () -> ShaderPackManifest.load(
+                        ShaderPackSource.open(descriptor),
+                        "Large Pack"
+                )
+        );
+    }
 }
