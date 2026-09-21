@@ -52,6 +52,7 @@ final class PerformanceRuntimeProofLogger {
                 FirstPartyRendererReadiness.evaluate(renderer, ownership);
         var shader = PerformanceManagerClient.currentShaderSnapshot();
         var shaderDiagnostics = PerformanceManagerClient.currentShaderDiagnostics();
+        var cullingDiagnostics = PerformanceManagerClient.currentCullingDiagnostics();
         String shaderStage = shader.get("stage") instanceof String value ? value : "unknown";
         boolean shaderReady = shader.get("renderingReady") instanceof Boolean value && value;
         boolean terrainIntegrated = shader.get("terrainIntegrated") instanceof Boolean value && value;
@@ -64,6 +65,12 @@ final class PerformanceRuntimeProofLogger {
         long invalidShaderPacks = longValue(shaderDiagnostics, "invalidPackCount");
         boolean terrainReloadPending =
                 shaderDiagnostics.get("terrainReloadPending") instanceof Boolean value && value;
+        long entityCacheHits = longValue(cullingDiagnostics, "entityCacheHits");
+        long entityCacheStales = longValue(cullingDiagnostics, "entityCacheStales");
+        long blockEntityCacheHits = longValue(cullingDiagnostics, "blockEntityCacheHits");
+        long blockEntityCacheStales = longValue(cullingDiagnostics, "blockEntityCacheStales");
+        long entityQueueDrops = longValue(cullingDiagnostics, "entityQueueDrops");
+        long blockEntityQueueDrops = longValue(cullingDiagnostics, "blockEntityQueueDrops");
 
         sample++;
         LOGGER.info(
@@ -78,7 +85,10 @@ final class PerformanceRuntimeProofLogger {
                         + "shadow_reused_frames={} shadow_resolution={} "
                         + "gbuffer_stale_recoveries={} shader_compile_generation={} "
                         + "shader_reload_requests={} shader_reload_failures={} "
-                        + "invalid_shader_packs={} terrain_reload_pending={}",
+                        + "invalid_shader_packs={} terrain_reload_pending={} "
+                        + "entity_cull_cache_hit={} entity_cull_cache_stale={} "
+                        + "block_entity_cull_cache_hit={} block_entity_cull_cache_stale={} "
+                        + "entity_cull_queue_drop={} block_entity_cull_queue_drop={}",
                 sample,
                 snapshot.fps(),
                 snapshot.averageFrameTimeMs(),
@@ -115,7 +125,13 @@ final class PerformanceRuntimeProofLogger {
                 shaderReloadRequests,
                 shaderReloadFailures,
                 invalidShaderPacks,
-                terrainReloadPending
+                terrainReloadPending,
+                entityCacheHits,
+                entityCacheStales,
+                blockEntityCacheHits,
+                blockEntityCacheStales,
+                entityQueueDrops,
+                blockEntityQueueDrops
         );
     }
 
