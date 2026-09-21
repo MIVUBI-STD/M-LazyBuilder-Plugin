@@ -27,6 +27,10 @@ public final class FirstPartyShaderCompiler {
                 program.fragmentPath()
         );
 
+        if ("terrain".equals(program.name())) {
+            TerrainShaderContract.validate(vertex.source(), fragment.source());
+        }
+
         int vertexShader = compileStage(
                 program.name() + ":vertex",
                 GL20C.GL_VERTEX_SHADER,
