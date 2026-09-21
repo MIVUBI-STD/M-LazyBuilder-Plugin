@@ -9,6 +9,7 @@ import com.halokaryamedia.lazybuilder.performance.shader.FirstPartyShaderRuntime
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderContext;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
 import net.fabricmc.loader.api.FabricLoader;
@@ -88,6 +89,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         });
 
         WorldRenderEvents.START.register(context -> beginFirstPartyShaderFrame());
+        WorldRenderEvents.AFTER_SETUP.register(PerformanceManagerClient::renderFirstPartyShadow);
         WorldRenderEvents.END.register(context -> {
             long now = System.nanoTime();
             runtime.recordFrame(now);
@@ -101,6 +103,21 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                 client.reloadResources();
             }
         });
+    }
+
+    private static void renderFirstPartyShadow(WorldRenderContext context) {
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        if (shaders == null || context == null || context.camera() == null || context.world() == null) {
+            return;
+        }
+
+        var position = context.camera().getPos();
+        shaders.renderShadow(
+                position.getX(),
+                position.getY(),
+                position.getZ(),
+                context.world().getTimeOfDay()
+        );
     }
 
     private static void beginFirstPartyShaderFrame() {
