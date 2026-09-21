@@ -11,6 +11,7 @@ import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ShaderPackCatalogTest {
     @TempDir Path temp;
@@ -20,6 +21,7 @@ final class ShaderPackCatalogTest {
         Path folder = temp.resolve("Builder Pack");
         Files.createDirectories(folder.resolve("shaders"));
         Files.writeString(folder.resolve("shaders/terrain.vsh"), "#version 150\n");
+        Files.writeString(folder.resolve("shaders/terrain.fsh"), "#version 150\n");
 
         Path zip = temp.resolve("Cinematic.zip");
         try (ZipOutputStream output = new ZipOutputStream(Files.newOutputStream(zip))) {
