@@ -62,6 +62,7 @@ public interface ShaderPackSource {
 
     final class DirectorySource implements ShaderPackSource {
         private final Path root;
+        private final Map<String, String> textCache = new HashMap<>();
 
         DirectorySource(Path root) {
             this.root = root.toAbsolutePath().normalize();
@@ -113,12 +114,18 @@ public interface ShaderPackSource {
 
         @Override
         public String readText(String relativePath) throws IOException {
-            Path resolved = resolve(relativePath);
+            String normalized = normalizeRelativePath(relativePath);
+            String cached = textCache.get(normalized);
+            if (cached != null) return cached;
+
+            Path resolved = resolve(normalized);
             long size = Files.size(resolved);
             if (size > MAX_SOURCE_BYTES) {
                 throw new IOException("Shader source exceeds size limit: " + relativePath);
             }
-            return Files.readString(resolved, StandardCharsets.UTF_8);
+            String text = Files.readString(resolved, StandardCharsets.UTF_8);
+            textCache.put(normalized, text);
+            return text;
         }
 
         private Path resolve(String relativePath) {
