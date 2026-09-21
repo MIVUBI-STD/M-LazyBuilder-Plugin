@@ -30,6 +30,7 @@ pub struct CapabilityStatus {
 pub struct SystemSnapshot {
     pub readiness: SystemReadiness,
     pub workspace: Option<WorkspaceEntry>,
+    pub recent_workspaces: Vec<WorkspaceEntry>,
     pub server_health: Option<ServerReadinessSnapshot>,
     pub runtimes: Vec<ServerRuntimeSummary>,
     pub active_operations: Vec<OperationSnapshot>,
@@ -44,6 +45,7 @@ impl SystemKernel {
         operations: &OperationRegistry,
     ) -> Result<SystemSnapshot, String> {
         let workspace = workspace_registry::current()?;
+        let recent_workspaces = workspace_registry::list()?;
         let runtimes = runtimes.summaries()?;
         let active_operations = operations
             .list()?
@@ -80,6 +82,7 @@ impl SystemKernel {
         Ok(SystemSnapshot {
             readiness,
             workspace,
+            recent_workspaces,
             server_health,
             runtimes,
             active_operations,
