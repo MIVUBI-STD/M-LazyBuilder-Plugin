@@ -26,7 +26,7 @@ final class OptimizationCompatibilityTest {
     }
 
     @Test
-    void externalOwnersOnlyDisableOverlappingDomains() {
+    void externalOwnersDoNotStealFirstPartyModelMemory() {
         var renderer = new RendererCompatibility.Snapshot(true, false, List.of("sodium"));
         var policy = OptimizationCompatibility.evaluate(renderer, true, true, true);
 
@@ -36,7 +36,7 @@ final class OptimizationCompatibilityTest {
         assertFalse(policy.owns(TERRAIN_BUILD));
         assertFalse(policy.owns(TERRAIN_UPLOAD));
         assertFalse(policy.owns(TERRAIN_SUBMISSION));
-        assertFalse(policy.owns(MODEL_MEMORY));
+        assertTrue(policy.owns(MODEL_MEMORY));
     }
 
     @Test
