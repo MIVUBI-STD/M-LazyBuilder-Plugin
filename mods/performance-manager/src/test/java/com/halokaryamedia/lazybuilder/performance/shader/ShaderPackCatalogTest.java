@@ -78,7 +78,35 @@ final class ShaderPackCatalogTest {
         var packs = catalog.scan();
 
         assertTrue(packs.isEmpty());
-        assertEquals(java.util.List.of("BrokenPack"), catalog.invalidEntries());
+        assertEquals(
+                java.util.List.of("BrokenPack: missing shaders/terrain.fsh"),
+                catalog.invalidEntries()
+        );
         assertTrue(catalog.lastScanError().isBlank());
+    }
+    @Test
+    void collisionIdsRemainStableWhenInstanceRootMoves() throws Exception {
+        Path firstRoot = temp.resolve("instance-a").resolve("shaderpacks");
+        Path secondRoot = temp.resolve("instance-b").resolve("shaderpacks");
+
+        for (Path root : java.util.List.of(firstRoot, secondRoot)) {
+            for (String name : java.util.List.of("My Shader", "my-shader")) {
+                Path pack = root.resolve(name);
+                Files.createDirectories(pack.resolve("shaders"));
+                Files.writeString(pack.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+                Files.writeString(pack.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+            }
+        }
+
+        var firstIds = new ShaderPackCatalog(firstRoot).scan().stream()
+                .map(ShaderPackDescriptor::id)
+                .sorted()
+                .toList();
+        var secondIds = new ShaderPackCatalog(secondRoot).scan().stream()
+                .map(ShaderPackDescriptor::id)
+                .sorted()
+                .toList();
+
+        assertEquals(firstIds, secondIds);
     }
 }
