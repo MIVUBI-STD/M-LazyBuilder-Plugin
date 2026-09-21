@@ -165,7 +165,8 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
         client.setScreen(new LazyBuilderSettingsScreen(
                 this,
                 entry.category(),
-                entry.videoPage()
+                entry.videoPage(),
+                entry.title()
         ));
     }
 
