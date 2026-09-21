@@ -106,13 +106,47 @@ public final class FirstPartyShaderCompiler {
                 );
             }
 
-            return new FirstPartyShaderProgram(programName, linkedProgram);
+            FirstPartyShaderProgram result = new FirstPartyShaderProgram(programName, linkedProgram);
+            prewarmUniforms(result, programName);
+            return result;
         } catch (RuntimeException | ShaderCompileException error) {
             if (linkedProgram != 0) GL20C.glDeleteProgram(linkedProgram);
             throw error;
         } finally {
             GL20C.glDeleteShader(vertexShader);
             if (fragmentShader != 0) GL20C.glDeleteShader(fragmentShader);
+        }
+    }
+
+    private static void prewarmUniforms(
+            FirstPartyShaderProgram program,
+            String name
+    ) {
+        if (program == null || name == null) return;
+
+        switch (name) {
+            case "shadow" -> program.prewarmUniforms(
+                    "LazyBuilderShadowViewProjection",
+                    "LazyBuilderModelOffset"
+            );
+            case "composite", "final" -> program.prewarmUniforms(
+                    "LazyBuilderColorTexture",
+                    "LazyBuilderDepthTexture",
+                    "LazyBuilderGBuffer1",
+                    "LazyBuilderGBuffer2",
+                    "LazyBuilderShadowTexture",
+                    "LazyBuilderShadowViewProjection",
+                    "LazyBuilderShadowCenter",
+                    "LazyBuilderShadowResolution",
+                    "LazyBuilderShadowReady",
+                    "LazyBuilderInverseViewProjection",
+                    "LazyBuilderCameraPosition",
+                    "LazyBuilderResolution",
+                    "LazyBuilderTime"
+            );
+            default -> {
+                // Terrain source is linked through Minecraft's ShaderProgram path.
+            }
         }
     }
 
