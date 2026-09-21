@@ -22,6 +22,24 @@ final class StageTimingMetricsTest {
     }
 
     @Test
+    void sessionResetClearsEvidenceWithoutDisablingInstrumentation() {
+        StageTimingMetrics.record(StageTimingMetrics.Stage.TERRAIN_SUBMISSION, 2_000_000L);
+        assertEquals(1L, StageTimingMetrics.snapshot(
+                StageTimingMetrics.Stage.TERRAIN_SUBMISSION
+        ).samples());
+
+        StageTimingMetrics.resetSession();
+
+        assertEquals(0L, StageTimingMetrics.snapshot(
+                StageTimingMetrics.Stage.TERRAIN_SUBMISSION
+        ).samples());
+        StageTimingMetrics.record(StageTimingMetrics.Stage.TERRAIN_SUBMISSION, 1_000_000L);
+        assertEquals(1L, StageTimingMetrics.snapshot(
+                StageTimingMetrics.Stage.TERRAIN_SUBMISSION
+        ).samples());
+    }
+
+    @Test
     void reportsAverageAndMaximumWithoutKeepingHistory() {
         StageTimingMetrics.record(StageTimingMetrics.Stage.ENTITY_CULLING, 1_000_000L);
         StageTimingMetrics.record(StageTimingMetrics.Stage.ENTITY_CULLING, 3_000_000L);
