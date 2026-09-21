@@ -557,6 +557,10 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         return runtime == null ? FramePressure.NORMAL : runtime.pressure();
     }
 
+    public static PerformanceGovernor.Profile governorProfile() {
+        return runtime == null ? PerformanceGovernor.Profile.balanced() : runtime.governorProfile();
+    }
+
     public static PerformancePreferences preferences() {
         return runtime == null ? PerformancePreferences.defaults() : runtime.preferences();
     }
