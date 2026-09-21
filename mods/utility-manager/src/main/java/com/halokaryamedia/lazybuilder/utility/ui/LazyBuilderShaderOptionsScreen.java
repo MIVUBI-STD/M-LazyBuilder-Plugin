@@ -31,6 +31,7 @@ public final class LazyBuilderShaderOptionsScreen extends Screen {
     private String packName = "";
     private int scrollOffset;
     private int maxScroll;
+    private LazyBuilderSettingsControlWidget applyButton;
 
     public LazyBuilderShaderOptionsScreen(Screen parent) {
         super(Text.literal("Shader Options"));
@@ -80,7 +81,7 @@ public final class LazyBuilderShaderOptionsScreen extends Screen {
                 () -> resetDefaults(state.options())
         ));
 
-        addDrawableChild(new LazyBuilderSettingsControlWidget(
+        applyButton = new LazyBuilderSettingsControlWidget(
                 right - 192,
                 height - 30,
                 92,
@@ -89,7 +90,8 @@ public final class LazyBuilderShaderOptionsScreen extends Screen {
                 isDirty(),
                 LazyBuilderSettingsControlWidget.Kind.FOOTER,
                 this::apply
-        ));
+        );
+        addDrawableChild(applyButton);
 
         addDrawableChild(new LazyBuilderSettingsControlWidget(
                 right - 92,
@@ -141,7 +143,10 @@ public final class LazyBuilderShaderOptionsScreen extends Screen {
                 max,
                 step,
                 numeric -> formatValue(option.type(), numeric),
-                numeric -> staged.put(option.id(), formatValue(option.type(), numeric))
+                numeric -> {
+                    staged.put(option.id(), formatValue(option.type(), numeric));
+                    if (applyButton != null) applyButton.setInteractive(isDirty());
+                }
         ));
     }
 
