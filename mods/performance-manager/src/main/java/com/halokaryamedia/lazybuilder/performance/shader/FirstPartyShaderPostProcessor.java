@@ -1,10 +1,14 @@
 package com.halokaryamedia.lazybuilder.performance.shader;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL13C;
 import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL30C;
+import org.lwjgl.system.MemoryStack;
+
+import java.nio.FloatBuffer;
 
 /**
  * Applies LazyBuilder-native composite/final programs to the currently rendered frame.
@@ -23,6 +27,11 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             int sourceDepthTexture,
             int gbufferTexture1,
             int gbufferTexture2,
+            FirstPartyShadowRenderer.Snapshot shadow,
+            Matrix4f inverseViewProjection,
+            float cameraX,
+            float cameraY,
+            float cameraZ,
             int width,
             int height,
             float timeSeconds
@@ -49,6 +58,11 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                         sourceDepthTexture,
                         gbufferTexture1,
                         gbufferTexture2,
+                        shadow,
+                        inverseViewProjection,
+                        cameraX,
+                        cameraY,
+                        cameraZ,
                         scratch.framebufferId(),
                         width,
                         height,
@@ -64,6 +78,11 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                         sourceDepthTexture,
                         gbufferTexture1,
                         gbufferTexture2,
+                        shadow,
+                        inverseViewProjection,
+                        cameraX,
+                        cameraY,
+                        cameraZ,
                         targetFramebuffer,
                         width,
                         height,
@@ -84,6 +103,11 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             int sourceDepthTexture,
             int gbufferTexture1,
             int gbufferTexture2,
+            FirstPartyShadowRenderer.Snapshot shadow,
+            Matrix4f inverseViewProjection,
+            float cameraX,
+            float cameraY,
+            float cameraZ,
             int outputFramebuffer,
             int width,
             int height,
@@ -110,6 +134,38 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             bindTexture(program, "LazyBuilderGBuffer2", 3, gbufferTexture2);
         }
 
+        boolean shadowReady = shadow != null && shadow.ready() && shadow.textureId() > 0;
+        if (shadowReady) {
+            bindTexture(program, "LazyBuilderShadowTexture", 4, shadow.textureId());
+            uploadMatrix(program, "LazyBuilderShadowViewProjection", shadow.lightViewProjection());
+
+            int shadowCenter = program.uniformLocation("LazyBuilderShadowCenter");
+            if (shadowCenter >= 0) {
+                GL20C.glUniform3f(
+                        shadowCenter,
+                        shadow.centerX(),
+                        shadow.centerY(),
+                        shadow.centerZ()
+                );
+            }
+
+            int shadowResolution = program.uniformLocation("LazyBuilderShadowResolution");
+            if (shadowResolution >= 0) {
+                GL20C.glUniform1f(shadowResolution, shadow.resolution());
+            }
+        }
+
+        int shadowReadyLocation = program.uniformLocation("LazyBuilderShadowReady");
+        if (shadowReadyLocation >= 0) GL20C.glUniform1i(shadowReadyLocation, shadowReady ? 1 : 0);
+
+        if (inverseViewProjection != null) {
+            uploadMatrix(program, "LazyBuilderInverseViewProjection", inverseViewProjection);
+        }
+        int cameraPosition = program.uniformLocation("LazyBuilderCameraPosition");
+        if (cameraPosition >= 0) {
+            GL20C.glUniform3f(cameraPosition, cameraX, cameraY, cameraZ);
+        }
+
         int resolution = program.uniformLocation("LazyBuilderResolution");
         if (resolution >= 0) GL20C.glUniform2f(resolution, width, height);
 
@@ -118,6 +174,21 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
 
         GL30C.glBindVertexArray(fullscreenVao);
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
+    }
+
+    private static void uploadMatrix(
+            FirstPartyShaderProgram program,
+            String uniform,
+            Matrix4f matrix
+    ) {
+        int location = program.uniformLocation(uniform);
+        if (location < 0 || matrix == null) return;
+
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            FloatBuffer values = stack.mallocFloat(16);
+            matrix.get(values);
+            GL20C.glUniformMatrix4fv(location, false, values);
+        }
     }
 
     private static void bindTexture(
@@ -177,6 +248,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             int texture1,
             int texture2,
             int texture3,
+            int texture4,
             boolean depthTest,
             boolean depthMask,
             boolean blend,
@@ -201,6 +273,8 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             int texture2 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
             GL13C.glActiveTexture(GL13C.GL_TEXTURE3);
             int texture3 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE4);
+            int texture4 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
             GL13C.glActiveTexture(activeTexture);
 
             return new GlState(
@@ -213,6 +287,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                     texture1,
                     texture2,
                     texture3,
+                    texture4,
                     GL11C.glIsEnabled(GL11C.GL_DEPTH_TEST),
                     GL11C.glGetInteger(GL11C.GL_DEPTH_WRITEMASK) != 0,
                     GL11C.glIsEnabled(GL11C.GL_BLEND),
@@ -239,6 +314,8 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture2);
             GL13C.glActiveTexture(GL13C.GL_TEXTURE3);
             GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture3);
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE4);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture4);
             GL13C.glActiveTexture(activeTexture);
 
             set(GL11C.GL_DEPTH_TEST, depthTest);
