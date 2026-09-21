@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
 import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
+import com.halokaryamedia.lazybuilder.performance.StageTimingMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawDiagnostics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlanner;
@@ -53,6 +54,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Unique private VertexBuffer lazybuilder$blockedVanillaFallbackBuffer;
     @Unique private TerrainDrawTransformStream.Builder[] lazybuilder$transformBuilders;
     @Unique private TerrainVisibleDrawSnapshot.Builder lazybuilder$visibleSnapshotBuilder;
+    @Unique private long lazybuilder$terrainCpuStartNanos;
 
     @Inject(method = "applyFrustum", at = @At("TAIL"))
     private void lazybuilder$invalidateAfterFrustum(Frustum frustum, CallbackInfo ci) {
@@ -76,6 +78,10 @@ abstract class WorldRendererTerrainSubmissionMixin {
             Matrix4f positionMatrix,
             CallbackInfo ci
     ) {
+        this.lazybuilder$terrainCpuStartNanos =
+                lazybuilder$isBlockLayer(layer) && StageTimingMetrics.enabled()
+                        ? System.nanoTime()
+                        : 0L;
         this.lazybuilder$ensureSubmissionState();
         this.lazybuilder$currentLayer = layer;
         this.lazybuilder$physicalPreparedBuffer = null;
@@ -144,6 +150,14 @@ abstract class WorldRendererTerrainSubmissionMixin {
     ) {
         this.lazybuilder$physicalPreparedBuffer = null;
         this.lazybuilder$blockedVanillaFallbackBuffer = null;
+        long cpuStart = this.lazybuilder$terrainCpuStartNanos;
+        this.lazybuilder$terrainCpuStartNanos = 0L;
+        if (cpuStart > 0L) {
+            StageTimingMetrics.record(
+                    StageTimingMetrics.Stage.TERRAIN_SUBMISSION,
+                    System.nanoTime() - cpuStart
+            );
+        }
         GpuStageTimer.end(GpuStageTimer.Stage.TERRAIN);
         TerrainMultiDrawSubmissionBackend.finishLayer();
         TerrainPhysicalArenaManager.noteExternalBind();
