@@ -143,24 +143,35 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private final Screen parent;
     private final Category category;
     private final VideoPage videoPage;
+    private final String focusTarget;
     private final List<Section> sections = new ArrayList<>();
     private int scrollOffset;
     private int maxScroll;
     private DropdownState dropdown;
 
     public LazyBuilderSettingsScreen(Screen parent) {
-        this(parent, Category.VIDEO, VideoPage.QUALITY);
+        this(parent, Category.VIDEO, VideoPage.QUALITY, null);
     }
 
     public LazyBuilderSettingsScreen(Screen parent, Category category) {
-        this(parent, category, VideoPage.QUALITY);
+        this(parent, category, VideoPage.QUALITY, null);
     }
 
     public LazyBuilderSettingsScreen(Screen parent, Category category, VideoPage videoPage) {
+        this(parent, category, videoPage, null);
+    }
+
+    public LazyBuilderSettingsScreen(
+            Screen parent,
+            Category category,
+            VideoPage videoPage,
+            String focusTarget
+    ) {
         super(Text.literal("Settings"));
         this.parent = parent;
         this.category = category;
         this.videoPage = videoPage;
+        this.focusTarget = focusTarget;
     }
 
     @Override
@@ -179,6 +190,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
             case TOOLS -> buildToolsSections();
         }
 
+        prepareFocusTarget();
         layoutSections();
         addFooter();
     }
@@ -977,6 +989,33 @@ public final class LazyBuilderSettingsScreen extends Screen {
         sections.add(worlds);
     }
 
+    private void prepareFocusTarget() {
+        if (focusTarget == null || focusTarget.isBlank()) return;
+
+        int contentY = 0;
+        int targetY = -1;
+        for (Section section : sections) {
+            contentY += SECTION_HEIGHT;
+            for (Row row : section.rows) {
+                if (focusTarget.equals(row.title)) {
+                    targetY = contentY;
+                    break;
+                }
+                contentY += ROW_HEIGHT + ROW_GAP;
+            }
+            if (targetY >= 0) break;
+            contentY += SECTION_GAP;
+        }
+
+        if (targetY < 0) return;
+
+        int viewportHeight = Math.max(1, viewportBottom() - contentTop());
+        int contentHeight = totalContentHeight();
+        int allowedScroll = Math.max(0, contentHeight - viewportHeight);
+        int desired = Math.max(0, targetY - Math.max(24, viewportHeight / 3));
+        scrollOffset = Math.min(allowedScroll, desired);
+    }
+
     private void layoutSections() {
         int x = panelLeft();
         int width = panelWidth();
@@ -1385,7 +1424,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
             context.fill(panelRight + 14, viewportTop(), panelRight + 15, height - FOOTER_HEIGHT - 10, DIVIDER);
         }
 
-        Row highlightedRow = null;
+        Row highlightedRow = focusedSearchRow();
         context.enableScissor(panelLeft, viewportTop(), panelRight, viewportBottom());
         for (Section section : sections) {
             if (section.y + SECTION_HEIGHT > viewportTop() && section.y < viewportBottom()) {
@@ -1407,7 +1446,12 @@ public final class LazyBuilderSettingsScreen extends Screen {
                     highlightedRow = row;
                 }
 
-                context.fill(row.x, row.y, row.x + row.width, row.y + ROW_HEIGHT - 1, hovered ? ROW_HOVER : ROW_FILL);
+                boolean searchFocused = focusTarget != null && focusTarget.equals(row.title);
+                int rowFill = searchFocused ? 0xB8232E30 : hovered ? ROW_HOVER : ROW_FILL;
+                context.fill(row.x, row.y, row.x + row.width, row.y + ROW_HEIGHT - 1, rowFill);
+                if (searchFocused) {
+                    context.fill(row.x, row.y, row.x + 3, row.y + ROW_HEIGHT - 1, ACCENT);
+                }
                 context.fill(row.x, row.y + ROW_HEIGHT - 1, row.x + row.width, row.y + ROW_HEIGHT, DIVIDER);
 
                 int textMax = Math.max(70, row.width - CONTROL_WIDTH - 34);
@@ -1429,6 +1473,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
         // rows behind the dropdown cannot bleed through due to batched GUI layers.
         context.draw();
         renderDropdown(context, mouseX, mouseY);
+    }
+
+    private Row focusedSearchRow() {
+        if (focusTarget == null || focusTarget.isBlank()) return null;
+        for (Section section : sections) {
+            for (Row row : section.rows) {
+                if (focusTarget.equals(row.title)) return row;
+            }
+        }
+        return null;
     }
 
     private void renderContextPane(DrawContext context, int x, Row highlightedRow) {
