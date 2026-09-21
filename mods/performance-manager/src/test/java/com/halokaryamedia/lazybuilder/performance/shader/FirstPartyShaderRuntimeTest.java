@@ -41,4 +41,22 @@ final class FirstPartyShaderRuntimeTest {
         assertEquals("selection-error", runtime.snapshot().stage());
         assertFalse(runtime.snapshot().renderingReady());
     }
+    @Test
+    void resourceReloadFailureBecomesActionableTerrainHealth() {
+        FirstPartyShaderRuntime runtime = new FirstPartyShaderRuntime(temp);
+
+        runtime.recordTerrainReloadCompletion(false, "reload exploded");
+
+        assertEquals("terrain-reload-error", runtime.snapshot().stage());
+        assertTrue(runtime.snapshot().lastError().contains("reload exploded"));
+    }
+
+    @Test
+    void successfulUnrelatedReloadDoesNotInventShaderFailure() {
+        FirstPartyShaderRuntime runtime = new FirstPartyShaderRuntime(temp);
+
+        runtime.recordTerrainReloadCompletion(true, "");
+
+        assertTrue(runtime.snapshot().lastError().isBlank());
+    }
 }
