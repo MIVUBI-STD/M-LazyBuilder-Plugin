@@ -181,7 +181,7 @@ baseline  -> rendering.optimizations=false
 optimized -> rendering.optimizations=true
 ```
 
-Correctness proof should show physical draws when the first-party path is active, exclusive promotion and retired bytes after the stability threshold, zero exclusive recovery failures, and no missing/corrupted terrain. FPS alone is not the acceptance criterion; average/worst frame time and recovery health are equally important.
+Correctness proof should show physical draws when the first-party path is active, exclusive promotion and retired bytes after the stability threshold, zero exclusive recovery failures, and no missing/corrupted terrain. Each structured sample also reports whether the strict standalone renderer is first-party-ready, its blocker/status string, the first-party shader stage, shader rendering readiness, and terrain-shader integration. FPS alone is not the acceptance criterion; average/worst frame time, ownership readiness, shader integration, and recovery health are equally important.
 
 ## Migration rule
 
