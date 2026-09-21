@@ -43,6 +43,7 @@ public final class TerrainShaderSourceTransformer {
 
         if (type == CompiledShader.Type.VERTEX) {
             PerformanceManagerClient.invalidateShaderTerrainForResourceReload();
+            compileFallbackActive = false;
         }
 
         RendererCompatibility.Snapshot renderer = RendererCompatibility.detect();
@@ -57,7 +58,6 @@ public final class TerrainShaderSourceTransformer {
             firstPartyFragmentApplied = false;
         }
 
-        compileFallbackActive = false;
         if (!safe) {
             status = "renderer-owned";
         } else if (!vanilla) {
