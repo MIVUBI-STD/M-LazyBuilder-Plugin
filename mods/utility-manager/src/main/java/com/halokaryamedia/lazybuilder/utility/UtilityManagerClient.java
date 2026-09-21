@@ -9,6 +9,7 @@ import com.halokaryamedia.lazybuilder.utility.chat.MinecraftMessageBridge;
 import com.halokaryamedia.lazybuilder.utility.chat.UtilityMessageBus;
 import com.halokaryamedia.lazybuilder.utility.chat.UtilityMessageDispatcher;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
+import com.halokaryamedia.lazybuilder.utility.capture.CaptureManager;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugInteraction;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugNetworking;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugServerState;
@@ -39,6 +40,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
     public void onInitializeClient() {
         configStore = new UtilityConfigStore(FabricLoader.getInstance().getConfigDir());
         preferences = configStore.load();
+        CaptureManager.initialize(FabricLoader.getInstance().getConfigDir());
         LOGGER.info(
                 "Utility Manager loaded; reconnect={}, keepDraft={}, extendedHistory={}, chatSearch={}, chatTimestamps={}, hideSigningIndicators={}, hideReportButton={}, suppressNarrator={}, borderless={}, contextualScreenshots={}, instantCreativeSearch={}, compactDebug={}",
                 preferences.reconnectButton(),
@@ -59,6 +61,8 @@ public final class UtilityManagerClient implements ClientModInitializer {
         PauseMenuController.register();
         CompactDebugNetworking.register();
         MinecraftMessageBridge.register();
+
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> CaptureManager.shutdown());
 
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
             ResourceReloadNotifier.markClientStarted();
