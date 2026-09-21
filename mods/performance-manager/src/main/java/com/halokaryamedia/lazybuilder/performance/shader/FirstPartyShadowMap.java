@@ -81,15 +81,9 @@ public final class FirstPartyShadowMap implements AutoCloseable {
             deleteNow();
             throw error;
         } finally {
-            int restoreTexture = previousTexture == oldDepthTexture
-                    ? depthTextureId
-                    : previousTexture;
-            int restoreRead = previousReadFramebuffer == oldFramebuffer
-                    ? framebufferId
-                    : previousReadFramebuffer;
-            int restoreDraw = previousDrawFramebuffer == oldFramebuffer
-                    ? framebufferId
-                    : previousDrawFramebuffer;
+            int restoreTexture = previousTexture == oldDepthTexture ? 0 : previousTexture;
+            int restoreRead = previousReadFramebuffer == oldFramebuffer ? 0 : previousReadFramebuffer;
+            int restoreDraw = previousDrawFramebuffer == oldFramebuffer ? 0 : previousDrawFramebuffer;
 
             GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, Math.max(0, restoreTexture));
             GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, Math.max(0, restoreRead));
