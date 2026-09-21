@@ -2,10 +2,9 @@ use crate::engine::operations::{OperationRegistry, OperationSnapshot};
 use crate::engine::server_health::{self, ServerReadinessSnapshot};
 use crate::engine::server_runtime_registry::{ServerRuntimeRegistry, ServerRuntimeSummary};
 use crate::engine::workspace_registry::{self, WorkspaceEntry};
-use crate::engine::world_manager;
 use serde::Serialize;
 
-use super::capabilities::{local_capabilities, resource_targets_workspace, world_capability, CapabilityStatus};
+use super::capabilities::{append_world_capability, local_capabilities, resource_targets_workspace, CapabilityStatus};
 use super::context::SystemContext;
 
 #[derive(Clone, Debug, Serialize)]
@@ -69,35 +68,7 @@ impl SystemSnapshotService {
         );
 
         let context = SystemContext { workspace: workspace.as_ref(), runtimes: &runtimes };
-        if workspace.is_none() {
-            capabilities.push(world_capability(false, "Open a workspace first."));
-        } else if !context.world_bridge_may_be_available() {
-            capabilities.push(world_capability(false, "Start the Paper server first."));
-        } else {
-            let status = tauri::async_runtime::spawn_blocking(world_manager::bridge_status)
-                .await
-                .map_err(|error| format!("World capability query failed: {error}"))?;
-            match status {
-                Ok(status) => {
-                    let required = ["world.list", "world.tasks"];
-                    let available = required
-                        .iter()
-                        .all(|required| status.capabilities.iter().any(|value| value == required));
-                    capabilities.push(world_capability(
-                        available,
-                        if available {
-                            "World Manager advertised the required world-control capabilities."
-                        } else {
-                            "World Manager is connected but does not advertise the required world-control capabilities."
-                        },
-                    ));
-                }
-                Err(error) => {
-                    warnings.push(format!("World capability handshake is unavailable: {error}"));
-                    capabilities.push(world_capability(false, "World Manager capability handshake is unavailable."));
-                }
-            }
-        }
+        append_world_capability(&mut capabilities, &mut warnings, &context).await?;
 
         let readiness = project_readiness(
             workspace.as_ref(),
