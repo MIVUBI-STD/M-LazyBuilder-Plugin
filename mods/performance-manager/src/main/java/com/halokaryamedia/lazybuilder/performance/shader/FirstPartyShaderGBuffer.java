@@ -81,13 +81,16 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
                 }
             }
 
-            ensureTextures(width, height, count);
+            int previousTexture = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+            PreparedTextures prepared = prepareTextures(width, height, count, previousTexture);
+            int[] activeTextures = prepared == null ? textures : prepared.textures();
+
             for (int index = 0; index < count; index++) {
                 GL30C.glFramebufferTexture2D(
                         GL30C.GL_DRAW_FRAMEBUFFER,
                         GL30C.GL_COLOR_ATTACHMENT1 + index,
                         GL11C.GL_TEXTURE_2D,
-                        textures[index],
+                        activeTextures[index],
                         0
                 );
                 attachedCount++;
@@ -99,8 +102,30 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
             if (framebufferStatus != GL30C.GL_FRAMEBUFFER_COMPLETE) {
                 detachOwnedAttachments(framebuffer, attachedCount);
                 restoreDrawBuffers();
+                if (prepared != null) deleteTextureArray(prepared.textures());
+                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
                 status = "framebuffer-incomplete:0x" + Integer.toHexString(framebufferStatus);
                 return false;
+            }
+
+            if (prepared != null) {
+                int old0 = textures[0];
+                int old1 = textures[1];
+                textures[0] = prepared.textures()[0];
+                textures[1] = prepared.textures()[1];
+                this.width = width;
+                this.height = height;
+                deleteTexture(old0);
+                deleteTexture(old1);
+
+                boolean previousWasOld = previousTexture == old0 || previousTexture == old1;
+                GL11C.glBindTexture(
+                        GL11C.GL_TEXTURE_2D,
+                        previousWasOld ? 0 : previousTexture
+                );
+            } else {
+                releaseUnusedTextures(count);
+                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
             }
 
             clearAttachments(count);
@@ -164,19 +189,17 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
         cachedMaxDrawBuffers = GL11C.glGetInteger(GL20C.GL_MAX_DRAW_BUFFERS);
     }
 
-    private void ensureTextures(int width, int height, int count) {
+    private PreparedTextures prepareTextures(
+            int width,
+            int height,
+            int count,
+            int previousTexture
+    ) {
         if (this.width == width && this.height == height && texturesReady(count)) {
-            releaseUnusedTextures(count);
-            return;
+            return null;
         }
 
-        int oldTexture0 = textures[0];
-        int oldTexture1 = textures[1];
-        int previousTexture = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
-        deleteTextures();
-        this.width = width;
-        this.height = height;
-
+        int[] candidate = new int[2];
         try {
             for (int index = 0; index < count; index++) {
                 int texture = GL11C.glGenTextures();
@@ -185,7 +208,7 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
                             "OpenGL could not allocate GBuffer texture " + (index + 1)
                     );
                 }
-                textures[index] = texture;
+                candidate[index] = texture;
                 GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture);
                 GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_NEAREST);
                 GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_NEAREST);
@@ -203,23 +226,19 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
                         0L
                 );
             }
+            return new PreparedTextures(candidate);
         } catch (RuntimeException error) {
-            deleteTextures();
-            this.width = 0;
-            this.height = 0;
+            deleteTextureArray(candidate);
             throw error;
         } finally {
-            int restoreTexture = (previousTexture == oldTexture0 || previousTexture == oldTexture1)
-                    ? 0
-                    : previousTexture;
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, Math.max(0, restoreTexture));
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
         }
     }
 
     private void releaseUnusedTextures(int count) {
         for (int index = Math.max(0, count); index < textures.length; index++) {
             if (textures[index] != 0) {
-                GL11C.glDeleteTextures(textures[index]);
+                deleteTexture(textures[index]);
                 textures[index] = 0;
             }
         }
@@ -303,6 +322,18 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
             activeFramebuffer = 0;
             activeCount = 0;
         }
+    }
+
+    private static void deleteTextureArray(int[] values) {
+        if (values == null) return;
+        for (int value : values) deleteTexture(value);
+    }
+
+    private static void deleteTexture(int texture) {
+        if (texture != 0) GL11C.glDeleteTextures(texture);
+    }
+
+    private record PreparedTextures(int[] textures) {
     }
 
     @Override
