@@ -1,16 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { runtimeProduct } from '../app/bridge/runtimeProductFacade';
+  import { subscribeActivityFeed } from '../app/operations/activityFeed';
   import type { LauncherOperationSnapshot, StartupReport, WorldTaskSnapshot } from '../app/bridge/runtimeApi';
 
   const ACTIVE_STATES = new Set(['QUEUED', 'RUNNING', 'CANCELLING']);
-  const ACTIVE_POLL_MS = 3000;
-  const IDLE_POLL_MS = 15000;
 
   let operations = $state<LauncherOperationSnapshot[]>([]);
   let startup = $state<StartupReport | null>(null);
   let worldTasks = $state<WorldTaskSnapshot[]>([]);
-  let refreshInFlight = false;
+  let activityUnsubscribe: (() => void) | null = null;
 
   let activeCount = $derived(operations.filter((operation) => ACTIVE_STATES.has(operation.state)).length + worldTasks.filter((task) => task.state === 'QUEUED' || task.state === 'RUNNING').length);
   let recoveryCount = $derived(operations.filter((operation) => operation.state === 'RECOVERY_REQUIRED').length);
@@ -24,65 +23,21 @@
         : 'No tasks in progress'
   );
 
-  async function refresh() {
-    if (refreshInFlight) return;
-    refreshInFlight = true;
-    try {
-      const snapshot = await runtimeProduct.system.activity();
-      operations = snapshot.launcherOperations;
-      worldTasks = snapshot.worldTasks;
-    } catch {
-      operations = [];
-      worldTasks = [];
-    } finally {
-      refreshInFlight = false;
-    }
-  }
-
   async function loadStartup() {
     try { startup = await runtimeProduct.startup.status(); }
     catch { startup = null; }
   }
 
   onMount(() => {
-    let disposed = false;
-    let timer: number | null = null;
-
-    const schedule = () => {
-      if (disposed || document.hidden) return;
-      timer = window.setTimeout(async () => {
-        timer = null;
-        if (disposed || document.hidden) return;
-        await refresh();
-        schedule();
-      }, activeCount > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS);
-    };
-
-    const refreshNow = () => {
-      if (disposed || document.hidden) return;
-      if (timer !== null) window.clearTimeout(timer);
-      timer = null;
-      void refresh().finally(schedule);
-    };
-
-    const handleVisibility = () => {
-      if (document.hidden) {
-        if (timer !== null) window.clearTimeout(timer);
-        timer = null;
-        return;
-      }
-      refreshNow();
-    };
-
-    void Promise.all([refresh(), loadStartup()]).finally(schedule);
-    document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('focus', refreshNow);
+    activityUnsubscribe = subscribeActivityFeed((next) => {
+      operations = next.snapshot?.launcherOperations ?? [];
+      worldTasks = next.snapshot?.worldTasks ?? [];
+    });
+    void loadStartup();
 
     return () => {
-      disposed = true;
-      if (timer !== null) window.clearTimeout(timer);
-      document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('focus', refreshNow);
+      activityUnsubscribe?.();
+      activityUnsubscribe = null;
     };
   });
 </script>
