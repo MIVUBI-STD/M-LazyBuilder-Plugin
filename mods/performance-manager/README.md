@@ -173,7 +173,7 @@ Entity and block-entity culling now cache vanilla renderer ownership by type ide
 
 ## Diagnostics
 
-`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware draw coverage, physical shared-buffer usage, custom-index draws, physical relocation health, transform-stream readiness, and guarded multi-draw submission health.
+`PerformanceManagerClient.currentSnapshot()` remains on-demand. It exposes frame/memory state, chunk build/upload pressure, visibility/cache counters, upload pacing, terrain residency/payload/headroom, region churn, reclamation totals, projected arena pressure, live arena allocation/fragmentation state, offset-aware draw coverage, physical shared-buffer usage, custom-index draws, physical relocation health, transform-stream readiness, and guarded multi-draw submission health. Reading a snapshot is observer-neutral: it does not enable high-frequency counters or CPU timers for the rest of the process.
 
 ## Live runtime proof
 
