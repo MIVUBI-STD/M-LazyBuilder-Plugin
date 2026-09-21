@@ -17,7 +17,6 @@ public final class OptimizationCompatibility {
     public static Policy evaluate(
             RendererCompatibility.Snapshot renderer,
             boolean immediatelyFastPresent,
-            boolean ferriteCorePresent,
             boolean entityCullingPresent
     ) {
         RendererCompatibility.Snapshot safeRenderer = renderer == null
