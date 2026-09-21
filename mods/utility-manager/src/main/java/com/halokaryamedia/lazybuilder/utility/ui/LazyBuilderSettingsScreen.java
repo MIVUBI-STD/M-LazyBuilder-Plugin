@@ -1256,13 +1256,14 @@ public final class LazyBuilderSettingsScreen extends Screen {
             return videoPage != VideoPage.VISUAL;
         }
         return category == Category.AUDIO
+                || category == Category.CONTROLS
                 || category == Category.CHAT
                 || category == Category.INTERFACE
                 || category == Category.ACCESSIBILITY;
     }
 
     private String resetButtonLabel() {
-        if (category == Category.INTERFACE) return "Reset Layout";
+        if (category == Category.CONTROLS) return "Reset Input";
         return "Reset";
     }
 
@@ -1277,6 +1278,9 @@ public final class LazyBuilderSettingsScreen extends Screen {
         } else if (category == Category.AUDIO) {
             title = "Reset Audio";
             body = "Restore all visible audio levels to Minecraft defaults?";
+        } else if (category == Category.CONTROLS) {
+            title = "Reset Input";
+            body = "Restore mouse and movement settings to Minecraft defaults? Key Bindings will not change.";
         } else if (category == Category.CHAT) {
             title = "Reset Chat";
             body = "Restore Chat helpers and visible chat appearance settings to their defaults?";
@@ -1323,6 +1327,21 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 resetOption(client.options.getSoundVolumeOption(sound));
             }
             client.options.write();
+            refreshCategory();
+            return;
+        }
+
+        if (category == Category.CONTROLS) {
+            resetOption(client.options.getMouseSensitivity());
+            resetOption(client.options.getInvertYMouse());
+            resetOption(client.options.getRawMouseInput());
+            resetOption(client.options.getDiscreteMouseScroll());
+            resetOption(client.options.getMouseWheelSensitivity());
+            resetOption(client.options.getAutoJump());
+            resetOption(client.options.getSneakToggled());
+            resetOption(client.options.getSprintToggled());
+            client.options.write();
+            client.options.sendClientSettings();
             refreshCategory();
             return;
         }
