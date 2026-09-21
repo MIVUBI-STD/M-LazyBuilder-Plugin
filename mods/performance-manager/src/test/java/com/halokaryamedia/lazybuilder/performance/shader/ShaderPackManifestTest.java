@@ -9,6 +9,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 final class ShaderPackManifestTest {
     @TempDir Path temp;
@@ -94,5 +95,32 @@ final class ShaderPackManifestTest {
         assertEquals("good", manifest.options().getFirst().id());
         assertTrue(manifest.defines("pack", ShaderRuntimePreferences.defaults())
                 .containsKey("LB_OPT_GOOD"));
+    }
+    @Test
+    void rejectsOptionDefineNameCollisions() throws Exception {
+        Files.createDirectories(temp.resolve("shaders"));
+        Files.writeString(temp.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(temp.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(temp.resolve("shader.properties"), """
+                option.foo-bar.type=boolean
+                option.foo-bar.default=true
+                option.foo_bar.type=boolean
+                option.foo_bar.default=false
+                """);
+
+        ShaderPackDescriptor descriptor = new ShaderPackDescriptor(
+                "pack",
+                "Pack",
+                temp,
+                ShaderPackDescriptor.Kind.DIRECTORY
+        );
+
+        assertThrows(
+                java.io.IOException.class,
+                () -> ShaderPackManifest.load(
+                        ShaderPackSource.open(descriptor),
+                        "Pack"
+                )
+        );
     }
 }
