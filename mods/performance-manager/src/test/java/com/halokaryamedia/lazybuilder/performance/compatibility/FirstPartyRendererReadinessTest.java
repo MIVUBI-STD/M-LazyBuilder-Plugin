@@ -50,4 +50,16 @@ final class FirstPartyRendererReadinessTest {
         assertTrue(readiness.ready());
         assertTrue(policy.owns(OptimizationCompatibility.OptimizationDomain.MODEL_MEMORY));
     }
+    @Test
+    void externalEntityCullingBlocksStrictStandaloneReadiness() {
+        var renderer = new RendererCompatibility.Snapshot(false, false, List.of());
+        var policy = OptimizationCompatibility.evaluate(renderer, false, true);
+
+        var readiness = FirstPartyRendererReadiness.evaluate(renderer, policy);
+
+        assertFalse(readiness.ready());
+        assertTrue(readiness.blockers().stream().anyMatch(
+                value -> value.contains("entity_culling:entityculling")
+        ));
+    }
 }
