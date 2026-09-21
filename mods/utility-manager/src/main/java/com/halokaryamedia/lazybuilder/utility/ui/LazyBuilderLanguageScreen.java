@@ -127,8 +127,8 @@ public final class LazyBuilderLanguageScreen extends Screen {
             LanguageDefinition definition = value.getValue();
             Entry entry = new Entry(
                     code,
-                    definition.getName(),
-                    definition.getRegion()
+                    definition.name(),
+                    definition.region()
             );
             if (normalized.isEmpty() || entry.searchText().contains(normalized)) {
                 filtered.add(entry);
