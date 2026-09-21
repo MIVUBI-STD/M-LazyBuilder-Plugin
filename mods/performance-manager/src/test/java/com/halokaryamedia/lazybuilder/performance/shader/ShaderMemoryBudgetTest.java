@@ -69,4 +69,12 @@ final class ShaderMemoryBudgetTest {
 
         assertFalse(plan.allowed());
     }
+    @Test
+    void lowReportedVramReducesAuxiliaryBudgetConservatively() {
+        long twoGiB = 2L * 1024L * 1024L * 1024L;
+        long adaptive = ShaderMemoryBudget.adaptiveLimitBytes(twoGiB);
+
+        assertTrue(adaptive >= 128L * 1024L * 1024L);
+        assertTrue(adaptive <= ShaderMemoryBudget.adaptiveLimitBytes(0L));
+    }
 }
