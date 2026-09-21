@@ -56,11 +56,14 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
         int previousDrawFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
         GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, framebuffer);
 
+        int attachedCount = 0;
+        boolean drawBuffersChanged = false;
         try {
             captureDrawBuffers(count + 1);
             int draw0 = previousDrawBuffers[0];
             if (draw0 != GL30C.GL_COLOR_ATTACHMENT0) {
                 status = "foreign-draw-buffer-layout";
+                previousDrawBufferCount = 0;
                 return false;
             }
 
@@ -73,6 +76,7 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
                 );
                 if (objectType != GL11C.GL_NONE) {
                     status = "attachment-owned:" + (index + 1);
+                    previousDrawBufferCount = 0;
                     return false;
                 }
             }
@@ -86,12 +90,14 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
                         textures[index],
                         0
                 );
+                attachedCount++;
             }
 
             setDrawBuffers(count);
+            drawBuffersChanged = true;
             int framebufferStatus = GL30C.glCheckFramebufferStatus(GL30C.GL_DRAW_FRAMEBUFFER);
             if (framebufferStatus != GL30C.GL_FRAMEBUFFER_COMPLETE) {
-                detachOwnedAttachments(framebuffer, count);
+                detachOwnedAttachments(framebuffer, attachedCount);
                 restoreDrawBuffers();
                 status = "framebuffer-incomplete:0x" + Integer.toHexString(framebufferStatus);
                 return false;
@@ -102,6 +108,15 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
             activeCount = count;
             status = "active";
             return true;
+        } catch (RuntimeException error) {
+            if (attachedCount > 0) {
+                detachOwnedAttachments(framebuffer, attachedCount);
+            }
+            if (drawBuffersChanged || previousDrawBufferCount > 0) {
+                restoreDrawBuffers();
+            }
+            status = "begin-error";
+            throw error;
         } finally {
             GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, previousDrawFramebuffer);
         }
