@@ -64,10 +64,6 @@ public final class TerrainMultiDrawSubmissionBackend {
             status = capability.status();
             return false;
         }
-        if (!TerrainPerDrawShaderBackend.prepare(program, packet)) {
-            status = TerrainPerDrawShaderBackend.snapshot().status();
-            return false;
-        }
         if (!PROFITABILITY.allowAttempt()) {
             status = "profitability-cooldown";
             return false;
@@ -101,6 +97,10 @@ public final class TerrainMultiDrawSubmissionBackend {
         PROFITABILITY.record(costEffective, potentialSavings);
         if (!costEffective) {
             status = "preparation-cost-not-profitable";
+            return false;
+        }
+        if (!TerrainPerDrawShaderBackend.prepare(program, packet)) {
+            status = TerrainPerDrawShaderBackend.snapshot().status();
             return false;
         }
 
