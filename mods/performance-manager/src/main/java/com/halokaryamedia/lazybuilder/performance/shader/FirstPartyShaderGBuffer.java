@@ -158,6 +158,12 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
 
         for (int index = 0; index < count; index++) {
             int texture = GL11C.glGenTextures();
+            if (texture == 0) {
+                deleteTextures();
+                throw new IllegalStateException(
+                        "OpenGL could not allocate GBuffer texture " + (index + 1)
+                );
+            }
             textures[index] = texture;
             GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture);
             GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_NEAREST);
