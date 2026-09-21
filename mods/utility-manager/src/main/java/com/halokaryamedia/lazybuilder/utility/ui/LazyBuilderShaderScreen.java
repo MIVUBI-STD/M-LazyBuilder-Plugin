@@ -116,6 +116,26 @@ public final class LazyBuilderShaderScreen extends Screen {
             ));
         }
 
+        if (!state.selectedPackId().isBlank() && state.optionCount() > 0) {
+            int optionsY = actionY + 30;
+            addDrawableChild(new LazyBuilderSettingsControlWidget(
+                    actionX,
+                    optionsY,
+                    actionWidth,
+                    22,
+                    Text.literal("Shader Options"),
+                    !state.compatibilityBlocked(),
+                    state.compatibilityBlocked()
+                            ? LazyBuilderSettingsControlWidget.Kind.STATUS
+                            : LazyBuilderSettingsControlWidget.Kind.ACTION,
+                    () -> {
+                        if (client != null) {
+                            client.setScreen(new LazyBuilderShaderOptionsScreen(this));
+                        }
+                    }
+            ));
+        }
+
         int viewportBottom = footerTop - 8;
         int contentHeight = state.packs().size() * (ROW_HEIGHT + ROW_GAP);
         int viewportHeight = Math.max(1, viewportBottom - listTop);
@@ -340,6 +360,7 @@ public final class LazyBuilderShaderScreen extends Screen {
                 stringValue(values, "activePackName", ""),
                 stringValue(values, "shaderpacksDirectory", ""),
                 stringValue(values, "lastError", ""),
+                listSize(values.get("options")),
                 booleanValue(values, "compatibilityBlocked", false),
                 stringValue(values, "compatibilityOwner", ""),
                 List.copyOf(packs)
@@ -381,6 +402,10 @@ public final class LazyBuilderShaderScreen extends Screen {
         return value instanceof Number number ? number.longValue() : fallback;
     }
 
+    private static int listSize(Object value) {
+        return value instanceof List<?> list ? list.size() : 0;
+    }
+
     private static List<String> stringList(Object value) {
         if (!(value instanceof List<?> list)) return List.of();
         List<String> result = new ArrayList<>();
@@ -418,6 +443,7 @@ public final class LazyBuilderShaderScreen extends Screen {
             String activePackName,
             String directory,
             String lastError,
+            int optionCount,
             boolean compatibilityBlocked,
             String compatibilityOwner,
             List<ShaderPack> packs
@@ -426,7 +452,7 @@ public final class LazyBuilderShaderScreen extends Screen {
             return new ShaderState(
                     false, 0L, "runtime-unavailable",
                     false, false, false, false, false, false,
-                    "", "", "", "", "", "", false, "", List.of()
+                    "", "", "", "", "", "", 0, false, "", List.of()
             );
         }
     }
