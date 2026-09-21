@@ -17,6 +17,8 @@ public final class ShaderSourcePreprocessor {
             "^\\s*#include\\s+[\"<]([^\">]+)[\">]\\s*$"
     );
     private static final int MAX_DEPTH = 32;
+    private static final int MAX_INCLUDE_COUNT = 256;
+    private static final int MAX_EXPANDED_CHARS = 2 * 1024 * 1024;
 
     private ShaderSourcePreprocessor() {
     }
@@ -33,7 +35,16 @@ public final class ShaderSourcePreprocessor {
         Deque<String> stack = new ArrayDeque<>();
         Set<String> visited = new HashSet<>();
         StringBuilder output = new StringBuilder();
-        expand(source, ShaderPackSource.normalizeRelativePath(entryPath), stack, visited, output, 0);
+        ExpansionBudget budget = new ExpansionBudget();
+        expand(
+                source,
+                ShaderPackSource.normalizeRelativePath(entryPath),
+                stack,
+                visited,
+                output,
+                budget,
+                0
+        );
         return new Result(injectDefines(output.toString(), defines), Set.copyOf(visited));
     }
 
@@ -43,6 +54,7 @@ public final class ShaderSourcePreprocessor {
             Deque<String> stack,
             Set<String> visited,
             StringBuilder output,
+            ExpansionBudget budget,
             int depth
     ) throws IOException {
         if (depth > MAX_DEPTH) {
@@ -62,7 +74,9 @@ public final class ShaderSourcePreprocessor {
         for (String line : lines) {
             Matcher matcher = INCLUDE.matcher(line);
             if (!matcher.matches()) {
-                output.append(line).append('\n');
+                append(output, line);
+                append(output, "\n");
+                budget.checkSize(output.length());
                 continue;
             }
 
@@ -73,9 +87,16 @@ public final class ShaderSourcePreprocessor {
                             parent.isEmpty() ? include : parent + "/" + include
                     );
 
-            output.append("// lazybuilder include: ").append(resolved).append('\n');
-            expand(source, resolved, stack, visited, output, depth + 1);
-            output.append("// lazybuilder end include: ").append(resolved).append('\n');
+            budget.include();
+            append(output, "// lazybuilder include: ");
+            append(output, resolved);
+            append(output, "\n");
+            budget.checkSize(output.length());
+            expand(source, resolved, stack, visited, output, budget, depth + 1);
+            append(output, "// lazybuilder end include: ");
+            append(output, resolved);
+            append(output, "\n");
+            budget.checkSize(output.length());
         }
 
         stack.removeLast();
@@ -108,6 +129,41 @@ public final class ShaderSourcePreprocessor {
         return source.substring(0, lineEnd + 1)
                 + preamble
                 + source.substring(lineEnd + 1);
+    }
+
+    private static void append(StringBuilder output, String value) throws IOException {
+        if (value == null || value.isEmpty()) return;
+        if ((long) output.length() + value.length() > MAX_EXPANDED_CHARS) {
+            throw new IOException(
+                    "Expanded shader source exceeds "
+                            + MAX_EXPANDED_CHARS
+                            + " characters"
+            );
+        }
+        output.append(value);
+    }
+
+    private static final class ExpansionBudget {
+        private int includes;
+
+        void include() throws IOException {
+            includes++;
+            if (includes > MAX_INCLUDE_COUNT) {
+                throw new IOException(
+                        "Shader include count exceeds " + MAX_INCLUDE_COUNT
+                );
+            }
+        }
+
+        void checkSize(int chars) throws IOException {
+            if (chars > MAX_EXPANDED_CHARS) {
+                throw new IOException(
+                        "Expanded shader source exceeds "
+                                + MAX_EXPANDED_CHARS
+                                + " characters"
+                );
+            }
+        }
     }
 
     private static boolean containsToken(String source, String token) {
