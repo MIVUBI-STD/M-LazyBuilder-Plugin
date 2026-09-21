@@ -191,4 +191,4 @@ P0 is complete only when:
 7. focused tests cover frame-pressure and workload-budget policy;
 8. the Performance Manager still builds as one Fabric mod and one output JAR.
 
-Runtime smoothness and actual Minecraft behavior still require LOCAL_CODE/gameplay validation beyond repository source proof.
+Runtime smoothness and actual Minecraft behavior still require LOCAL_CODE/gameplay validation beyond repository source proof. Representative proof must now include frame-time percentiles/stutter counts, adaptive-governor decisions, low-rate culling profitability, non-blocking GPU timing for terrain/shadow/post-process when timer queries are available, multi-draw profitability cooldown state, GPU capability tier, shader runtime degradation mode, and recovery/error counters. These measurements are evidence; they must not become always-on background telemetry.
