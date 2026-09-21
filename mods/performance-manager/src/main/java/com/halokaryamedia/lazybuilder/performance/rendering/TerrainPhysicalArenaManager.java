@@ -463,9 +463,16 @@ public final class TerrainPhysicalArenaManager {
                 && OWNERSHIP_PROOF.isCandidate(source);
     }
 
-    static void recordMultiDrawSuccess(java.util.List<TerrainMultiDrawCommandStream.PackedCommand> commands) {
+    static void recordMultiDrawSuccess(
+            java.util.List<TerrainMultiDrawCommandStream.PackedCommand> commands,
+            int start,
+            int end
+    ) {
         if (commands == null) return;
-        for (TerrainMultiDrawCommandStream.PackedCommand command : commands) {
+        int from = Math.max(0, start);
+        int to = Math.max(from, Math.min(commands.size(), end));
+        for (int index = from; index < to; index++) {
+            TerrainMultiDrawCommandStream.PackedCommand command = commands.get(index);
             if (command != null && command.source() != null) {
                 OWNERSHIP_PROOF.recordDraw(command.source());
                 promoteExclusiveIfEligible(command.source());
@@ -473,10 +480,19 @@ public final class TerrainPhysicalArenaManager {
         }
     }
 
-    static void recordMultiDrawFailure(java.util.List<TerrainMultiDrawCommandStream.PackedCommand> commands) {
+    static void recordMultiDrawFailure(
+            java.util.List<TerrainMultiDrawCommandStream.PackedCommand> commands,
+            int start,
+            int end
+    ) {
         if (commands == null) return;
-        for (TerrainMultiDrawCommandStream.PackedCommand command : commands) {
-            if (command != null && command.source() != null) OWNERSHIP_PROOF.reset(command.source());
+        int from = Math.max(0, start);
+        int to = Math.max(from, Math.min(commands.size(), end));
+        for (int index = from; index < to; index++) {
+            TerrainMultiDrawCommandStream.PackedCommand command = commands.get(index);
+            if (command != null && command.source() != null) {
+                OWNERSHIP_PROOF.reset(command.source());
+            }
         }
     }
 
