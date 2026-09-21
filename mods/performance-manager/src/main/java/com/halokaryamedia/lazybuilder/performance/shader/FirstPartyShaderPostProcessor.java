@@ -21,6 +21,8 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             FirstPartyShaderPipeline pipeline,
             int targetFramebuffer,
             int sourceDepthTexture,
+            int gbufferTexture1,
+            int gbufferTexture2,
             int width,
             int height,
             float timeSeconds
@@ -45,6 +47,8 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                         pipeline.program("composite"),
                         current,
                         sourceDepthTexture,
+                        gbufferTexture1,
+                        gbufferTexture2,
                         scratch.framebufferId(),
                         width,
                         height,
@@ -58,6 +62,8 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                         pipeline.program("final"),
                         current,
                         sourceDepthTexture,
+                        gbufferTexture1,
+                        gbufferTexture2,
                         targetFramebuffer,
                         width,
                         height,
@@ -76,6 +82,8 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             FirstPartyShaderProgram program,
             FirstPartyShaderFramebuffer input,
             int sourceDepthTexture,
+            int gbufferTexture1,
+            int gbufferTexture2,
             int outputFramebuffer,
             int width,
             int height,
@@ -94,6 +102,12 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         bindTexture(program, "LazyBuilderColorTexture", 0, input.colorTextureId());
         if (sourceDepthTexture > 0) {
             bindTexture(program, "LazyBuilderDepthTexture", 1, sourceDepthTexture);
+        }
+        if (gbufferTexture1 > 0) {
+            bindTexture(program, "LazyBuilderGBuffer1", 2, gbufferTexture1);
+        }
+        if (gbufferTexture2 > 0) {
+            bindTexture(program, "LazyBuilderGBuffer2", 3, gbufferTexture2);
         }
 
         int resolution = program.uniformLocation("LazyBuilderResolution");
@@ -161,6 +175,8 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             int activeTexture,
             int texture0,
             int texture1,
+            int texture2,
+            int texture3,
             boolean depthTest,
             boolean depthMask,
             boolean blend,
@@ -181,6 +197,10 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             int texture0 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
             GL13C.glActiveTexture(GL13C.GL_TEXTURE1);
             int texture1 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE2);
+            int texture2 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE3);
+            int texture3 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
             GL13C.glActiveTexture(activeTexture);
 
             return new GlState(
@@ -191,6 +211,8 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                     activeTexture,
                     texture0,
                     texture1,
+                    texture2,
+                    texture3,
                     GL11C.glIsEnabled(GL11C.GL_DEPTH_TEST),
                     GL11C.glGetInteger(GL11C.GL_DEPTH_WRITEMASK) != 0,
                     GL11C.glIsEnabled(GL11C.GL_BLEND),
@@ -213,6 +235,10 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture0);
             GL13C.glActiveTexture(GL13C.GL_TEXTURE1);
             GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture1);
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE2);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture2);
+            GL13C.glActiveTexture(GL13C.GL_TEXTURE3);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture3);
             GL13C.glActiveTexture(activeTexture);
 
             set(GL11C.GL_DEPTH_TEST, depthTest);
