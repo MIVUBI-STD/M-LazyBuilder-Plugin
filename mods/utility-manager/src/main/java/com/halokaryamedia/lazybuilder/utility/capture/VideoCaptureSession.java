@@ -100,7 +100,8 @@ final class VideoCaptureSession {
             int height
     ) {
         if (state == State.STARTING || state == State.RECORDING
-                || state == State.STOPPING || state == State.REMUXING) {
+                || state == State.STOPPING || state == State.REMUXING
+                || (writerThread != null && writerThread.isAlive())) {
             return false;
         }
         if (gameDirectory == null || preferences == null || width <= 0 || height <= 0) return false;
@@ -150,7 +151,15 @@ final class VideoCaptureSession {
         writerThread = Thread.ofPlatform()
                 .daemon(true)
                 .name("LazyBuilder-Video-Encoder")
-                .unstarted(() -> runEncoder(gameDirectory.toPath(), snapshot, working, mkv, mp4, notifier));
+                .unstarted(() -> {
+                    try {
+                        runEncoder(gameDirectory.toPath(), snapshot, working, mkv, mp4, notifier);
+                    } finally {
+                        synchronized (VideoCaptureSession.this) {
+                            writerThread = null;
+                        }
+                    }
+                });
         writerThread.start();
         return true;
     }
@@ -305,7 +314,10 @@ final class VideoCaptureSession {
         try {
             if (!process.waitFor(20, TimeUnit.SECONDS)) {
                 process.destroy();
-                if (!process.waitFor(5, TimeUnit.SECONDS)) process.destroyForcibly();
+                if (!process.waitFor(5, TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                    process.waitFor(5, TimeUnit.SECONDS);
+                }
             }
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
