@@ -4,14 +4,20 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
 import net.minecraft.text.Text;
+import net.minecraft.util.Util;
 
-import java.lang.reflect.Method;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Supplier;
 
 /**
- * LazyBuilder presentation shell for Iris shader management.
+ * LazyBuilder-first shader management surface.
  *
- * Iris remains the shader/config/runtime authority. This screen only exposes the
- * common player actions with LazyBuilder's settings visual language.
+ * Performance Manager owns the first-party shader runtime through ObjectShare.
+ * Iris is exposed only as an optional migration/compatibility screen while the
+ * first-party terrain shader path is still being completed.
  */
 public final class LazyBuilderShaderScreen extends Screen {
     private static final int BACKGROUND = 0xF20B0E12;
@@ -20,15 +26,9 @@ public final class LazyBuilderShaderScreen extends Screen {
     private static final int DIVIDER = 0x44545C66;
     private static final int FOOTER_HEIGHT = 40;
 
-    private enum FailedAction {
-        NONE,
-        TOGGLE,
-        OPEN_MANAGER
-    }
-
     private final Screen parent;
-    private String failure;
-    private FailedAction failedAction = FailedAction.NONE;
+    private long observedRevision = -1L;
+    private String compatibilityFailure;
 
     public LazyBuilderShaderScreen(Screen parent) {
         super(Text.literal("Shaders"));
@@ -37,61 +37,96 @@ public final class LazyBuilderShaderScreen extends Screen {
 
     @Override
     protected void init() {
+        ShaderState state = shaderState();
+        observedRevision = state.revision();
+
         int shell = Math.min(720, Math.max(280, width - 24));
         int left = (width - shell) / 2;
         int right = left + shell;
         boolean compact = shell < 500;
-        int rowWidth = compact ? shell - 28 : Math.min(190, Math.max(120, shell / 3));
-        int actionX = compact ? left + 14 : right - rowWidth;
-        int y = compact ? 154 : 82;
 
-        if (!isIrisAvailable()) {
-            addDrawableChild(new LazyBuilderSettingsControlWidget(
-                    actionX,
-                    y,
-                    rowWidth,
-                    22,
-                    Text.literal("Unavailable"),
-                    false,
-                    LazyBuilderSettingsControlWidget.Kind.STATUS,
-                    () -> {}
+        List<Action> actions = new ArrayList<>();
+        if (state.available()) {
+            actions.add(new Action(
+                    "Choose Pack",
+                    !state.packIds().isEmpty(),
+                    () -> {
+                        if (client != null) client.setScreen(new LazyBuilderShaderPackScreen(this));
+                    }
             ));
-        } else {
-            addDrawableChild(new LazyBuilderSettingsControlWidget(
-                    actionX,
-                    y,
-                    rowWidth,
-                    22,
-                    Text.literal(shadersEnabled() ? "Turn Off" : "Turn On"),
+            actions.add(new Action(
+                    state.compiledReady() ? "Recompile" : "Compile",
+                    !state.selectedPackId().isBlank(),
+                    () -> invoke("lazybuilder-performance-manager:shader-compile")
+            ));
+            actions.add(new Action(
+                    "Disable",
+                    state.compiledReady(),
+                    () -> invoke("lazybuilder-performance-manager:shader-disable")
+            ));
+            actions.add(new Action(
+                    "Refresh Packs",
                     true,
-                    LazyBuilderSettingsControlWidget.Kind.ACTION,
-                    this::toggleShaders
+                    () -> invoke("lazybuilder-performance-manager:shader-refresh")
             ));
+            actions.add(new Action(
+                    "Open Folder",
+                    !state.shaderpacksDirectory().isBlank(),
+                    () -> openFolder(state.shaderpacksDirectory())
+            ));
+        }
 
-            y += compact ? 30 : 42;
-            addDrawableChild(new LazyBuilderSettingsControlWidget(
-                    actionX,
-                    y,
-                    rowWidth,
-                    22,
-                    Text.literal("Manage Shaders"),
+        if (isIrisAvailable() && !state.terrainIntegrated()) {
+            actions.add(new Action(
+                    "Iris Compatibility",
                     true,
-                    LazyBuilderSettingsControlWidget.Kind.ACTION,
-                    this::openIrisManager
+                    this::openIrisCompatibility
             ));
+        }
 
-            if (failure != null) {
-                y += compact ? 32 : 46;
+        if (compact) {
+            int gap = 6;
+            int columnWidth = Math.max(120, (shell - 28 - gap) / 2);
+            int startX = left + 14;
+            int y = Math.min(134, Math.max(112, height - FOOTER_HEIGHT - 82));
+
+            for (int index = 0; index < actions.size(); index++) {
+                int column = index % 2;
+                int row = index / 2;
+                int x = startX + column * (columnWidth + gap);
+                int rowY = y + row * 28;
+                Action action = actions.get(index);
                 addDrawableChild(new LazyBuilderSettingsControlWidget(
-                        actionX,
+                        x,
+                        rowY,
+                        columnWidth,
+                        22,
+                        Text.literal(action.label()),
+                        action.enabled(),
+                        action.enabled()
+                                ? LazyBuilderSettingsControlWidget.Kind.ACTION
+                                : LazyBuilderSettingsControlWidget.Kind.STATUS,
+                        action.action()
+                ));
+            }
+        } else {
+            int rowWidth = Math.min(200, Math.max(150, shell / 3));
+            int x = right - rowWidth - 14;
+            int y = 82;
+            for (Action action : actions) {
+                addDrawableChild(new LazyBuilderSettingsControlWidget(
+                        x,
                         y,
                         rowWidth,
                         22,
-                        Text.literal("Retry"),
-                        true,
-                        LazyBuilderSettingsControlWidget.Kind.ACTION,
-                        this::retry
+                        Text.literal(action.label()),
+                        action.enabled(),
+                        action.enabled()
+                                ? LazyBuilderSettingsControlWidget.Kind.ACTION
+                                : LazyBuilderSettingsControlWidget.Kind.STATUS,
+                        action.action()
                 ));
+                y += 32;
             }
         }
 
@@ -108,6 +143,14 @@ public final class LazyBuilderShaderScreen extends Screen {
     }
 
     @Override
+    public void tick() {
+        ShaderState state = shaderState();
+        if (state.revision() != observedRevision) {
+            clearAndInit();
+        }
+    }
+
+    @Override
     public void renderBackground(DrawContext context, int mouseX, int mouseY, float delta) {}
 
     @Override
@@ -119,6 +162,7 @@ public final class LazyBuilderShaderScreen extends Screen {
         int shell = Math.min(720, Math.max(280, width - 24));
         int left = (width - shell) / 2;
         int right = left + shell;
+        boolean compact = shell < 500;
 
         context.drawTextWithShadow(
                 textRenderer,
@@ -128,41 +172,57 @@ public final class LazyBuilderShaderScreen extends Screen {
                 LazyBuilderSettingsScreen.TEXT_PRIMARY
         );
 
-        boolean compact = shell < 500;
         int panelTop = 64;
-        int desiredBottom = compact ? 330 : 284;
-        int panelBottom = Math.max(panelTop + 110, Math.min(height - FOOTER_HEIGHT - 12, desiredBottom));
+        int panelBottom = Math.max(
+                panelTop + 100,
+                Math.min(height - FOOTER_HEIGHT - 12, compact ? 198 : 284)
+        );
         context.fill(left, panelTop, right, panelBottom, DIVIDER);
         context.fill(left + 1, panelTop + 1, right - 1, panelBottom - 1, PANEL);
 
+        ShaderState state = shaderState();
         int textX = left + 14;
         int textY = 82;
+        int textWidth = compact ? shell - 28 : Math.max(140, shell - 240);
+
+        String title = !state.available()
+                ? "Shader Runtime Unavailable"
+                : !state.activePackName().isBlank()
+                        ? state.activePackName()
+                        : !state.selectedPackName().isBlank()
+                                ? state.selectedPackName()
+                                : "No Shader Pack Selected";
         context.drawTextWithShadow(
                 textRenderer,
-                Text.literal(isIrisAvailable() ? shaderName() : "Shader Support"),
+                Text.literal(textRenderer.trimToWidth(title, textWidth)),
                 textX,
                 textY,
                 LazyBuilderSettingsScreen.TEXT_PRIMARY
         );
-        textY += 16;
 
-        String status = !isIrisAvailable()
-                ? "A compatible Iris installation is required."
-                : shadersEnabled() ? "Shader enabled" : "Shader disabled";
+        textY += 16;
         context.drawTextWithShadow(
                 textRenderer,
-                Text.literal(status),
+                Text.literal(statusLabel(state)),
                 textX,
                 textY,
-                LazyBuilderSettingsScreen.TEXT_SECONDARY
+                state.renderingReady()
+                        ? LazyBuilderSettingsScreen.ACCENT
+                        : LazyBuilderSettingsScreen.TEXT_SECONDARY
         );
 
-        textY += 24;
-        String description = !isIrisAvailable()
-                ? "Install Iris to use shader packs. LazyBuilder does not provide its own shader renderer."
-                : "Iris owns shader pack selection, pack-specific options, and its shader folder. Use Manage Shaders to continue in the authoritative Iris screen.";
-        int descriptionWidth = compact ? Math.max(100, shell - 28) : Math.max(100, shell - 230);
-        for (var line : textRenderer.wrapLines(Text.literal(description), descriptionWidth)) {
+        textY += 22;
+        String description;
+        if (!state.available()) {
+            description = "Performance Manager shader runtime is not available in this client package.";
+        } else if (state.terrainIntegrated()) {
+            description = "LazyBuilder owns shader pack loading, compilation, terrain integration, and post-processing.";
+        } else {
+            description = "LazyBuilder now owns shader pack discovery, preprocessing, compilation, and post-processing. Terrain shader integration is still pending, so Iris remains optional compatibility for full terrain shader packs.";
+        }
+
+        for (var line : textRenderer.wrapLines(Text.literal(description), textWidth)) {
+            if (textY >= panelBottom - 26) break;
             context.drawTextWithShadow(
                     textRenderer,
                     line,
@@ -173,114 +233,124 @@ public final class LazyBuilderShaderScreen extends Screen {
             textY += 11;
         }
 
-        if (failure != null) {
-            int errorY = Math.min(panelBottom - 38, textY + 18);
+        String error = !state.lastError().isBlank() ? state.lastError() : compatibilityFailure;
+        if (error != null && !error.isBlank()) {
+            int errorY = Math.min(panelBottom - 14, textY + 8);
             context.drawTextWithShadow(
                     textRenderer,
-                    Text.literal("Could not apply shader action"),
+                    Text.literal(textRenderer.trimToWidth("Error: " + error, textWidth)),
                     textX,
                     errorY,
                     0xFFFFA7A7
-            );
-            context.drawTextWithShadow(
-                    textRenderer,
-                    Text.literal(textRenderer.trimToWidth(failure, descriptionWidth)),
-                    textX,
-                    errorY + 13,
-                    LazyBuilderSettingsScreen.TEXT_MUTED
             );
         }
 
         super.render(context, mouseX, mouseY, delta);
     }
 
+    private static String statusLabel(ShaderState state) {
+        if (!state.available()) return "Unavailable";
+        if (state.renderingReady()) return "First-party post-process active";
+        if (state.compiledReady() && state.postProcessReady()) return "Compiled — waiting for frame";
+        if (state.compiledReady()) return "Compiled — no composite/final pass";
+        return switch (state.stage()) {
+            case "compile-queued" -> "Compile queued";
+            case "compiling" -> "Compiling";
+            case "compile-error" -> "Compile failed";
+            case "selected" -> "Ready to compile";
+            case "disabled" -> "Disabled";
+            case "render-error" -> "Render pass failed";
+            default -> state.packIds().isEmpty() ? "No packs found" : "Ready";
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private ShaderState shaderState() {
+        Object shared = FabricLoader.getInstance().getObjectShare()
+                .get("lazybuilder-performance-manager:shader-snapshot");
+        if (!(shared instanceof Supplier<?> supplier)) return ShaderState.EMPTY;
+        Object value = supplier.get();
+        if (!(value instanceof Map<?, ?> map)) return ShaderState.EMPTY;
+
+        return new ShaderState(
+                true,
+                longValue(map, "revision"),
+                stringValue(map, "stage"),
+                booleanValue(map, "compiledReady"),
+                booleanValue(map, "postProcessReady"),
+                booleanValue(map, "renderingReady"),
+                booleanValue(map, "terrainIntegrated"),
+                stringValue(map, "selectedPackId"),
+                stringValue(map, "selectedPackName"),
+                stringValue(map, "activePackName"),
+                stringList(map.get("packIds")),
+                stringValue(map, "shaderpacksDirectory"),
+                stringValue(map, "lastError")
+        );
+    }
+
+    private void invoke(String key) {
+        Object shared = FabricLoader.getInstance().getObjectShare().get(key);
+        if (shared instanceof Runnable action) action.run();
+    }
+
+    private void openFolder(String path) {
+        try {
+            Util.getOperatingSystem().open(Path.of(path));
+        } catch (RuntimeException error) {
+            compatibilityFailure = error.getMessage() == null
+                    ? error.getClass().getSimpleName()
+                    : error.getMessage();
+            clearAndInit();
+        }
+    }
+
     private boolean isIrisAvailable() {
         return FabricLoader.getInstance().isModLoaded("iris");
     }
 
-    private boolean shadersEnabled() {
-        if (!isIrisAvailable()) return false;
+    private void openIrisCompatibility() {
+        compatibilityFailure = null;
         try {
-            Object config = irisConfig();
-            return (boolean) irisConfigClass().getMethod("areShadersEnabled").invoke(config);
-        } catch (ReflectiveOperationException | RuntimeException error) {
-            return false;
-        }
-    }
-
-    private String shaderName() {
-        if (!isIrisAvailable()) return "Unavailable";
-        return shadersEnabled() ? "Shader Enabled" : "No Shader";
-    }
-
-    private Class<?> irisApiClass() throws ClassNotFoundException {
-        return Class.forName("net.irisshaders.iris.api.v0.IrisApi");
-    }
-
-    private Class<?> irisConfigClass() throws ClassNotFoundException {
-        return Class.forName("net.irisshaders.iris.api.v0.IrisApiConfig");
-    }
-
-    private Object irisConfig() throws ReflectiveOperationException {
-        Class<?> apiClass = irisApiClass();
-        Object api = apiClass.getMethod("getInstance").invoke(null);
-        return apiClass.getMethod("getConfig").invoke(api);
-    }
-
-    private void toggleShaders() {
-        failure = null;
-        failedAction = FailedAction.NONE;
-        try {
-            Object config = irisConfig();
-            Class<?> configClass = irisConfigClass();
-            Method currentMethod = configClass.getMethod("areShadersEnabled");
-            Method applyMethod = configClass.getMethod("setShadersEnabledAndApply", boolean.class);
-            boolean current = (boolean) currentMethod.invoke(config);
-            applyMethod.invoke(config, !current);
-            clearAndInit();
-        } catch (ReflectiveOperationException | RuntimeException error) {
-            fail(error, FailedAction.TOGGLE);
-        }
-    }
-
-    private void openIrisManager() {
-        failure = null;
-        failedAction = FailedAction.NONE;
-        try {
-            Class<?> apiClass = irisApiClass();
+            Class<?> apiClass = Class.forName("net.irisshaders.iris.api.v0.IrisApi");
             Object api = apiClass.getMethod("getInstance").invoke(null);
             Object screen = apiClass.getMethod("openMainIrisScreenObj", Object.class).invoke(api, this);
             if (screen instanceof Screen irisScreen && client != null) {
                 client.setScreen(irisScreen);
                 return;
             }
-            failure = "Iris did not provide a shader management screen.";
-            failedAction = FailedAction.OPEN_MANAGER;
+            compatibilityFailure = "Iris did not provide a compatibility screen.";
             clearAndInit();
         } catch (ReflectiveOperationException | RuntimeException error) {
-            fail(error, FailedAction.OPEN_MANAGER);
+            Throwable cause = error.getCause() == null ? error : error.getCause();
+            compatibilityFailure = cause.getMessage() == null
+                    ? cause.getClass().getSimpleName()
+                    : cause.getMessage();
+            clearAndInit();
         }
     }
 
-    private void retry() {
-        FailedAction action = failedAction;
-        failure = null;
-        failedAction = FailedAction.NONE;
-        switch (action) {
-            case TOGGLE -> toggleShaders();
-            case OPEN_MANAGER -> openIrisManager();
-            case NONE -> clearAndInit();
-        }
+    private static boolean booleanValue(Map<?, ?> map, String key) {
+        return map.get(key) instanceof Boolean value && value;
     }
 
-    private void fail(Throwable error, FailedAction action) {
-        Throwable cause = error.getCause() == null ? error : error.getCause();
-        String message = cause.getMessage();
-        failure = message == null || message.isBlank()
-                ? cause.getClass().getSimpleName()
-                : message;
-        failedAction = action;
-        clearAndInit();
+    private static long longValue(Map<?, ?> map, String key) {
+        Object value = map.get(key);
+        return value instanceof Number number ? number.longValue() : -1L;
+    }
+
+    private static String stringValue(Map<?, ?> map, String key) {
+        Object value = map.get(key);
+        return value instanceof String text ? text : "";
+    }
+
+    private static List<String> stringList(Object value) {
+        if (!(value instanceof List<?> list)) return List.of();
+        List<String> result = new ArrayList<>();
+        for (Object item : list) {
+            if (item instanceof String text) result.add(text);
+        }
+        return List.copyOf(result);
     }
 
     @Override
@@ -291,5 +361,49 @@ public final class LazyBuilderShaderScreen extends Screen {
     @Override
     public boolean shouldPause() {
         return true;
+    }
+
+    private record Action(String label, boolean enabled, Runnable action) {}
+
+    private record ShaderState(
+            boolean available,
+            long revision,
+            String stage,
+            boolean compiledReady,
+            boolean postProcessReady,
+            boolean renderingReady,
+            boolean terrainIntegrated,
+            String selectedPackId,
+            String selectedPackName,
+            String activePackName,
+            List<String> packIds,
+            String shaderpacksDirectory,
+            String lastError
+    ) {
+        private static final ShaderState EMPTY = new ShaderState(
+                false,
+                -1L,
+                "runtime-unavailable",
+                false,
+                false,
+                false,
+                false,
+                "",
+                "",
+                "",
+                List.of(),
+                "",
+                ""
+        );
+
+        private ShaderState {
+            stage = stage == null ? "" : stage;
+            selectedPackId = selectedPackId == null ? "" : selectedPackId;
+            selectedPackName = selectedPackName == null ? "" : selectedPackName;
+            activePackName = activePackName == null ? "" : activePackName;
+            packIds = packIds == null ? List.of() : List.copyOf(packIds);
+            shaderpacksDirectory = shaderpacksDirectory == null ? "" : shaderpacksDirectory;
+            lastError = lastError == null ? "" : lastError;
+        }
     }
 }
