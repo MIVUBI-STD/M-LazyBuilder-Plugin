@@ -37,6 +37,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
     private long lastTerrainContentRevision = Long.MIN_VALUE;
     private long lastTimeOfDay = Long.MIN_VALUE;
     private int lastProgramId = -1;
+    private int lastResolution = -1;
     private float lastCenterX = Float.NaN;
     private float lastCenterY = Float.NaN;
     private float lastCenterZ = Float.NaN;
@@ -103,10 +104,12 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         long terrainContentRevision = TerrainGpuResidencyTracker.contentRevision();
 
         long quantizedTime = quantizeTime(timeOfDay);
+        int shadowResolution = Math.max(256, Math.min(4096, requestedResolution));
         if (snapshot.ready()
                 && lastVisibleRevision == visible.revision()
                 && lastTerrainContentRevision == terrainContentRevision
                 && lastProgramId == program.programId()
+                && lastResolution == shadowResolution
                 && lastTimeOfDay == quantizedTime
                 && Float.compare(lastCenterX, centerX) == 0
                 && Float.compare(lastCenterY, centerY) == 0
@@ -121,7 +124,6 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         Matrix4f lightViewProjection = lightViewProjection(quantizedTime);
 
         try {
-            int shadowResolution = Math.max(256, Math.min(4096, requestedResolution));
             shadowMap.ensureSize(shadowResolution);
             GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, shadowMap.framebufferId());
             GL11C.glViewport(0, 0, shadowMap.size(), shadowMap.size());
@@ -192,6 +194,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             lastVisibleRevision = visible.revision();
             lastTerrainContentRevision = terrainContentRevision;
             lastProgramId = program.programId();
+            lastResolution = shadowResolution;
             lastTimeOfDay = quantizedTime;
             lastCenterX = centerX;
             lastCenterY = centerY;
@@ -289,6 +292,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         lastTerrainContentRevision = Long.MIN_VALUE;
         lastTimeOfDay = Long.MIN_VALUE;
         lastProgramId = -1;
+        lastResolution = -1;
         lastCenterX = Float.NaN;
         lastCenterY = Float.NaN;
         lastCenterZ = Float.NaN;
