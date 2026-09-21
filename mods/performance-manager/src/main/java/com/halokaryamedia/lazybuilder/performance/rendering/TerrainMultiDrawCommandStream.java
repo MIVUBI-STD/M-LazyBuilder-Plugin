@@ -72,11 +72,26 @@ public final class TerrainMultiDrawCommandStream {
     }
 
     public static synchronized ByteBuffer packTransforms(LayerPacket packet) {
+        if (packet == null) return emptyBuffer();
+        return packTransforms(packet, 0, packet.commandCount());
+    }
+
+    public static synchronized ByteBuffer packTransforms(
+            LayerPacket packet,
+            int start,
+            int end
+    ) {
         if (packet == null || packet.commandCount() == 0) return emptyBuffer();
-        int required = Math.multiplyExact(packet.commandCount(), TRANSFORM_BYTES);
+
+        int safeStart = Math.max(0, start);
+        int safeEnd = Math.min(packet.commandCount(), Math.max(safeStart, end));
+        int count = safeEnd - safeStart;
+        if (count <= 0) return emptyBuffer();
+
+        int required = Math.multiplyExact(count, TRANSFORM_BYTES);
         transformScratch = ensureCapacity(transformScratch, required);
         transformScratch.clear();
-        for (int index = 0; index < packet.commandCount(); index++) {
+        for (int index = safeStart; index < safeEnd; index++) {
             transformScratch.putFloat(packet.modelOffsetX(index));
             transformScratch.putFloat(packet.modelOffsetY(index));
             transformScratch.putFloat(packet.modelOffsetZ(index));
