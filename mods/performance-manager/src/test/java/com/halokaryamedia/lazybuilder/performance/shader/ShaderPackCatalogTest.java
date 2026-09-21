@@ -109,4 +109,29 @@ final class ShaderPackCatalogTest {
 
         assertEquals(firstIds, secondIds);
     }
+    @Test
+    void singlePackIdDoesNotChangeWhenCollisionIsAddedLater() throws Exception {
+        Path first = temp.resolve("My Shader");
+        Files.createDirectories(first.resolve("shaders"));
+        Files.writeString(first.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(first.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+
+        ShaderPackCatalog catalog = new ShaderPackCatalog(temp);
+        String before = catalog.scan().getFirst().id();
+
+        Path second = temp.resolve("my-shader");
+        Files.createDirectories(second.resolve("shaders"));
+        Files.writeString(second.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(second.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+
+        var after = catalog.scan();
+        String firstAfter = after.stream()
+                .filter(pack -> pack.path().equals(first))
+                .findFirst()
+                .orElseThrow()
+                .id();
+
+        assertEquals(before, firstAfter);
+        assertFalse(after.get(0).id().equals(after.get(1).id()));
+    }
 }
