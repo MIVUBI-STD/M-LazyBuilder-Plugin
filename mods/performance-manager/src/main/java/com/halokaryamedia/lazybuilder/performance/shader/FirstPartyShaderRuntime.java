@@ -34,6 +34,7 @@ public final class FirstPartyShaderRuntime {
     private volatile String previewError = "";
     private volatile long revision;
     private volatile long compileRequestGeneration;
+    private volatile Thread preparationThread;
     private volatile boolean lastFrameApplied;
     private volatile boolean terrainVertexCompiled;
     private volatile boolean terrainFragmentCompiled;
@@ -105,6 +106,7 @@ public final class FirstPartyShaderRuntime {
         String requested = packId == null ? "" : packId.trim();
         if (requested.isBlank()) {
             compileRequestGeneration++;
+            cancelPreparationLocked();
             selectedPackId = "";
             persisted = persisted.withSelectedPack("");
             configStore.save(persisted);
@@ -177,14 +179,23 @@ public final class FirstPartyShaderRuntime {
         ShaderPackDescriptor targetDescriptor = descriptor;
         Map<String, String> targetDefines = defines;
 
-        Thread.ofVirtual()
+        Thread worker = Thread.ofVirtual()
                 .name("LazyBuilder-Shader-Prepare")
-                .start(() -> prepareSelectedOffThread(
+                .unstarted(() -> prepareSelectedOffThread(
                         target,
                         targetGeneration,
                         targetDescriptor,
                         targetDefines
                 ));
+
+        synchronized (this) {
+            Thread previous = preparationThread;
+            preparationThread = worker;
+            if (previous != null && previous != Thread.currentThread()) {
+                previous.interrupt();
+            }
+        }
+        worker.start();
     }
 
     private void prepareSelectedOffThread(
@@ -193,6 +204,8 @@ public final class FirstPartyShaderRuntime {
             ShaderPackDescriptor descriptor,
             Map<String, String> defines
     ) {
+        Thread self = Thread.currentThread();
+        try {
         synchronized (this) {
             if (generation != compileRequestGeneration
                     || !requestedPackId.equals(selectedPackId)) {
@@ -236,6 +249,11 @@ public final class FirstPartyShaderRuntime {
                         targetPrepared
                 )
         );
+        } finally {
+            synchronized (this) {
+                if (preparationThread == self) preparationThread = null;
+            }
+        }
     }
 
     private void compilePreparedOnRenderThread(
@@ -331,6 +349,7 @@ public final class FirstPartyShaderRuntime {
 
     public synchronized void disable() {
         compileRequestGeneration++;
+        cancelPreparationLocked();
         boolean restoreMinecraftTerrain = pipeline != null
                 || terrainVertexCompiled
                 || terrainFragmentCompiled
@@ -900,6 +919,12 @@ public final class FirstPartyShaderRuntime {
         FirstPartyShadowRenderer shadows = shadowRenderer;
         shadowRenderer = null;
         if (shadows != null) shadows.close();
+    }
+
+    private void cancelPreparationLocked() {
+        Thread worker = preparationThread;
+        preparationThread = null;
+        if (worker != null && worker != Thread.currentThread()) worker.interrupt();
     }
 
     private String primaryError() {
