@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.utility.capture;
 
+import com.halokaryamedia.lazybuilder.utility.mixin.FramebufferAccessor;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gl.Framebuffer;
 import org.lwjgl.opengl.GL11C;
@@ -41,8 +42,9 @@ final class FrameReadbackRing implements AutoCloseable {
             return false;
         }
 
-        int width = Math.max(1, framebuffer.textureWidth);
-        int height = Math.max(1, framebuffer.textureHeight);
+        FramebufferAccessor access = (FramebufferAccessor) (Object) framebuffer;
+        int width = Math.max(1, access.lazybuilder$getTextureWidth());
+        int height = Math.max(1, access.lazybuilder$getTextureHeight());
         long requiredLong = (long) width * (long) height * 4L;
         if (requiredLong <= 0L || requiredLong > Integer.MAX_VALUE) {
             session.fail("Video framebuffer is too large to capture safely.");
