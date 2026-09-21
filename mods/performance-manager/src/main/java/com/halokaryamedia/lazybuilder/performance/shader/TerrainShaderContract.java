@@ -24,6 +24,8 @@ public final class TerrainShaderContract {
     }
 
     public static void validate(String vertexSource, String fragmentSource) throws IOException {
+        String vertexCode = ShaderSourceSyntax.codeOnly(vertexSource);
+        String fragmentCode = ShaderSourceSyntax.codeOnly(fragmentSource);
         List<String> missing = new ArrayList<>();
 
         requireVersion("vertex", vertexSource, missing);
@@ -52,8 +54,8 @@ public final class TerrainShaderContract {
         require(fragmentSource, "in vec2 texCoord0", "fragment varying texCoord0", missing);
         require(fragmentSource, "out vec4 fragColor", "fragment output fragColor", missing);
 
-        int gbufferAttachments = gbufferAttachmentCount(fragmentSource);
-        if (GBUFFER_2.matcher(fragmentSource == null ? "" : fragmentSource).find()
+        int gbufferAttachments = gbufferAttachmentCount(fragmentCode);
+        if (GBUFFER_2.matcher(fragmentCode).find()
                 && gbufferAttachments < 2) {
             missing.add("GBuffer2 requires GBuffer1");
         }
@@ -79,7 +81,7 @@ public final class TerrainShaderContract {
             String source,
             List<String> missing
     ) {
-        if (source == null || !source.stripLeading().startsWith("#version")) {
+        if (!ShaderSourceSyntax.startsWithVersion(source)) {
             missing.add(stage + " #version");
         }
     }
