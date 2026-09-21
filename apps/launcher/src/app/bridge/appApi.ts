@@ -7,7 +7,8 @@ import type {
   ServerRepairPlan,
   ServerRepairResult,
   StartupReport,
-  SystemSnapshot
+  SystemSnapshot,
+  SystemActivitySnapshot
 } from './runtimeTypes';
 
 const readinessApi = {
@@ -18,7 +19,8 @@ const readinessApi = {
 
 export const appApi = {
   system: {
-    snapshot: () => invokeRuntime<SystemSnapshot>('system_snapshot')
+    snapshot: () => invokeRuntime<SystemSnapshot>('system_snapshot'),
+    activity: () => invokeRuntime<SystemActivitySnapshot>('system_activity_snapshot')
   },
   diagnostics: {
     summary: () => invokeRuntime<DiagnosticSummary>('diagnostics_summary'),
