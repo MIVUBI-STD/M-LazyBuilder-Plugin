@@ -4,16 +4,23 @@ import net.minecraft.client.gl.VertexBuffer;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.ArrayList;
+import java.util.AbstractList;
 import java.util.List;
 
-/** Packs physical-ready terrain draws into GPU-ready command and transform payloads. */
+/**
+ * Packs physical-ready terrain draws into GPU-ready command and transform payloads.
+ *
+ * Production storage is structure-of-arrays to avoid one PackedCommand allocation
+ * per visible section. The PackedCommand view is retained only for tests/debug callers.
+ */
 public final class TerrainMultiDrawCommandStream {
     private static final int LAYER_COUNT = 5;
     private static final int COMMAND_BYTES = 24;
     private static final int TRANSFORM_BYTES = 16;
-    private static final ByteBuffer EMPTY = ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder()).asReadOnlyBuffer();
-    private static ByteBuffer transformScratch = ByteBuffer.allocateDirect(TRANSFORM_BYTES).order(ByteOrder.nativeOrder());
+    private static final ByteBuffer EMPTY =
+            ByteBuffer.allocateDirect(0).order(ByteOrder.nativeOrder()).asReadOnlyBuffer();
+    private static ByteBuffer transformScratch =
+            ByteBuffer.allocateDirect(TRANSFORM_BYTES).order(ByteOrder.nativeOrder());
     private static final LayerPacket[] EMPTY_LAYERS = emptyLayers();
     private static volatile LayerPacket[] current = EMPTY_LAYERS.clone();
 
@@ -25,7 +32,19 @@ public final class TerrainMultiDrawCommandStream {
             return LayerPacket.empty(layer == null ? -1 : layer.layerSlot());
         }
 
-        List<PackedCommand> commands = new ArrayList<>(Math.max(0, layer.physicalReadyCommands()));
+        int capacity = Math.max(0, layer.physicalReadyCommands());
+        VertexBuffer[] sources = new VertexBuffer[capacity];
+        TerrainArenaDrawPlanner.Command[] arenas = new TerrainArenaDrawPlanner.Command[capacity];
+        int[] indexCounts = new int[capacity];
+        long[] indexByteOffsets = new long[capacity];
+        int[] baseVertices = new int[capacity];
+        int[] transformIndices = new int[capacity];
+        int[] orderIndices = new int[capacity];
+        float[] offsetX = new float[capacity];
+        float[] offsetY = new float[capacity];
+        float[] offsetZ = new float[capacity];
+
+        int count = 0;
         for (int orderIndex = 0; orderIndex < layer.commands().size(); orderIndex++) {
             TerrainDrawTransformStream.Command transform = layer.commands().get(orderIndex);
             if (transform == null || !transform.physicalReady()) continue;
@@ -40,28 +59,36 @@ public final class TerrainMultiDrawCommandStream {
             long indexOffset = state.indexPayloadBytes() > 0 ? arena.indexByteOffset() : 0L;
             if (indexOffset < 0L) continue;
 
-            int packedTransformIndex = commands.size();
-            commands.add(new PackedCommand(
-                    transform.source(),
-                    arena,
-                    state.indexCount(),
-                    indexOffset,
-                    baseVertex,
-                    packedTransformIndex,
-                    orderIndex,
-                    transform.modelOffsetX(),
-                    transform.modelOffsetY(),
-                    transform.modelOffsetZ()
-            ));
+            sources[count] = transform.source();
+            arenas[count] = arena;
+            indexCounts[count] = state.indexCount();
+            indexByteOffsets[count] = indexOffset;
+            baseVertices[count] = baseVertex;
+            transformIndices[count] = count;
+            orderIndices[count] = orderIndex;
+            offsetX[count] = transform.modelOffsetX();
+            offsetY[count] = transform.modelOffsetY();
+            offsetZ[count] = transform.modelOffsetZ();
+            count++;
         }
 
         return new LayerPacket(
                 layer.layerSlot(),
-                List.copyOf(commands),
+                sources,
+                arenas,
+                indexCounts,
+                indexByteOffsets,
+                baseVertices,
+                transformIndices,
+                orderIndices,
+                offsetX,
+                offsetY,
+                offsetZ,
+                count,
                 layer.multiDrawCandidateRuns(),
                 layer.potentialDrawCallReduction(),
-                (long) commands.size() * COMMAND_BYTES,
-                (long) commands.size() * TRANSFORM_BYTES
+                (long) count * COMMAND_BYTES,
+                (long) count * TRANSFORM_BYTES
         );
     }
 
@@ -82,7 +109,7 @@ public final class TerrainMultiDrawCommandStream {
     public static synchronized void clearLayer(int layerSlot) {
         if (layerSlot < 0 || layerSlot >= LAYER_COUNT) return;
         LayerPacket existing = current[layerSlot];
-        if (existing != null && existing.commands().isEmpty()) return;
+        if (existing != null && existing.commandCount() == 0) return;
         LayerPacket[] next = current.clone();
         next[layerSlot] = EMPTY_LAYERS[layerSlot];
         current = next;
@@ -95,7 +122,7 @@ public final class TerrainMultiDrawCommandStream {
         long commandBytes = 0L;
         long transformBytes = 0L;
         for (LayerPacket layer : current) {
-            commands += layer.commands().size();
+            commands += layer.commandCount();
             runs += layer.candidateRuns();
             reductions += layer.potentialDrawCallReduction();
             commandBytes += layer.packedCommandBytes();
@@ -105,14 +132,14 @@ public final class TerrainMultiDrawCommandStream {
     }
 
     public static synchronized ByteBuffer packTransforms(LayerPacket packet) {
-        if (packet == null || packet.commands().isEmpty()) return emptyBuffer();
-        int required = Math.multiplyExact(packet.commands().size(), TRANSFORM_BYTES);
+        if (packet == null || packet.commandCount() == 0) return emptyBuffer();
+        int required = Math.multiplyExact(packet.commandCount(), TRANSFORM_BYTES);
         transformScratch = ensureCapacity(transformScratch, required);
         transformScratch.clear();
-        for (PackedCommand command : packet.commands()) {
-            transformScratch.putFloat(command.modelOffsetX());
-            transformScratch.putFloat(command.modelOffsetY());
-            transformScratch.putFloat(command.modelOffsetZ());
+        for (int index = 0; index < packet.commandCount(); index++) {
+            transformScratch.putFloat(packet.modelOffsetX(index));
+            transformScratch.putFloat(packet.modelOffsetY(index));
+            transformScratch.putFloat(packet.modelOffsetZ(index));
             transformScratch.putFloat(0.0F);
         }
         transformScratch.flip();
@@ -147,6 +174,10 @@ public final class TerrainMultiDrawCommandStream {
         return layers;
     }
 
+    /**
+     * Compatibility/test projection. Production renderer code should use LayerPacket
+     * primitive accessors directly.
+     */
     public record PackedCommand(
             VertexBuffer source,
             TerrainArenaDrawPlanner.Command arenaCommand,
@@ -161,16 +192,291 @@ public final class TerrainMultiDrawCommandStream {
     ) {
     }
 
-    public record LayerPacket(
-            int layerSlot,
-            List<PackedCommand> commands,
-            int candidateRuns,
-            long potentialDrawCallReduction,
-            long packedCommandBytes,
-            long packedTransformBytes
-    ) {
+    public static final class LayerPacket {
+        private static final VertexBuffer[] EMPTY_SOURCES = new VertexBuffer[0];
+        private static final TerrainArenaDrawPlanner.Command[] EMPTY_ARENAS =
+                new TerrainArenaDrawPlanner.Command[0];
+        private static final int[] EMPTY_INTS = new int[0];
+        private static final long[] EMPTY_LONGS = new long[0];
+        private static final float[] EMPTY_FLOATS = new float[0];
+
+        private final int layerSlot;
+        private final VertexBuffer[] sources;
+        private final TerrainArenaDrawPlanner.Command[] arenas;
+        private final int[] indexCounts;
+        private final long[] indexByteOffsets;
+        private final int[] baseVertices;
+        private final int[] transformIndices;
+        private final int[] orderIndices;
+        private final float[] modelOffsetX;
+        private final float[] modelOffsetY;
+        private final float[] modelOffsetZ;
+        private final int commandCount;
+        private final int candidateRuns;
+        private final long potentialDrawCallReduction;
+        private final long packedCommandBytes;
+        private final long packedTransformBytes;
+        private List<PackedCommand> compatibilityView;
+
+        LayerPacket(
+                int layerSlot,
+                VertexBuffer[] sources,
+                TerrainArenaDrawPlanner.Command[] arenas,
+                int[] indexCounts,
+                long[] indexByteOffsets,
+                int[] baseVertices,
+                int[] transformIndices,
+                int[] orderIndices,
+                float[] modelOffsetX,
+                float[] modelOffsetY,
+                float[] modelOffsetZ,
+                int commandCount,
+                int candidateRuns,
+                long potentialDrawCallReduction,
+                long packedCommandBytes,
+                long packedTransformBytes
+        ) {
+            this.layerSlot = layerSlot;
+            this.sources = sources;
+            this.arenas = arenas;
+            this.indexCounts = indexCounts;
+            this.indexByteOffsets = indexByteOffsets;
+            this.baseVertices = baseVertices;
+            this.transformIndices = transformIndices;
+            this.orderIndices = orderIndices;
+            this.modelOffsetX = modelOffsetX;
+            this.modelOffsetY = modelOffsetY;
+            this.modelOffsetZ = modelOffsetZ;
+            this.commandCount = Math.max(0, commandCount);
+            this.candidateRuns = candidateRuns;
+            this.potentialDrawCallReduction = potentialDrawCallReduction;
+            this.packedCommandBytes = packedCommandBytes;
+            this.packedTransformBytes = packedTransformBytes;
+        }
+
+        /** Compatibility constructor used by focused unit tests. */
+        public LayerPacket(
+                int layerSlot,
+                List<PackedCommand> commands,
+                int candidateRuns,
+                long potentialDrawCallReduction,
+                long packedCommandBytes,
+                long packedTransformBytes
+        ) {
+            this(
+                    layerSlot,
+                    sources(commands),
+                    arenas(commands),
+                    ints(commands, Field.INDEX_COUNT),
+                    longs(commands),
+                    ints(commands, Field.BASE_VERTEX),
+                    ints(commands, Field.TRANSFORM_INDEX),
+                    ints(commands, Field.ORDER_INDEX),
+                    floats(commands, Field.OFFSET_X),
+                    floats(commands, Field.OFFSET_Y),
+                    floats(commands, Field.OFFSET_Z),
+                    commands == null ? 0 : commands.size(),
+                    candidateRuns,
+                    potentialDrawCallReduction,
+                    packedCommandBytes,
+                    packedTransformBytes
+            );
+        }
+
+        public int layerSlot() {
+            return layerSlot;
+        }
+
+        public int commandCount() {
+            return commandCount;
+        }
+
+        public VertexBuffer source(int index) {
+            check(index);
+            return sources[index];
+        }
+
+        public TerrainArenaDrawPlanner.Command arenaCommand(int index) {
+            check(index);
+            return arenas[index];
+        }
+
+        public int indexCount(int index) {
+            check(index);
+            return indexCounts[index];
+        }
+
+        public long indexByteOffset(int index) {
+            check(index);
+            return indexByteOffsets[index];
+        }
+
+        public int baseVertex(int index) {
+            check(index);
+            return baseVertices[index];
+        }
+
+        public int transformIndex(int index) {
+            check(index);
+            return transformIndices[index];
+        }
+
+        public int orderIndex(int index) {
+            check(index);
+            return orderIndices[index];
+        }
+
+        public float modelOffsetX(int index) {
+            check(index);
+            return modelOffsetX[index];
+        }
+
+        public float modelOffsetY(int index) {
+            check(index);
+            return modelOffsetY[index];
+        }
+
+        public float modelOffsetZ(int index) {
+            check(index);
+            return modelOffsetZ[index];
+        }
+
+        public int candidateRuns() {
+            return candidateRuns;
+        }
+
+        public long potentialDrawCallReduction() {
+            return potentialDrawCallReduction;
+        }
+
+        public long packedCommandBytes() {
+            return packedCommandBytes;
+        }
+
+        public long packedTransformBytes() {
+            return packedTransformBytes;
+        }
+
+        public List<PackedCommand> commands() {
+            List<PackedCommand> view = compatibilityView;
+            if (view != null) return view;
+            view = new AbstractList<>() {
+                @Override
+                public PackedCommand get(int index) {
+                    return packedCommand(index);
+                }
+
+                @Override
+                public int size() {
+                    return commandCount;
+                }
+            };
+            compatibilityView = view;
+            return view;
+        }
+
+        PackedCommand packedCommand(int index) {
+            return new PackedCommand(
+                    source(index),
+                    arenaCommand(index),
+                    indexCount(index),
+                    indexByteOffset(index),
+                    baseVertex(index),
+                    transformIndex(index),
+                    orderIndex(index),
+                    modelOffsetX(index),
+                    modelOffsetY(index),
+                    modelOffsetZ(index)
+            );
+        }
+
+        private void check(int index) {
+            if (index < 0 || index >= commandCount) {
+                throw new IndexOutOfBoundsException(index);
+            }
+        }
+
         static LayerPacket empty(int layerSlot) {
-            return new LayerPacket(layerSlot, List.of(), 0, 0L, 0L, 0L);
+            return new LayerPacket(
+                    layerSlot,
+                    EMPTY_SOURCES,
+                    EMPTY_ARENAS,
+                    EMPTY_INTS,
+                    EMPTY_LONGS,
+                    EMPTY_INTS,
+                    EMPTY_INTS,
+                    EMPTY_INTS,
+                    EMPTY_FLOATS,
+                    EMPTY_FLOATS,
+                    EMPTY_FLOATS,
+                    0,
+                    0,
+                    0L,
+                    0L,
+                    0L
+            );
+        }
+
+        private enum Field {
+            INDEX_COUNT,
+            BASE_VERTEX,
+            TRANSFORM_INDEX,
+            ORDER_INDEX,
+            OFFSET_X,
+            OFFSET_Y,
+            OFFSET_Z
+        }
+
+        private static VertexBuffer[] sources(List<PackedCommand> commands) {
+            int size = commands == null ? 0 : commands.size();
+            VertexBuffer[] result = new VertexBuffer[size];
+            for (int i = 0; i < size; i++) result[i] = commands.get(i).source();
+            return result;
+        }
+
+        private static TerrainArenaDrawPlanner.Command[] arenas(List<PackedCommand> commands) {
+            int size = commands == null ? 0 : commands.size();
+            TerrainArenaDrawPlanner.Command[] result = new TerrainArenaDrawPlanner.Command[size];
+            for (int i = 0; i < size; i++) result[i] = commands.get(i).arenaCommand();
+            return result;
+        }
+
+        private static int[] ints(List<PackedCommand> commands, Field field) {
+            int size = commands == null ? 0 : commands.size();
+            int[] result = new int[size];
+            for (int i = 0; i < size; i++) {
+                PackedCommand command = commands.get(i);
+                result[i] = switch (field) {
+                    case INDEX_COUNT -> command.indexCount();
+                    case BASE_VERTEX -> command.baseVertex();
+                    case TRANSFORM_INDEX -> command.transformIndex();
+                    case ORDER_INDEX -> command.orderIndex();
+                    default -> throw new IllegalArgumentException("Not an int field: " + field);
+                };
+            }
+            return result;
+        }
+
+        private static long[] longs(List<PackedCommand> commands) {
+            int size = commands == null ? 0 : commands.size();
+            long[] result = new long[size];
+            for (int i = 0; i < size; i++) result[i] = commands.get(i).indexByteOffset();
+            return result;
+        }
+
+        private static float[] floats(List<PackedCommand> commands, Field field) {
+            int size = commands == null ? 0 : commands.size();
+            float[] result = new float[size];
+            for (int i = 0; i < size; i++) {
+                PackedCommand command = commands.get(i);
+                result[i] = switch (field) {
+                    case OFFSET_X -> command.modelOffsetX();
+                    case OFFSET_Y -> command.modelOffsetY();
+                    case OFFSET_Z -> command.modelOffsetZ();
+                    default -> throw new IllegalArgumentException("Not a float field: " + field);
+                };
+            }
+            return result;
         }
     }
 
