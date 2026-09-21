@@ -403,7 +403,7 @@ public final class FirstPartyShaderRuntime {
             current = gbuffer;
         }
         if (current == null) {
-            return new FirstPartyShaderGBuffer.Snapshot(false, "inactive", 0, 0, 0);
+            return new FirstPartyShaderGBuffer.Snapshot(false, "inactive", 0, 0, 0, 0L);
         }
 
         try {
@@ -414,7 +414,7 @@ public final class FirstPartyShaderRuntime {
                 stage = "gbuffer-error";
                 revision++;
             }
-            return new FirstPartyShaderGBuffer.Snapshot(false, "error", 0, 0, 0);
+            return new FirstPartyShaderGBuffer.Snapshot(false, "error", 0, 0, 0, 0L);
         }
     }
 
