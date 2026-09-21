@@ -103,6 +103,16 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             captureSettingsSearch(context, 620, 480, 2,
                     "shader",
                     "utility-settings-search-shader-620x480-gui2");
+            captureFocusedSetting(context, 1440, 900, 2,
+                    LazyBuilderSettingsScreen.Category.VIDEO,
+                    LazyBuilderSettingsScreen.VideoPage.VIEW,
+                    "Render Distance",
+                    "utility-settings-focus-render-distance-1440x900-gui2");
+            captureFocusedSetting(context, 620, 480, 2,
+                    LazyBuilderSettingsScreen.Category.CHAT,
+                    LazyBuilderSettingsScreen.VideoPage.QUALITY,
+                    "Show Report Button",
+                    "utility-settings-focus-chat-report-620x480-gui2");
             captureSettings(context, 1440, 900, 2,
                     LazyBuilderSettingsScreen.Category.CONTROLS,
                     "utility-settings-controls-1440x900-gui2");
@@ -383,6 +393,26 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
             throw new AssertionError("Expected Settings search field");
         });
         context.waitTicks(6);
+        context.takeScreenshot(screenshotName);
+        context.setScreen(() -> null);
+        context.waitTicks(4);
+    }
+
+    private static void captureFocusedSetting(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            LazyBuilderSettingsScreen.Category category,
+            LazyBuilderSettingsScreen.VideoPage page,
+            String target,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+        context.setScreen(() -> new LazyBuilderSettingsScreen(null, category, page, target));
+        context.waitForScreen(LazyBuilderSettingsScreen.class);
+        context.waitTicks(8);
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
         context.waitTicks(4);
