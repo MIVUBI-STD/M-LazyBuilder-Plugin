@@ -25,6 +25,13 @@ abstract class ShaderLoaderSourceMixin {
             ImmutableMap.Builder builder,
             CallbackInfo ci
     ) {
+        if (type == CompiledShader.Type.VERTEX
+                && id != null
+                && "minecraft".equals(id.getNamespace())
+                && "shaders/core/terrain.vsh".equals(id.getPath())) {
+            CompiledShaderMixin.lazybuilder$resetTerrainFallbackState();
+        }
+
         TerrainShaderSourceTransformer.observeResource(
                 id,
                 type,
