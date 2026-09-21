@@ -112,8 +112,16 @@ public final class TerrainPerDrawShaderBackend {
         return base;
     }
 
-    /** Upload and bind the current layer transform payload for a compatible first-party shader. */
-    public static boolean prepare(ShaderProgram program, TerrainMultiDrawCommandStream.LayerPacket packet) {
+    /**
+     * Validate and bind the per-draw shader contract for the current terrain layer.
+     *
+     * Transform payloads are intentionally not uploaded here. They are packed and
+     * uploaded per submitted run so large layers do not require one monolithic UBO.
+     */
+    public static boolean prepare(
+            ShaderProgram program,
+            TerrainMultiDrawCommandStream.LayerPacket packet
+    ) {
         prepareAttempts++;
         activeProgramRef = -1;
         activeDrawBaseLocation = -1;
@@ -128,27 +136,51 @@ public final class TerrainPerDrawShaderBackend {
             return false;
         }
 
-        ByteBuffer transforms = TerrainMultiDrawCommandStream.packTransforms(packet);
-        Probe probe = probe(program, transforms.remaining());
+        Probe probe = probe(program, 0);
         status = probe.status();
         if (!probe.ready()) return false;
 
-        ensureCapacity(transforms.remaining());
-        transformBuffer.upload(transforms, 0);
         GL31C.glUniformBlockBinding(program.getGlRef(), probe.blockIndex(), TRANSFORM_BINDING_POINT);
-        transformBuffer.bindBase(TRANSFORM_BINDING_POINT);
         GL20C.glUniform1i(probe.drawEnabledLocation(), 0);
 
         activeProgramRef = program.getGlRef();
         activeDrawBaseLocation = probe.drawBaseLocation();
         activeDrawEnabledLocation = probe.drawEnabledLocation();
-        uploadedBytes += transforms.remaining();
         successfulPrepares++;
         status = "ready";
         return true;
     }
 
-    /** Enable per-draw transform addressing only for the duration of one guarded multi-draw call. */
+    /** Upload one run's transforms and enable gl_DrawID addressing for that call. */
+    public static boolean beginMultiDraw(
+            ShaderProgram program,
+            TerrainMultiDrawCommandStream.LayerPacket packet,
+            int start,
+            int end
+    ) {
+        if (!preparedFor(program) || packet == null) return false;
+
+        ByteBuffer transforms = TerrainMultiDrawCommandStream.packTransforms(packet, start, end);
+        int bytes = transforms.remaining();
+        if (bytes <= 0) return false;
+
+        Probe probe = probe(program, bytes);
+        status = probe.status();
+        if (!probe.ready()) return false;
+
+        ensureCapacity(bytes);
+        transformBuffer.upload(transforms, 0);
+        transformBuffer.bindBase(TRANSFORM_BINDING_POINT);
+        GL20C.glUniform1i(activeDrawBaseLocation, 0);
+        GL20C.glUniform1i(activeDrawEnabledLocation, 1);
+        uploadedBytes += bytes;
+        return true;
+    }
+
+    /**
+     * Compatibility helper retained for focused tests/diagnostics. Production
+     * multi-draw uses the ranged overload above.
+     */
     public static boolean beginMultiDraw(ShaderProgram program, int transformBase) {
         if (!preparedFor(program) || transformBase < 0) return false;
         GL20C.glUniform1i(activeDrawBaseLocation, transformBase);
