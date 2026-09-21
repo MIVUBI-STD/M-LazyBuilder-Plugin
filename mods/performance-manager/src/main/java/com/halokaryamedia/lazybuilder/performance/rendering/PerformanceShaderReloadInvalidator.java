@@ -26,6 +26,6 @@ public final class PerformanceShaderReloadInvalidator implements SimpleSynchrono
         TerrainMultiDrawSubmissionBackend.invalidateForShaderReload();
         TerrainPerDrawShaderBackend.clear();
         TerrainDrawTransformStream.clear();
-        PerformanceManagerClient.invalidateShaderRuntimeForResourceReload();
+        PerformanceManagerClient.invalidateShaderTerrainForResourceReload();
     }
 }
