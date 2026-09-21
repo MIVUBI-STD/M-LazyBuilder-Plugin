@@ -93,7 +93,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         WorldRenderEvents.END.register(context -> {
             long now = System.nanoTime();
             runtime.recordFrame(now);
-            renderFirstPartyShaderFrame(now);
+            renderFirstPartyShaderFrame(context, now);
         });
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
@@ -144,7 +144,10 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         );
     }
 
-    private static void renderFirstPartyShaderFrame(long nowNanos) {
+    private static void renderFirstPartyShaderFrame(
+            WorldRenderContext context,
+            long nowNanos
+    ) {
         FirstPartyShaderRuntime shaders = shaderRuntime;
         if (shaders == null) return;
 
@@ -166,12 +169,35 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                 ? framebuffer.getDepthAttachment()
                 : 0;
         var gbuffer = shaders.endGBufferFrame(targetFramebuffer);
+
+        Matrix4f inverseViewProjection = null;
+        float cameraX = 0.0F;
+        float cameraY = 0.0F;
+        float cameraZ = 0.0F;
+        if (context != null && context.camera() != null) {
+            var camera = context.camera().getPos();
+            cameraX = (float) camera.getX();
+            cameraY = (float) camera.getY();
+            cameraZ = (float) camera.getZ();
+        }
+        if (context != null
+                && context.projectionMatrix() != null
+                && context.positionMatrix() != null) {
+            Matrix4f viewProjection = new Matrix4f(context.projectionMatrix())
+                    .mul(context.positionMatrix());
+            inverseViewProjection = viewProjection.invert(new Matrix4f());
+        }
+
         float timeSeconds = (float) ((nowNanos / 1_000_000L) % 3_600_000L) / 1000.0F;
         shaders.renderPostProcess(
                 targetFramebuffer,
                 sourceDepthTexture,
                 gbuffer.texture1(),
                 gbuffer.texture2(),
+                inverseViewProjection,
+                cameraX,
+                cameraY,
+                cameraZ,
                 width,
                 height,
                 timeSeconds
