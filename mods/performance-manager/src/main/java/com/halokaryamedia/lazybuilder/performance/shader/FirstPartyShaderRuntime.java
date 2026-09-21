@@ -23,15 +23,7 @@ public final class FirstPartyShaderRuntime {
     private volatile String selectedPackId = "";
     private volatile String activePackId = "";
     private volatile String stage = "source-ready";
-    private volatile String lastError = "";
-    private volatile String catalogError = "";
-    private volatile String compileError = "";
-    private volatile String terrainError = "";
-    private volatile String gbufferError = "";
-    private volatile String shadowError = "";
-    private volatile String postProcessError = "";
-    private volatile String controlError = "";
-    private volatile String previewError = "";
+    private final ShaderRuntimeHealth health = new ShaderRuntimeHealth();
     private volatile long revision;
     private volatile long cachedSnapshotMapRevision = Long.MIN_VALUE;
     private volatile Map<String, Object> cachedSnapshotMap = Map.of();
@@ -140,7 +132,7 @@ public final class FirstPartyShaderRuntime {
         cancelPreparationLocked();
         long generation = ++catalogRefreshGeneration;
         stage = "catalog-scanning";
-        controlError = "";
+        health.control("");
         revision++;
         return generation;
     }
@@ -162,11 +154,11 @@ public final class FirstPartyShaderRuntime {
             if (generation != catalogRefreshGeneration || "stopped".equals(stage)) return;
 
             packs = scan.packs();
-            catalogError = scan.error();
+            health.catalog(scan.error());
             migratePersistedPackIdsLocked();
 
-            if (!catalogError.isBlank()) {
-                lastError = primaryError();
+            if (!health.catalog().isBlank()) {
+
                 stage = "catalog-error";
                 revision++;
                 return;
@@ -196,11 +188,11 @@ public final class FirstPartyShaderRuntime {
                 }
             }
 
-            catalogError = "";
-            lastError = primaryError();
+            health.catalog("");
+
             if (pipeline == null) {
-                stage = lastError.isBlank() ? "source-ready" : "degraded";
-            } else if (lastError.isBlank()) {
+                stage = health.primary().isBlank() ? "source-ready" : "degraded";
+            } else if (health.primary().isBlank()) {
                 stage = terrainIntegrated ? "terrain-active" : "compiled";
             } else {
                 stage = "degraded";
@@ -211,8 +203,8 @@ public final class FirstPartyShaderRuntime {
 
     public synchronized boolean select(String packId) {
         if (terrainReloadActiveGeneration >= 0L) {
-            controlError = "A terrain shader change is still being applied.";
-            lastError = primaryError();
+            health.control("A terrain shader change is still being applied.");
+
             stage = "terrain-reload-busy";
             revision++;
             return false;
@@ -227,9 +219,9 @@ public final class FirstPartyShaderRuntime {
                 persisted = persisted.withSelectedPack("");
                 configStore.save(persisted);
             }
-            controlError = "";
-            lastError = primaryError();
-            stage = lastError.isBlank()
+            health.control("");
+
+            stage = health.primary().isBlank()
                     ? (pipeline == null ? "source-ready" : "compiled")
                     : "degraded";
             revision++;
@@ -238,8 +230,8 @@ public final class FirstPartyShaderRuntime {
 
         boolean exists = packs.stream().anyMatch(pack -> pack.id().equals(requested));
         if (!exists) {
-            controlError = "Shader pack is no longer available.";
-            lastError = primaryError();
+            health.control("Shader pack is no longer available.");
+
             stage = "selection-error";
             revision++;
             return false;
@@ -255,9 +247,9 @@ public final class FirstPartyShaderRuntime {
         // Persisted active state remains last-known-good so a failed candidate cannot
         // change the next-launch shader configuration.
         selectedPackId = requested;
-        controlError = "";
-        lastError = primaryError();
-        stage = lastError.isBlank()
+        health.control("");
+
+        stage = health.primary().isBlank()
                 ? (requested.equals(activePackId) && pipeline != null ? "compiled" : "selected")
                 : "degraded";
         revision++;
@@ -272,8 +264,8 @@ public final class FirstPartyShaderRuntime {
 
         synchronized (this) {
             if (terrainReloadActiveGeneration >= 0L) {
-                controlError = "A terrain shader change is still being applied.";
-                lastError = primaryError();
+                health.control("A terrain shader change is still being applied.");
+
                 stage = "terrain-reload-busy";
                 revision++;
                 return;
@@ -281,8 +273,8 @@ public final class FirstPartyShaderRuntime {
 
             requested = selectedPackId;
             if (requested == null || requested.isBlank()) {
-                controlError = "No shader pack selected.";
-                lastError = primaryError();
+                health.control("No shader pack selected.");
+
                 stage = "selection-error";
                 revision++;
                 return;
@@ -290,8 +282,8 @@ public final class FirstPartyShaderRuntime {
 
             descriptor = packById(requested);
             if (descriptor == null) {
-                controlError = "Shader pack is no longer available.";
-                lastError = primaryError();
+                health.control("Shader pack is no longer available.");
+
                 stage = "selection-error";
                 revision++;
                 return;
@@ -301,9 +293,9 @@ public final class FirstPartyShaderRuntime {
             stagedOptionsRequireCompile = false;
             defines = optionDefines(descriptor);
             stage = "prepare-queued";
-            controlError = "";
-            compileError = "";
-            lastError = primaryError();
+            health.control("");
+            health.compile("");
+
             revision++;
         }
 
@@ -357,8 +349,8 @@ public final class FirstPartyShaderRuntime {
                         || !requestedPackId.equals(selectedPackId)) {
                     return;
                 }
-                compileError = safeMessage(error);
-                lastError = primaryError();
+                health.compile(safeMessage(error));
+
                 stage = "prepare-error";
                 revision++;
             }
@@ -453,14 +445,14 @@ public final class FirstPartyShaderRuntime {
                     configStore.save(persisted);
                     lastFrameApplied = false;
                     terrainReloadPending = false;
-                    terrainError = "";
+                    health.terrain("");
                     stage = "terrain-active";
                     if (previous != null) previous.close();
                 }
 
-                compileError = "";
-                controlError = "";
-                lastError = primaryError();
+                health.compile("");
+                health.control("");
+
                 revision++;
             }
         } catch (Exception error) {
@@ -470,8 +462,8 @@ public final class FirstPartyShaderRuntime {
                         || !requestedPackId.equals(selectedPackId)) {
                     return;
                 }
-                compileError = safeMessage(error);
-                lastError = primaryError();
+                health.compile(safeMessage(error));
+
                 stage = "compile-error";
                 revision++;
             }
@@ -522,15 +514,8 @@ public final class FirstPartyShaderRuntime {
         if (restoreMinecraftTerrain) terrainGeneration++;
         terrainReloadPending = restoreMinecraftTerrain;
         stage = "disabled";
-        catalogError = "";
-        compileError = "";
-        terrainError = "";
-        gbufferError = "";
-        shadowError = "";
-        postProcessError = "";
-        controlError = "";
-        previewError = "";
-        lastError = "";
+        health.clear();
+
         revision++;
     }
 
@@ -611,8 +596,8 @@ public final class FirstPartyShaderRuntime {
                 && activePackId.isBlank()
                 && terrainRollbackPipeline == null) {
             terrainReloadPending = false;
-            terrainError = "";
-            lastError = primaryError();
+            health.terrain("");
+
             revision++;
             return;
         }
@@ -625,9 +610,9 @@ public final class FirstPartyShaderRuntime {
             persisted = persisted.withSelectedPack(activePackId).withEnabled(true);
             configStore.save(persisted);
             clearTerrainRollbackLocked();
-            terrainError = "";
-            lastError = primaryError();
-            stage = lastError.isBlank()
+            health.terrain("");
+
+            stage = health.primary().isBlank()
                     ? (lastFrameApplied ? "terrain+postprocess-active" : "terrain-active")
                     : "degraded";
             revision++;
@@ -667,8 +652,8 @@ public final class FirstPartyShaderRuntime {
         String source = current.terrainSource(vertex);
         if (source.isBlank()) {
             String message = "Active shader pipeline lost its prepared terrain source.";
-            terrainError = message;
-            lastError = primaryError();
+            health.terrain(message);
+
             stage = "terrain-source-error";
             revision++;
             return new TerrainSource(false, "", sourcePackId, message);
@@ -694,16 +679,16 @@ public final class FirstPartyShaderRuntime {
             if (terrainVertexCompiled && terrainFragmentCompiled) {
                 stage = "terrain-linking";
             }
-            if (error == null || error.isBlank()) terrainError = "";
-            lastError = primaryError();
+            if (error == null || error.isBlank()) health.terrain("");
+
         } else {
             if (vertex) terrainVertexCompiled = false;
             else terrainFragmentCompiled = false;
             terrainIntegrated = false;
-            terrainError = error == null || error.isBlank()
+            health.terrain(error == null || error.isBlank()
                     ? "First-party terrain shader fell back to Minecraft."
-                    : error;
-            lastError = primaryError();
+                    : error);
+
             stage = "terrain-fallback";
         }
         revision++;
@@ -722,9 +707,9 @@ public final class FirstPartyShaderRuntime {
             return;
         }
         terrainIntegrated = true;
-        terrainError = "";
-        lastError = primaryError();
-        stage = lastError.isBlank()
+        health.terrain("");
+
+        stage = health.primary().isBlank()
                 ? (lastFrameApplied ? "terrain+postprocess-active" : "terrain-active")
                 : "degraded";
         revision++;
@@ -788,10 +773,10 @@ public final class FirstPartyShaderRuntime {
                 String nextShadowError = shadowPlan.status()
                         + ":" + shadowPlan.estimatedBytes()
                         + "/" + shadowPlan.limitBytes();
-                boolean changed = !nextShadowError.equals(shadowError)
+                boolean changed = !nextShadowError.equals(health.shadow())
                         || !"memory-budget".equals(stage);
-                shadowError = nextShadowError;
-                lastError = primaryError();
+                health.shadow(nextShadowError);
+
                 stage = "memory-budget";
                 if (changed) revision++;
                 return FirstPartyShadowRenderer.emptySnapshot();
@@ -812,18 +797,18 @@ public final class FirstPartyShaderRuntime {
 
         synchronized (this) {
             if (!result.ready() && !"no-visible-terrain".equals(result.status())) {
-                boolean changed = !result.status().equals(shadowError)
+                boolean changed = !result.status().equals(health.shadow())
                         || !"shadow-error".equals(stage);
-                shadowError = result.status();
-                lastError = primaryError();
+                health.shadow(result.status());
+
                 stage = "shadow-error";
                 if (changed) revision++;
             } else if (result.ready()) {
-                boolean hadShadowError = !shadowError.isEmpty();
+                boolean hadShadowError = !health.shadow().isEmpty();
                 String previousStage = stage;
-                shadowError = "";
-                lastError = primaryError();
-                stage = lastError.isBlank()
+                health.shadow("");
+
+                stage = health.primary().isBlank()
                         ? (terrainIntegrated
                         ? (lastFrameApplied ? "terrain+postprocess-active" : "terrain-active")
                         : (lastFrameApplied ? "postprocess-active" : "compiled"))
@@ -919,10 +904,10 @@ public final class FirstPartyShaderRuntime {
                 String nextGbufferError = budget.status()
                         + ":" + budget.estimatedBytes()
                         + "/" + budget.limitBytes();
-                boolean changed = !nextGbufferError.equals(gbufferError)
+                boolean changed = !nextGbufferError.equals(health.gbuffer())
                         || !"memory-budget".equals(stage);
-                gbufferError = nextGbufferError;
-                lastError = primaryError();
+                health.gbuffer(nextGbufferError);
+
                 stage = "memory-budget";
                 if (changed) revision++;
                 return false;
@@ -940,21 +925,21 @@ public final class FirstPartyShaderRuntime {
             );
             if (begun) {
                 synchronized (this) {
-                    boolean hadError = !gbufferError.isEmpty();
-                    String previousError = lastError;
-                    gbufferError = "";
-                    lastError = primaryError();
-                    if (hadError || !lastError.equals(previousError)) revision++;
+                    boolean hadError = !health.gbuffer().isEmpty();
+                    String previousError = health.primary();
+                    health.gbuffer("");
+
+                    if (hadError || !health.primary().equals(previousError)) revision++;
                 }
             }
             return begun;
         } catch (RuntimeException error) {
             synchronized (this) {
                 String nextError = safeMessage(error);
-                boolean changed = !nextError.equals(gbufferError)
+                boolean changed = !nextError.equals(health.gbuffer())
                         || !"gbuffer-error".equals(stage);
-                gbufferError = nextError;
-                lastError = primaryError();
+                health.gbuffer(nextError);
+
                 stage = "gbuffer-error";
                 if (changed) revision++;
             }
@@ -975,8 +960,8 @@ public final class FirstPartyShaderRuntime {
             return current.end(targetFramebuffer);
         } catch (RuntimeException error) {
             synchronized (this) {
-                gbufferError = safeMessage(error);
-                lastError = primaryError();
+                health.gbuffer(safeMessage(error));
+
                 stage = "gbuffer-error";
                 revision++;
             }
@@ -1018,11 +1003,11 @@ public final class FirstPartyShaderRuntime {
             if (gbufferMissing) {
                 String nextError = "Required GBuffer attachment is unavailable for this frame.";
                 boolean changed = lastFrameApplied
-                        || !nextError.equals(gbufferError)
+                        || !nextError.equals(health.gbuffer())
                         || !"gbuffer-fallback".equals(stage);
                 lastFrameApplied = false;
-                gbufferError = nextError;
-                lastError = primaryError();
+                health.gbuffer(nextError);
+
                 stage = "gbuffer-fallback";
                 if (changed) revision++;
                 return false;
@@ -1038,11 +1023,11 @@ public final class FirstPartyShaderRuntime {
                         + ":" + budget.estimatedBytes()
                         + "/" + budget.limitBytes();
                 boolean changed = lastFrameApplied
-                        || !nextPostError.equals(postProcessError)
+                        || !nextPostError.equals(health.postProcess())
                         || !"memory-budget".equals(stage);
                 lastFrameApplied = false;
-                postProcessError = nextPostError;
-                lastError = primaryError();
+                health.postProcess(nextPostError);
+
                 stage = "memory-budget";
                 if (changed) revision++;
                 return false;
@@ -1090,16 +1075,16 @@ public final class FirstPartyShaderRuntime {
                     stage = nextStage;
                     changed = true;
                 }
-                if (applied && !postProcessError.isEmpty()) {
-                    postProcessError = "";
+                if (applied && !health.postProcess().isEmpty()) {
+                    health.postProcess("");
                     changed = true;
                 }
-                String nextError = primaryError();
-                if (!nextError.equals(lastError)) {
-                    lastError = nextError;
+                String nextError = health.primary();
+                if (!nextError.equals(health.primary())) {
+
                     changed = true;
                 }
-                if (!lastError.isBlank()) nextStage = "degraded";
+                if (!health.primary().isBlank()) nextStage = "degraded";
                 if (!nextStage.equals(stage)) {
                     stage = nextStage;
                     changed = true;
@@ -1112,10 +1097,10 @@ public final class FirstPartyShaderRuntime {
                 String nextError = safeMessage(error);
                 boolean changed = lastFrameApplied
                         || !"render-error".equals(stage)
-                        || !nextError.equals(lastError);
+                        || !nextError.equals(health.primary());
                 lastFrameApplied = false;
-                postProcessError = nextError;
-                lastError = primaryError();
+                health.postProcess(nextError);
+
                 stage = "render-error";
                 if (changed) revision++;
             }
@@ -1141,8 +1126,8 @@ public final class FirstPartyShaderRuntime {
         synchronized (this) {
             ShaderPackDescriptor selected = selectedPack();
             if (selected == null) {
-                controlError = "No shader pack selected.";
-                lastError = primaryError();
+                health.control("No shader pack selected.");
+
                 stage = "selection-error";
                 revision++;
                 return false;
@@ -1158,8 +1143,8 @@ public final class FirstPartyShaderRuntime {
             for (Map.Entry<String, String> update : updates.entrySet()) {
                 ShaderPackManifest.Option option = declared.get(update.getKey());
                 if (option == null) {
-                    controlError = "Shader option is no longer available: " + update.getKey();
-                    lastError = primaryError();
+                    health.control("Shader option is no longer available: " + update.getKey());
+
                     stage = "option-error";
                     revision++;
                     return false;
@@ -1178,8 +1163,8 @@ public final class FirstPartyShaderRuntime {
             }
 
             if (!changed) {
-                controlError = "";
-                lastError = primaryError();
+                health.control("");
+
                 return true;
             }
 
@@ -1198,8 +1183,8 @@ public final class FirstPartyShaderRuntime {
 
             persisted = next;
             configStore.save(persisted);
-            controlError = "";
-            lastError = primaryError();
+            health.control("");
+
             recompile = allowRecompile && stagedOptionsRequireCompile;
             if (recompile) stagedOptionsRequireCompile = false;
             stage = recompile
@@ -1234,13 +1219,13 @@ public final class FirstPartyShaderRuntime {
             }
             List<String> dependencies = new ArrayList<>(result.dependencies());
             dependencies.sort(String::compareTo);
-            previewError = "";
-            lastError = primaryError();
+            health.preview("");
+
             return new SourcePreview(true, result.source(), List.copyOf(dependencies), "");
         } catch (Exception error) {
-            previewError = safeMessage(error);
-            lastError = primaryError();
-            return new SourcePreview(false, "", List.of(), previewError);
+            health.preview(safeMessage(error));
+
+            return new SourcePreview(false, "", List.of(), health.preview());
         } finally {
             revision++;
         }
@@ -1271,7 +1256,7 @@ public final class FirstPartyShaderRuntime {
                 packs.stream().map(ShaderPackDescriptor::id).toList(),
                 packs.stream().map(ShaderPackDescriptor::displayName).toList(),
                 catalog.directory(),
-                lastError
+                health.primary()
         );
     }
 
@@ -1298,7 +1283,7 @@ public final class FirstPartyShaderRuntime {
         values.put("terrainCandidatePackId", pendingTerrainPackId);
         values.put("terrainRollbackAvailable", terrainRollbackPipeline != null);
         values.put("invalidPackCount", catalog.invalidEntries().size());
-        values.put("catalogHealthy", catalogError.isBlank());
+        values.put("catalogHealthy", health.catalog().isBlank());
         return Map.copyOf(values);
     }
 
@@ -1331,18 +1316,9 @@ public final class FirstPartyShaderRuntime {
         values.put("packIds", snapshot.packIds());
         values.put("packNames", snapshot.packNames());
         values.put("shaderpacksDirectory", snapshot.shaderpacksDirectory().toString());
-        values.put("lastError", snapshot.lastError());
+        values.put("health.primary()", snapshot.health.primary()());
         values.put("invalidPacks", catalog.invalidEntries());
-        Map<String, String> health = new LinkedHashMap<>();
-        health.put("catalog", catalogError);
-        health.put("compile", compileError);
-        health.put("terrain", terrainError);
-        health.put("gbuffer", gbufferError);
-        health.put("shadow", shadowError);
-        health.put("postProcess", postProcessError);
-        health.put("control", controlError);
-        health.put("preview", previewError);
-        values.put("health", Map.copyOf(health));
+        values.put("health", health.snapshot());
         boolean shadowDeclared = pipeline != null && pipeline.has("shadow");
         boolean postDeclared = pipeline != null && (pipeline.has("composite") || pipeline.has("final"));
         ShaderRuntimeMode runtimeMode = ShaderRuntimeMode.evaluate(
@@ -1435,8 +1411,8 @@ public final class FirstPartyShaderRuntime {
 
         if (failed != null && failed != restore) failed.close();
 
-        terrainError = failure == null ? "" : failure;
-        lastError = primaryError();
+        health.terrain(failure == null ? "" : failure);
+
         stage = terrainIntegrated
                 ? "terrain-rollback-active"
                 : "terrain-reload-error";
@@ -1465,8 +1441,8 @@ public final class FirstPartyShaderRuntime {
         // last-known-good configuration unchanged; only this failed candidate is discarded.
         releaseAllAuxiliariesLocked();
 
-        terrainError = failure == null ? "" : failure;
-        lastError = primaryError();
+        health.terrain(failure == null ? "" : failure);
+
         stage = "terrain-reload-incomplete";
         revision++;
     }
@@ -1574,17 +1550,6 @@ public final class FirstPartyShaderRuntime {
         if (worker != null && worker != Thread.currentThread()) worker.interrupt();
     }
 
-    private String primaryError() {
-        if (!catalogError.isBlank()) return catalogError;
-        if (!compileError.isBlank()) return compileError;
-        if (!terrainError.isBlank()) return terrainError;
-        if (!gbufferError.isBlank()) return gbufferError;
-        if (!shadowError.isBlank()) return shadowError;
-        if (!postProcessError.isBlank()) return postProcessError;
-        if (!controlError.isBlank()) return controlError;
-        if (!previewError.isBlank()) return previewError;
-        return "";
-    }
 
     private static String safeMessage(Throwable error) {
         String message = error == null ? "" : error.getMessage();
