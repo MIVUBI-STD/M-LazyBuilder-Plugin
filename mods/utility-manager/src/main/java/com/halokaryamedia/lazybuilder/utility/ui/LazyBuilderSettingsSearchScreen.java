@@ -241,7 +241,7 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
             values.add(e(chat, "chat messages appearance privacy search", LazyBuilderSettingsScreen.Category.CHAT, LazyBuilderSettingsScreen.VideoPage.QUALITY));
         }
 
-        for (String ui : List.of("GUI Scale","Compact Debug HUD","Contextual Screenshot Names","Quick Creative Search")) {
+        for (String ui : List.of("GUI Scale","Compact Debug HUD","Contextual Screenshot Names","Quick Creative Search","Reconnect Button")) {
             values.add(e(ui, "interface ui hud", LazyBuilderSettingsScreen.Category.INTERFACE, LazyBuilderSettingsScreen.VideoPage.QUALITY));
         }
 
