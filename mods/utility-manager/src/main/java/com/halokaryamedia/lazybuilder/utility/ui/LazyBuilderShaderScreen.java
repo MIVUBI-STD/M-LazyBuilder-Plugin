@@ -110,7 +110,7 @@ public final class LazyBuilderShaderScreen extends Screen {
                     actionWidth,
                     22,
                     Text.literal("Compile Selected"),
-                    true,
+                    !state.compatibilityBlocked(),
                     LazyBuilderSettingsControlWidget.Kind.ACTION,
                     this::compileSelected
             ));
@@ -134,8 +134,10 @@ public final class LazyBuilderShaderScreen extends Screen {
                         shell,
                         ROW_HEIGHT - 2,
                         Text.literal(pack.name() + suffix),
-                        true,
-                        LazyBuilderSettingsControlWidget.Kind.ACTION,
+                        !state.compatibilityBlocked(),
+                        state.compatibilityBlocked()
+                                ? LazyBuilderSettingsControlWidget.Kind.STATUS
+                                : LazyBuilderSettingsControlWidget.Kind.ACTION,
                         () -> selectAndCompile(pack.id())
                 ));
             }
@@ -149,7 +151,7 @@ public final class LazyBuilderShaderScreen extends Screen {
                     92,
                     22,
                     Text.literal("Retry"),
-                    !state.selectedPackId().isBlank(),
+                    !state.compatibilityBlocked() && !state.selectedPackId().isBlank(),
                     LazyBuilderSettingsControlWidget.Kind.FOOTER,
                     this::compileSelected
             ));
@@ -338,11 +340,17 @@ public final class LazyBuilderShaderScreen extends Screen {
                 stringValue(values, "activePackName", ""),
                 stringValue(values, "shaderpacksDirectory", ""),
                 stringValue(values, "lastError", ""),
+                booleanValue(values, "compatibilityBlocked", false),
+                stringValue(values, "compatibilityOwner", ""),
                 List.copyOf(packs)
         );
     }
 
     private static String statusText(ShaderState state) {
+        if (state.compatibilityBlocked()) {
+            return "Compatibility owner: "
+                    + (state.compatibilityOwner().isBlank() ? "external renderer" : state.compatibilityOwner());
+        }
         if (!state.lastError().isBlank()) return "Error: " + state.lastError();
         if ("compiling".equals(state.stage()) || "compile-queued".equals(state.stage())) {
             return "Compiling shader...";
@@ -410,13 +418,15 @@ public final class LazyBuilderShaderScreen extends Screen {
             String activePackName,
             String directory,
             String lastError,
+            boolean compatibilityBlocked,
+            String compatibilityOwner,
             List<ShaderPack> packs
     ) {
         static ShaderState unavailable() {
             return new ShaderState(
                     false, 0L, "runtime-unavailable",
                     false, false, false, false, false, false,
-                    "", "", "", "", "", "", List.of()
+                    "", "", "", "", "", "", false, "", List.of()
             );
         }
     }
