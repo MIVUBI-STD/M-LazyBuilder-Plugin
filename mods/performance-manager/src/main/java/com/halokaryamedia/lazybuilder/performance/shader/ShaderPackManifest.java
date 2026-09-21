@@ -20,6 +20,7 @@ import java.util.Properties;
  * boolean, int, and float. Options become GLSL defines named LB_OPT_<ID>.
  */
 public record ShaderPackManifest(
+        String id,
         String name,
         String author,
         String description,
@@ -29,16 +30,26 @@ public record ShaderPackManifest(
     private static final int MAX_OPTIONS = 128;
 
     public ShaderPackManifest {
+        id = clean(id).toLowerCase(Locale.ROOT);
         name = clean(name);
         author = clean(author);
         description = clean(description);
         options = options == null ? List.of() : List.copyOf(options);
     }
 
+    public ShaderPackManifest(
+            String name,
+            String author,
+            String description,
+            List<Option> options
+    ) {
+        this("", name, author, description, options);
+    }
+
     public static ShaderPackManifest load(ShaderPackSource source, String fallbackName)
             throws IOException {
         if (!source.exists(FILE)) {
-            return new ShaderPackManifest(fallbackName, "", "", List.of());
+            return new ShaderPackManifest("", fallbackName, "", "", List.of());
         }
 
         Properties properties = new Properties();
@@ -72,7 +83,13 @@ public record ShaderPackManifest(
             }
         }
 
+        String explicitId = clean(properties.getProperty("id", "")).toLowerCase(Locale.ROOT);
+        if (!explicitId.isBlank() && !validPackId(explicitId)) {
+            throw new IOException("Invalid shader pack id: " + explicitId);
+        }
+
         return new ShaderPackManifest(
+                explicitId,
                 properties.getProperty("name", fallbackName),
                 properties.getProperty("author", ""),
                 properties.getProperty("description", ""),
@@ -149,6 +166,10 @@ public record ShaderPackManifest(
                 );
             }
         };
+    }
+
+    private static boolean validPackId(String id) {
+        return id != null && id.matches("[a-z0-9][a-z0-9._-]{0,63}");
     }
 
     private static boolean validId(String id) {
