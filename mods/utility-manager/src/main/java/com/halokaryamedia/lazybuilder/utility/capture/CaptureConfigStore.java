@@ -51,6 +51,11 @@ public final class CaptureConfigStore {
                         defaults.videoQuality()
                 ),
                 readEnum(
+                        properties.getProperty("video.resolution"),
+                        CapturePreferences.VideoResolution.class,
+                        defaults.videoResolution()
+                ),
+                readEnum(
                         properties.getProperty("video.fps"),
                         CapturePreferences.VideoFrameRate.class,
                         defaults.videoFrameRate()
@@ -72,6 +77,10 @@ public final class CaptureConfigStore {
         properties.setProperty(
                 "video.quality",
                 preferences.videoQuality().name().toLowerCase(Locale.ROOT)
+        );
+        properties.setProperty(
+                "video.resolution",
+                preferences.videoResolution().name().toLowerCase(Locale.ROOT)
         );
         properties.setProperty(
                 "video.fps",
