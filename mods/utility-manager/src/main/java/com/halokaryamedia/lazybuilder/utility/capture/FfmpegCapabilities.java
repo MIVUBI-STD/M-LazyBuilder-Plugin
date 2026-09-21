@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-/** Probes the available FFmpeg executable and chooses one supported H.264 encoder. */
+/** Probes FFmpeg and chooses an H.264 encoder that can actually initialize on this machine. */
 final class FfmpegCapabilities {
     enum Encoder {
         NVENC("NVIDIA NVENC", "h264_nvenc"),
@@ -36,14 +36,28 @@ final class FfmpegCapabilities {
         }
     }
 
+    private static volatile Snapshot automaticCache;
+    private static volatile Snapshot softwareCache;
+
     private FfmpegCapabilities() {}
 
     static Snapshot detect(Path gameDirectory, CapturePreferences.VideoEncoderMode mode) {
+        Snapshot cached = mode == CapturePreferences.VideoEncoderMode.SOFTWARE
+                ? softwareCache
+                : automaticCache;
+        if (cached != null && cached.available()) return cached;
+
         for (String executable : candidates(gameDirectory)) {
             Snapshot snapshot = probe(executable, mode);
-            if (snapshot.available()) return snapshot;
+            if (!snapshot.available()) continue;
+            if (mode == CapturePreferences.VideoEncoderMode.SOFTWARE) {
+                softwareCache = snapshot;
+            } else {
+                automaticCache = snapshot;
+            }
+            return snapshot;
         }
-        return new Snapshot("", null, false, "FFmpeg not found");
+        return new Snapshot("", null, false, "FFmpeg not found or no encoder could initialize");
     }
 
     private static Snapshot probe(String executable, CapturePreferences.VideoEncoderMode mode) {
@@ -52,21 +66,22 @@ final class FfmpegCapabilities {
             process = new ProcessBuilder(executable, "-hide_banner", "-encoders")
                     .redirectErrorStream(true)
                     .start();
-            byte[] output = process.getInputStream().readAllBytes();
             if (!process.waitFor(6, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
                 return new Snapshot(executable, null, false, "FFmpeg probe timed out");
             }
+            byte[] output = process.getInputStream().readAllBytes();
             if (process.exitValue() != 0) {
                 return new Snapshot(executable, null, false, "FFmpeg probe failed");
             }
 
-            String text = new String(output, StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
-            Encoder encoder = choose(text, mode);
-            if (encoder == null) {
-                return new Snapshot(executable, null, false, "No supported H.264 encoder");
+            String encoders = new String(output, StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
+            for (Encoder encoder : candidates(encoders, mode)) {
+                if (encoderInitializes(executable, encoder)) {
+                    return new Snapshot(executable, encoder, true, "Ready · " + encoder.label());
+                }
             }
-            return new Snapshot(executable, encoder, true, "Ready · " + encoder.label());
+            return new Snapshot(executable, null, false, "No supported H.264 encoder could initialize");
         } catch (IOException | InterruptedException error) {
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();
             return new Snapshot(executable, null, false, safeMessage(error));
@@ -75,14 +90,47 @@ final class FfmpegCapabilities {
         }
     }
 
-    private static Encoder choose(String encoders, CapturePreferences.VideoEncoderMode mode) {
+    private static List<Encoder> candidates(
+            String encoders,
+            CapturePreferences.VideoEncoderMode mode
+    ) {
+        ArrayList<Encoder> result = new ArrayList<>();
         if (mode == CapturePreferences.VideoEncoderMode.SOFTWARE) {
-            return encoders.contains(Encoder.SOFTWARE.ffmpegName()) ? Encoder.SOFTWARE : null;
+            if (encoders.contains(Encoder.SOFTWARE.ffmpegName())) result.add(Encoder.SOFTWARE);
+            return List.copyOf(result);
         }
+
         for (Encoder encoder : List.of(Encoder.NVENC, Encoder.AMF, Encoder.QSV, Encoder.SOFTWARE)) {
-            if (encoders.contains(encoder.ffmpegName())) return encoder;
+            if (encoders.contains(encoder.ffmpegName())) result.add(encoder);
         }
-        return null;
+        return List.copyOf(result);
+    }
+
+    private static boolean encoderInitializes(String executable, Encoder encoder) {
+        Process process = null;
+        try {
+            process = new ProcessBuilder(
+                    executable,
+                    "-hide_banner", "-loglevel", "error",
+                    "-f", "lavfi",
+                    "-i", "color=c=black:s=16x16:r=1",
+                    "-frames:v", "1",
+                    "-c:v", encoder.ffmpegName(),
+                    "-f", "null",
+                    "-"
+            ).redirectErrorStream(true).start();
+
+            if (!process.waitFor(8, TimeUnit.SECONDS)) {
+                process.destroyForcibly();
+                return false;
+            }
+            return process.exitValue() == 0;
+        } catch (IOException | InterruptedException error) {
+            if (error instanceof InterruptedException) Thread.currentThread().interrupt();
+            return false;
+        } finally {
+            if (process != null && process.isAlive()) process.destroyForcibly();
+        }
     }
 
     private static List<String> candidates(Path gameDirectory) {
