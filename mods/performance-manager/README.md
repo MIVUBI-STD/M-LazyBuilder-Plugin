@@ -155,6 +155,8 @@ When a compiled LazyBuilder pack changes its terrain source, Performance Manager
 
 Non-terrain shader changes avoid even that targeted Minecraft shader reload when the prepared terrain-source fingerprint is unchanged.
 
+Shader health is reported as an explicit runtime mode rather than a single healthy/failed bit: `full`, `terrain-post`, `terrain-shadow`, `terrain-only`, `fallback`, or `disabled`. Optional shadow/post-process failures therefore remain distinguishable from terrain integration failure and can degrade without discarding a still-valid terrain path.
+
 ## FRAPI and shader compatibility boundary
 
 Fabric Renderer API 5.x lets renderer replacements declare ownership with:
