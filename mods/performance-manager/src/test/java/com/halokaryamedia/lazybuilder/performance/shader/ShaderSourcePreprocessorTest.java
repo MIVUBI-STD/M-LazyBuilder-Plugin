@@ -77,7 +77,10 @@ final class ShaderSourcePreprocessorTest {
     void injectsDefinesImmediatelyAfterVersionInStableOrder() throws Exception {
         Path pack = temp.resolve("define-pack");
         Files.createDirectories(pack.resolve("shaders"));
-        Files.writeString(pack.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(
+                pack.resolve("shaders/terrain.vsh"),
+                "#version 150\nfloat a = float(LB_OPT_ALPHA);\nvoid main(){}\n"
+        );
 
         ShaderPackDescriptor descriptor = new ShaderPackDescriptor(
                 "define-pack",
@@ -103,7 +106,7 @@ final class ShaderSourcePreprocessorTest {
 
         assertTrue(version >= 0);
         assertTrue(alpha > version);
-        assertTrue(zeta > alpha);
-        assertTrue(body > zeta);
+        assertTrue(zeta < 0);
+        assertTrue(body > alpha);
     }
 }
