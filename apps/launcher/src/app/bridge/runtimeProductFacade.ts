@@ -35,6 +35,7 @@ async function previewSystemSnapshot(): Promise<SystemSnapshot> {
   return {
     readiness: !active ? 'NO_WORKSPACE' : busy ? 'BUSY' : serverHealth?.ready ? 'READY' : 'NEEDS_ATTENTION',
     workspace: active,
+    recentWorkspaces: workspace.recent,
     serverHealth,
     runtimes,
     activeOperations: operations.filter((operation) =>
