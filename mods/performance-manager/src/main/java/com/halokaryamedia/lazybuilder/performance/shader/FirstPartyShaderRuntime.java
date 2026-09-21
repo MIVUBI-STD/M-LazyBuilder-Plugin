@@ -723,7 +723,7 @@ public final class FirstPartyShaderRuntime {
             double cameraZ,
             long timeOfDay
     ) {
-        return renderShadow(cameraX, cameraY, cameraZ, timeOfDay, 1, 1);
+        return renderShadow(cameraX, cameraY, cameraZ, timeOfDay, 1, 1, 1);
     }
 
     public FirstPartyShadowRenderer.Snapshot renderShadow(
@@ -733,6 +733,20 @@ public final class FirstPartyShaderRuntime {
             long timeOfDay,
             int framebufferWidth,
             int framebufferHeight
+    ) {
+        return renderShadow(
+                cameraX, cameraY, cameraZ, timeOfDay, framebufferWidth, framebufferHeight, 1
+        );
+    }
+
+    public FirstPartyShadowRenderer.Snapshot renderShadow(
+            double cameraX,
+            double cameraY,
+            double cameraZ,
+            long timeOfDay,
+            int framebufferWidth,
+            int framebufferHeight,
+            int reuseMultiplier
     ) {
         FirstPartyShaderPipeline current;
         ShaderMemoryBudget.ShadowPlan shadowPlan;
@@ -779,7 +793,8 @@ public final class FirstPartyShaderRuntime {
                 cameraY,
                 cameraZ,
                 timeOfDay,
-                shadowPlan.resolution()
+                shadowPlan.resolution(),
+                reuseMultiplier
         );
 
         synchronized (this) {
