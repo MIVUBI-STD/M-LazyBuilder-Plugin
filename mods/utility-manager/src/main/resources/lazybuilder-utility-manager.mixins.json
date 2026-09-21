@@ -16,6 +16,7 @@
     "PackListWidgetAccessor",
     "PackScreenAccessor",
     "ScreenshotRecorderMixin",
+    "SimpleOptionAccessor",
     "SocialInteractionsPlayerListEntryMixin"
   ],
   "injectors": {
