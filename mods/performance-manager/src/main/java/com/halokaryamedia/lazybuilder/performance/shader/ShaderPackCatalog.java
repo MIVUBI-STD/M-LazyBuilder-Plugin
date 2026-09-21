@@ -12,6 +12,7 @@ import java.util.zip.ZipFile;
 /** Discovers folder and ZIP shader packs without depending on Iris. */
 public final class ShaderPackCatalog {
     private final Path directory;
+    private volatile String lastScanError = "";
 
     public ShaderPackCatalog(Path directory) {
         this.directory = directory;
@@ -25,7 +26,7 @@ public final class ShaderPackCatalog {
         try {
             Files.createDirectories(directory);
             try (Stream<Path> entries = Files.list(directory)) {
-                return entries
+                List<ShaderPackDescriptor> result = entries
                         .filter(this::isCandidate)
                         .map(this::descriptor)
                         .sorted(Comparator.comparing(
@@ -33,10 +34,20 @@ public final class ShaderPackCatalog {
                                 String.CASE_INSENSITIVE_ORDER
                         ))
                         .toList();
+                lastScanError = "";
+                return result;
             }
         } catch (IOException error) {
+            String message = error.getMessage();
+            lastScanError = message == null || message.isBlank()
+                    ? error.getClass().getSimpleName()
+                    : message;
             return List.of();
         }
+    }
+
+    public String lastScanError() {
+        return lastScanError;
     }
 
     private boolean isCandidate(Path path) {
