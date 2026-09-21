@@ -158,7 +158,7 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 - Resource Reload Notice: startup resource loading stays silent, while later client-resource reloads report completion through the shared notification surface;
 - Screenshot Capture: F2 remains the familiar user action, but accepted captures use a bounded first-party encoder. Efficient and High write JPEG at different quality levels; Maximum writes lossless PNG. GPU readback happens synchronously only for the requested still frame, while compression and disk I/O run on one bounded worker. If that worker is saturated, vanilla screenshot handling remains the correctness fallback;
 - Contextual Capture Names: opt-in and adds a safe multiplayer/singleplayer context prefix to automatically named screenshots and video files;
-- Video Capture: the remappable recording action defaults to F9. Recording captures the current game-resolution framebuffer at a stable 30/60/120 FPS target, uses triple-buffered PBO readback with non-blocking fences, and drops capture work rather than stalling Minecraft when the GPU/encoder is behind. Automatic encoding validates NVENC, AMF, QSV, then libx264 in that order and uses the first encoder that can actually initialize. Recording writes a crash-tolerant Matroska working file and remuxes to MP4 on clean completion. The recorder has bounded CPU/GPU frame pools, no idle worker or PBO allocation, startup and low-rate in-session disk-space guards, and graceful shutdown;
+- Video Capture: the remappable recording action defaults to F9. Recording captures the current game framebuffer at a stable 30/60/120 FPS target, can keep native output or safely downscale to 1080p/1440p/4K targets without ever upscaling beyond the game framebuffer, uses triple-buffered PBO readback with non-blocking fences, and drops capture work rather than stalling Minecraft when the GPU/encoder is behind. Automatic encoding validates NVENC, AMF, QSV, then libx264 in that order and uses the first encoder that can actually initialize. Recording writes a crash-tolerant Matroska working file and remuxes to MP4 on clean completion. The recorder has bounded CPU/GPU frame pools, no idle worker or PBO allocation, startup and low-rate in-session disk-space guards, and graceful shutdown;
 - Capture Scope: current realtime recording is video-only; microphone/game-audio capture, replay timelines, arbitrary replay cameras, and always-on replay buffers are not claimed by this subsystem;
 - Instant Creative Search: enabled by default; while the vanilla Creative inventory is open, typing a valid character switches to the vanilla Search Items tab, focuses its existing search field, and lets vanilla process the original character and subsequent query. Ctrl/Alt/Super-modified input and another focused UI element are left untouched;
 - Compact Debug: enabled by default and replaces the vanilla F3 information wall with a small Minecraft-native builder HUD. Coordinate is the first top-left block with explicit `X`, `Y`, and `Z`; client FPS/CPU/GPU/RAM and world Facing/Biome/Time remain on the left; server world/telemetry presentation stays on the right. Unsupported metrics are shown as unavailable rather than estimated.
@@ -253,11 +253,12 @@ Capture-specific preferences are stored separately in `lazybuilder-capture.prope
 ```properties
 screenshot.quality=high
 video.quality=high
+video.resolution=game
 video.fps=fps_60
 video.encoder=automatic
 ```
 
-Screenshot presets are **Efficient**, **High**, and **Maximum**. Video presets are **Efficient**, **High**, **Production**, and **Near Lossless**. The main UI exposes intent-level quality, FPS, and encoder selection; codec-specific rate-control values, PBO count, queue depth, and FFmpeg arguments remain internal.
+Screenshot presets are **Efficient**, **High**, and **Maximum**. Video presets are **Efficient**, **High**, **Production**, and **Near Lossless**. The main UI exposes intent-level quality, output resolution, FPS, encoder selection, and lightweight storage estimates; codec-specific rate-control values, PBO count, queue depth, and FFmpeg arguments remain internal.
 
 The previous `screenshots.organize_by_project` key is accepted as a read-only migration alias so existing local configs continue to work. New saves use `screenshots.contextual_names`.
 
