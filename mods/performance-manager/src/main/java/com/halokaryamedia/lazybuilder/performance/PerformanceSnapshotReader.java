@@ -23,8 +23,6 @@ public final class PerformanceSnapshotReader {
     }
 
     public static PerformanceSnapshot capture(MinecraftClient client, FrameMonitor frameMonitor) {
-        ChunkPipelineMetrics.enableDetailedMetrics();
-        StageTimingMetrics.enable();
         int fps = Math.max(0, client.getCurrentFps());
 
         Runtime runtime = Runtime.getRuntime();
