@@ -57,7 +57,7 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
             clearAndInit();
         });
         addDrawableChild(searchField);
-        setFocused(searchField);
+        setInitialFocus(searchField);
         searchField.setFocused(true);
 
         int viewportTop = 82;
@@ -146,10 +146,18 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (!queryText().isBlank()) {
+                searchField.setText("");
+                return true;
+            }
             close();
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private String queryText() {
+        return searchField == null ? "" : searchField.getText();
     }
 
     private List<SearchEntry> filter(String query) {
