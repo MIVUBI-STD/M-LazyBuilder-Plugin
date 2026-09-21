@@ -3,6 +3,10 @@ package com.halokaryamedia.lazybuilder.performance.shader;
 import com.mojang.blaze3d.systems.RenderSystem;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -15,13 +19,16 @@ import java.util.Map;
 public final class FirstPartyShaderPipeline implements AutoCloseable {
     private final Map<String, FirstPartyShaderProgram> programs;
     private final int gbufferAttachments;
+    private final String terrainSourceFingerprint;
 
     private FirstPartyShaderPipeline(
             Map<String, FirstPartyShaderProgram> programs,
-            int gbufferAttachments
+            int gbufferAttachments,
+            String terrainSourceFingerprint
     ) {
         this.programs = Map.copyOf(programs);
         this.gbufferAttachments = Math.max(0, Math.min(2, gbufferAttachments));
+        this.terrainSourceFingerprint = terrainSourceFingerprint == null ? "" : terrainSourceFingerprint;
     }
 
     public static FirstPartyShaderPipeline compile(ShaderPackSource source)
@@ -36,12 +43,18 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
         RenderSystem.assertOnRenderThread();
 
         ShaderPipelineDefinition.Result definition = ShaderPipelineDefinition.discover(source);
+        String terrainVertex = ShaderSourcePreprocessor.preprocess(
+                source,
+                definition.terrain().vertexPath(),
+                defines
+        ).source();
         String terrainFragment = ShaderSourcePreprocessor.preprocess(
                 source,
                 definition.terrain().fragmentPath(),
                 defines
         ).source();
         int gbufferAttachments = TerrainShaderContract.gbufferAttachmentCount(terrainFragment);
+        String terrainSourceFingerprint = fingerprint(terrainVertex, terrainFragment);
         Map<String, FirstPartyShaderProgram> compiled = new LinkedHashMap<>();
 
         try {
@@ -51,7 +64,11 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
                         FirstPartyShaderCompiler.compile(source, program, defines)
                 );
             }
-            return new FirstPartyShaderPipeline(compiled, gbufferAttachments);
+            return new FirstPartyShaderPipeline(
+                    compiled,
+                    gbufferAttachments,
+                    terrainSourceFingerprint
+            );
         } catch (IOException | FirstPartyShaderCompiler.ShaderCompileException | RuntimeException error) {
             for (FirstPartyShaderProgram program : compiled.values()) {
                 program.close();
@@ -74,8 +91,24 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
         return programs.containsKey(name);
     }
 
+    public String terrainSourceFingerprint() {
+        return terrainSourceFingerprint;
+    }
+
     public int gbufferAttachments() {
         return gbufferAttachments;
+    }
+
+    private static String fingerprint(String vertex, String fragment) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            digest.update(vertex.getBytes(StandardCharsets.UTF_8));
+            digest.update((byte) 0);
+            digest.update(fragment.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("SHA-256 is unavailable", impossible);
+        }
     }
 
     @Override
