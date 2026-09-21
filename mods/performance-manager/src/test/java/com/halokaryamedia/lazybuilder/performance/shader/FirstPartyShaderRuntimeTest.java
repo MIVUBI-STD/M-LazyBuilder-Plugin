@@ -59,4 +59,28 @@ final class FirstPartyShaderRuntimeTest {
 
         assertTrue(runtime.snapshot().lastError().isBlank());
     }
+    @Test
+    void staleTerrainReloadCallbacksCannotMutateNewerGeneration() {
+        FirstPartyShaderRuntime runtime = new FirstPartyShaderRuntime(temp);
+        long staleGeneration = runtime.currentTerrainGeneration();
+
+        runtime.shutdown();
+        long currentGeneration = runtime.currentTerrainGeneration();
+        assertTrue(currentGeneration > staleGeneration);
+
+        runtime.invalidateTerrainIntegrationForResourceReload(staleGeneration);
+        runtime.recordTerrainCompile(staleGeneration, true, true, "");
+        runtime.recordTerrainProgramLinked(staleGeneration);
+        runtime.recordTerrainReloadCompletion(
+                staleGeneration,
+                false,
+                "stale failure",
+                "first-party-compile-fallback"
+        );
+
+        FirstPartyShaderRuntime.Snapshot snapshot = runtime.snapshot();
+        assertEquals("stopped", snapshot.stage());
+        assertTrue(snapshot.lastError().isBlank());
+        assertFalse(snapshot.terrainIntegrated());
+    }
 }
