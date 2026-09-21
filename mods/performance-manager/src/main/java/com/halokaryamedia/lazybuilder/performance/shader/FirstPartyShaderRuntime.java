@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.shader;
 
 import com.mojang.blaze3d.systems.RenderSystem;
+import org.joml.Matrix4f;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -398,6 +399,10 @@ public final class FirstPartyShaderRuntime {
             int sourceDepthTexture,
             int gbufferTexture1,
             int gbufferTexture2,
+            Matrix4f inverseViewProjection,
+            float cameraX,
+            float cameraY,
+            float cameraZ,
             int width,
             int height,
             float timeSeconds
@@ -424,6 +429,11 @@ public final class FirstPartyShaderRuntime {
                     sourceDepthTexture,
                     gbufferTexture1,
                     gbufferTexture2,
+                    shadowSnapshot(),
+                    inverseViewProjection,
+                    cameraX,
+                    cameraY,
+                    cameraZ,
                     width,
                     height,
                     timeSeconds
