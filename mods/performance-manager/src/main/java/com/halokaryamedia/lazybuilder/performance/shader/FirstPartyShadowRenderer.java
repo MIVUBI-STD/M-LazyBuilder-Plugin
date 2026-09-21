@@ -131,6 +131,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             GL11C.glDepthMask(true);
             GL11C.glDepthFunc(GL11C.GL_LEQUAL);
             GL11C.glDisable(GL11C.GL_BLEND);
+            GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
             GL11C.glEnable(GL11C.GL_CULL_FACE);
             GL11C.glCullFace(GL11C.GL_BACK);
             GL11C.glClearDepth(1.0D);
@@ -344,6 +345,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         private int depthFunc;
         private boolean blend;
         private boolean cull;
+        private boolean scissor;
         private int cullFace;
         private int viewportX;
         private int viewportY;
@@ -369,6 +371,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             depthFunc = GL11C.glGetInteger(GL11C.GL_DEPTH_FUNC);
             blend = GL11C.glIsEnabled(GL11C.GL_BLEND);
             cull = GL11C.glIsEnabled(GL11C.GL_CULL_FACE);
+            scissor = GL11C.glIsEnabled(GL11C.GL_SCISSOR_TEST);
             cullFace = GL11C.glGetInteger(GL11C.GL_CULL_FACE_MODE);
         }
 
@@ -385,6 +388,8 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             else GL11C.glDisable(GL11C.GL_BLEND);
             if (cull) GL11C.glEnable(GL11C.GL_CULL_FACE);
             else GL11C.glDisable(GL11C.GL_CULL_FACE);
+            if (scissor) GL11C.glEnable(GL11C.GL_SCISSOR_TEST);
+            else GL11C.glDisable(GL11C.GL_SCISSOR_TEST);
             GL11C.glCullFace(cullFace);
             GL11C.glViewport(viewportX, viewportY, viewportWidth, viewportHeight);
         }
