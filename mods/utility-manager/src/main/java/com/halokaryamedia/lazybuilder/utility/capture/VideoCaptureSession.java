@@ -238,8 +238,22 @@ final class VideoCaptureSession {
     void shutdown() {
         requestStop();
         readbackDrained = true;
-        Process process = ffmpeg;
-        if (process != null && process.isAlive()) process.destroy();
+
+        Thread worker = writerThread;
+        if (worker != null && worker != Thread.currentThread()) {
+            try {
+                worker.join(6_000L);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        worker = writerThread;
+        if (worker != null && worker.isAlive()) {
+            Process process = ffmpeg;
+            if (process != null && process.isAlive()) process.destroy();
+            worker.interrupt();
+        }
     }
 
     private void runEncoder(
