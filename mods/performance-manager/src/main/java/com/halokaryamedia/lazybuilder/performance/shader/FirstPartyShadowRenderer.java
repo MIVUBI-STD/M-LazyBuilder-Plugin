@@ -4,10 +4,13 @@ import com.halokaryamedia.lazybuilder.performance.rendering.TerrainGpuResidencyT
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainPhysicalArenaManager;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainVisibleDrawSnapshot;
 import com.mojang.blaze3d.systems.RenderSystem;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gl.VertexBuffer;
+import net.minecraft.client.texture.SpriteAtlasTexture;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.lwjgl.opengl.GL11C;
+import org.lwjgl.opengl.GL13C;
 import org.lwjgl.opengl.GL20C;
 import org.lwjgl.opengl.GL30C;
 import org.lwjgl.system.MemoryStack;
@@ -38,6 +41,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
     private long lastTimeOfDay = Long.MIN_VALUE;
     private int lastProgramId = -1;
     private int lastResolution = -1;
+    private int lastBlockAtlasTexture = -1;
     private float lastCenterX = Float.NaN;
     private float lastCenterY = Float.NaN;
     private float lastCenterZ = Float.NaN;
@@ -105,11 +109,16 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
 
         long quantizedTime = quantizeTime(timeOfDay);
         int shadowResolution = Math.max(256, Math.min(4096, requestedResolution));
+        boolean cutoutReady = pipeline.cutoutShadowReady();
+        int blockAtlasTexture = cutoutReady ? blockAtlasTextureId() : 0;
+        if (cutoutReady && blockAtlasTexture <= 0) cutoutReady = false;
+
         if (snapshot.ready()
                 && lastVisibleRevision == visible.revision()
                 && lastTerrainContentRevision == terrainContentRevision
                 && lastProgramId == program.programId()
                 && lastResolution == shadowResolution
+                && lastBlockAtlasTexture == blockAtlasTexture
                 && lastTimeOfDay == quantizedTime
                 && Float.compare(lastCenterX, centerX) == 0
                 && Float.compare(lastCenterY, centerY) == 0
@@ -118,7 +127,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             return snapshot;
         }
 
-        glState.capture();
+        glState.capture(cutoutReady);
         int drawn = 0;
         int skipped = 0;
         Matrix4f lightViewProjection = lightViewProjection(quantizedTime);
@@ -142,14 +151,27 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             program.bind();
             uploadMatrix(program, "LazyBuilderShadowViewProjection", lightViewProjection);
 
+            if (cutoutReady) {
+                int atlasLocation = program.uniformLocation("LazyBuilderBlockAtlas");
+                if (atlasLocation >= 0) {
+                    GL13C.glActiveTexture(GL13C.GL_TEXTURE0);
+                    GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, blockAtlasTexture);
+                    GL20C.glUniform1i(atlasLocation, 0);
+                }
+                int alphaCutoff = program.uniformLocation("LazyBuilderShadowAlphaCutoff");
+                if (alphaCutoff >= 0) GL20C.glUniform1f(alphaCutoff, 0.1F);
+            }
+
             int offsetLocation = program.uniformLocation("LazyBuilderModelOffset");
             if (offsetLocation < 0) {
                 throw new IllegalStateException("Shadow program lost LazyBuilderModelOffset");
             }
 
             for (int index = 0; index < visible.size(); index++) {
-                // Only fully opaque terrain in the first native shadow stage.
-                if (visible.layerSlot(index) != 0 || !visible.usable(index)) {
+                int layerSlot = visible.layerSlot(index);
+                boolean shadowLayer = layerSlot == 0
+                        || (cutoutReady && (layerSlot == 1 || layerSlot == 2));
+                if (!shadowLayer || !visible.usable(index)) {
                     skipped++;
                     continue;
                 }
@@ -183,7 +205,9 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
 
             snapshot = new Snapshot(
                     drawn > 0,
-                    drawn > 0 ? "ready-solid-only" : "no-drawable-terrain",
+                    drawn > 0
+                            ? (cutoutReady ? "ready-cutout" : "ready-solid-only")
+                            : "no-drawable-terrain",
                     shadowMap.depthTextureId(),
                     shadowMap.size(),
                     new Matrix4f(lightViewProjection),
@@ -198,6 +222,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             lastTerrainContentRevision = terrainContentRevision;
             lastProgramId = program.programId();
             lastResolution = shadowResolution;
+            lastBlockAtlasTexture = blockAtlasTexture;
             lastTimeOfDay = quantizedTime;
             lastCenterX = centerX;
             lastCenterY = centerY;
@@ -230,6 +255,13 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
 
     public static Snapshot emptySnapshot() {
         return Snapshot.EMPTY;
+    }
+
+    private static int blockAtlasTextureId() {
+        MinecraftClient client = MinecraftClient.getInstance();
+        if (client == null || client.getTextureManager() == null) return 0;
+        var texture = client.getTextureManager().getTexture(SpriteAtlasTexture.BLOCK_ATLAS_TEXTURE);
+        return texture == null ? 0 : texture.getGlId();
     }
 
     private static Matrix4f lightViewProjection(long timeOfDay) {
@@ -296,6 +328,7 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         lastTimeOfDay = Long.MIN_VALUE;
         lastProgramId = -1;
         lastResolution = -1;
+        lastBlockAtlasTexture = -1;
         lastCenterX = Float.NaN;
         lastCenterY = Float.NaN;
         lastCenterZ = Float.NaN;
@@ -352,12 +385,15 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         private float polygonOffsetFactor;
         private float polygonOffsetUnits;
         private int cullFace;
+        private int activeTexture;
+        private int texture0;
+        private boolean textureCaptured;
         private int viewportX;
         private int viewportY;
         private int viewportWidth;
         private int viewportHeight;
 
-        void capture() {
+        void capture(boolean captureTexture) {
             try (MemoryStack stack = MemoryStack.stackPush()) {
                 IntBuffer viewport = stack.mallocInt(4);
                 GL11C.glGetIntegerv(GL11C.GL_VIEWPORT, viewport);
@@ -381,6 +417,13 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             polygonOffsetFactor = GL11C.glGetFloat(GL11C.GL_POLYGON_OFFSET_FACTOR);
             polygonOffsetUnits = GL11C.glGetFloat(GL11C.GL_POLYGON_OFFSET_UNITS);
             cullFace = GL11C.glGetInteger(GL11C.GL_CULL_FACE_MODE);
+            textureCaptured = captureTexture;
+            if (captureTexture) {
+                activeTexture = GL11C.glGetInteger(GL13C.GL_ACTIVE_TEXTURE);
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE0);
+                texture0 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+                GL13C.glActiveTexture(activeTexture);
+            }
         }
 
         void restore() {
@@ -402,6 +445,11 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             else GL11C.glDisable(GL11C.GL_POLYGON_OFFSET_FILL);
             GL11C.glPolygonOffset(polygonOffsetFactor, polygonOffsetUnits);
             GL11C.glCullFace(cullFace);
+            if (textureCaptured) {
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE0);
+                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture0);
+                GL13C.glActiveTexture(activeTexture);
+            }
             GL11C.glViewport(viewportX, viewportY, viewportWidth, viewportHeight);
         }
     }
