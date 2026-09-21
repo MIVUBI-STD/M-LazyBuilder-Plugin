@@ -23,6 +23,19 @@ public interface ShaderPackSource {
                 : new DirectorySource(descriptor.path());
     }
 
+    static Session openSession(ShaderPackDescriptor descriptor) throws IOException {
+        Objects.requireNonNull(descriptor, "descriptor");
+        return descriptor.kind() == ShaderPackDescriptor.Kind.ZIP
+                ? new ZipSession(descriptor.path())
+                : new DirectorySession(descriptor.path());
+    }
+
+    interface Session extends ShaderPackSource, AutoCloseable {
+        @Override
+        void close() throws IOException;
+    }
+
+
     static String normalizeRelativePath(String value) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException("Shader source path is blank");
@@ -67,6 +80,89 @@ public interface ShaderPackSource {
                 throw new IllegalArgumentException("Shader source path escapes the pack");
             }
             return resolved;
+        }
+    }
+
+    final class DirectorySession implements Session {
+        private final Path root;
+
+        DirectorySession(Path root) {
+            this.root = root.toAbsolutePath().normalize();
+        }
+
+        @Override
+        public boolean exists(String relativePath) {
+            return Files.isRegularFile(resolve(relativePath));
+        }
+
+        @Override
+        public String readText(String relativePath) throws IOException {
+            return Files.readString(resolve(relativePath), StandardCharsets.UTF_8);
+        }
+
+        private Path resolve(String relativePath) {
+            Path resolved = root.resolve(normalizeRelativePath(relativePath)).normalize();
+            if (!resolved.startsWith(root)) {
+                throw new IllegalArgumentException("Shader source path escapes the pack");
+            }
+            return resolved;
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    final class ZipSession implements Session {
+        private static final int MAX_ENTRY_BYTES = 4 * 1024 * 1024;
+        private final ZipFile file;
+
+        ZipSession(Path zip) throws IOException {
+            this.file = new ZipFile(zip.toFile());
+        }
+
+        @Override
+        public boolean exists(String relativePath) {
+            ZipEntry entry = file.getEntry(normalizeRelativePath(relativePath));
+            return entry != null && !entry.isDirectory();
+        }
+
+        @Override
+        public String readText(String relativePath) throws IOException {
+            String target = normalizeRelativePath(relativePath);
+            ZipEntry entry = file.getEntry(target);
+            if (entry == null || entry.isDirectory()) {
+                throw new IOException("Missing shader source: " + relativePath);
+            }
+
+            long declaredSize = entry.getSize();
+            if (declaredSize > MAX_ENTRY_BYTES) {
+                throw new IOException("Shader source exceeds size limit: " + target);
+            }
+
+            try (InputStream input = file.getInputStream(entry)) {
+                ByteArrayOutputStream output = new ByteArrayOutputStream(
+                        declaredSize > 0 && declaredSize <= Integer.MAX_VALUE
+                                ? (int) declaredSize
+                                : 8192
+                );
+                byte[] buffer = new byte[8192];
+                int total = 0;
+                int read;
+                while ((read = input.read(buffer)) >= 0) {
+                    total += read;
+                    if (total > MAX_ENTRY_BYTES) {
+                        throw new IOException("Shader source exceeds size limit: " + target);
+                    }
+                    output.write(buffer, 0, read);
+                }
+                return output.toString(StandardCharsets.UTF_8);
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            file.close();
         }
     }
 
