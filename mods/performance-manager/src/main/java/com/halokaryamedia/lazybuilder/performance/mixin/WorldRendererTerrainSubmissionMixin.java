@@ -56,6 +56,8 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Inject(method = "applyFrustum", at = @At("TAIL"))
     private void lazybuilder$invalidateAfterFrustum(Frustum frustum, CallbackInfo ci) {
         this.lazybuilder$submissionIndexDirty = true;
+        this.lazybuilder$ensureSubmissionState();
+        this.lazybuilder$rebuildSubmissionIndex();
     }
 
     @Inject(method = "addBuiltChunk", at = @At("HEAD"))
