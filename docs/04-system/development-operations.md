@@ -79,7 +79,7 @@ Rules:
 - frontend dependencies use the committed lockfile and `npm ci`;
 - Rust dependencies use Cargo lockfiles and the pinned compiler;
 - Windows native build prerequisites are validated before expensive build work;
-- downloaded wrapper distributions require checksum verification;
+- downloaded wrapper distributions use bounded retry for transient transport failures, discard partial files between attempts, and still require checksum verification;
 - end-user runtime must never depend on the developer toolchain.
 
 Do not duplicate version numbers in multiple bootstrap scripts when they can be read from the canonical manifest or native lockfiles.
