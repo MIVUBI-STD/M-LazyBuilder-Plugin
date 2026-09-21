@@ -59,6 +59,8 @@ final class PerformanceRuntimeProofLogger {
         int shadowResolution = intValue(shaderDiagnostics, "shadowResolution");
         long gbufferStaleRecoveries = longValue(shaderDiagnostics, "gbufferStaleFrameRecoveries");
         long shaderCompileGeneration = longValue(shaderDiagnostics, "compileGeneration");
+        long shaderReloadRequests = longValue(shaderDiagnostics, "shaderReloadRequests");
+        long shaderReloadFailures = longValue(shaderDiagnostics, "shaderReloadFailures");
         boolean terrainReloadPending =
                 shaderDiagnostics.get("terrainReloadPending") instanceof Boolean value && value;
 
@@ -74,6 +76,7 @@ final class PerformanceRuntimeProofLogger {
                         + "shader_stage={} shader_ready={} shader_terrain={} "
                         + "shadow_reused_frames={} shadow_resolution={} "
                         + "gbuffer_stale_recoveries={} shader_compile_generation={} "
+                        + "shader_reload_requests={} shader_reload_failures={} "
                         + "terrain_reload_pending={}",
                 sample,
                 snapshot.fps(),
@@ -108,6 +111,8 @@ final class PerformanceRuntimeProofLogger {
                 shadowResolution,
                 gbufferStaleRecoveries,
                 shaderCompileGeneration,
+                shaderReloadRequests,
+                shaderReloadFailures,
                 terrainReloadPending
         );
     }
