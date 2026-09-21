@@ -29,6 +29,7 @@ public final class LazyBuilderLanguageScreen extends Screen {
     private int scrollOffset;
     private int maxScroll;
     private String failure;
+    private String failedLanguageCode;
 
     public LazyBuilderLanguageScreen(Screen parent) {
         super(Text.literal("Language"));
@@ -86,6 +87,19 @@ public final class LazyBuilderLanguageScreen extends Screen {
             y += ROW_HEIGHT + ROW_GAP;
         }
 
+        if (failure != null && failedLanguageCode != null) {
+            addDrawableChild(new LazyBuilderSettingsControlWidget(
+                    left,
+                    height - 30,
+                    92,
+                    22,
+                    Text.literal("Retry"),
+                    true,
+                    LazyBuilderSettingsControlWidget.Kind.FOOTER,
+                    () -> applyLanguage(failedLanguageCode)
+            ));
+        }
+
         addDrawableChild(new LazyBuilderSettingsControlWidget(
                 left + shell - 92,
                 height - 30,
@@ -127,6 +141,7 @@ public final class LazyBuilderLanguageScreen extends Screen {
     private void applyLanguage(String code) {
         if (client == null || code.equals(currentLanguageCode())) return;
         failure = null;
+        failedLanguageCode = null;
 
         try {
             LanguageManager manager = client.getLanguageManager();
@@ -138,12 +153,14 @@ public final class LazyBuilderLanguageScreen extends Screen {
             client.reloadResources().whenComplete((ignored, error) -> {
                 if (error != null) {
                     failure = error.getMessage() == null ? "Resource reload failed." : error.getMessage();
+                    failedLanguageCode = code;
                     if (client != null) client.execute(this::clearAndInit);
                 }
             });
             clearAndInit();
         } catch (RuntimeException error) {
             failure = error.getMessage() == null ? error.getClass().getSimpleName() : error.getMessage();
+            failedLanguageCode = code;
             clearAndInit();
         }
     }
