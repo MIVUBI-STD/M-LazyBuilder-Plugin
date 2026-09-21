@@ -170,6 +170,8 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
             return;
         }
 
+        int oldTexture0 = textures[0];
+        int oldTexture1 = textures[1];
         int previousTexture = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
         deleteTextures();
         this.width = width;
@@ -207,7 +209,15 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
             this.height = 0;
             throw error;
         } finally {
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
+            int restoreTexture;
+            if (previousTexture == oldTexture0) {
+                restoreTexture = textures[0];
+            } else if (previousTexture == oldTexture1) {
+                restoreTexture = textures[1];
+            } else {
+                restoreTexture = previousTexture;
+            }
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, Math.max(0, restoreTexture));
         }
     }
 
