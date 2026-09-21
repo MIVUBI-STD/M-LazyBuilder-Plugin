@@ -36,7 +36,10 @@ public final class FirstPartyShaderRuntime {
     private volatile long cachedSnapshotMapRevision = Long.MIN_VALUE;
     private volatile Map<String, Object> cachedSnapshotMap = Map.of();
     private volatile long compileRequestGeneration;
+    private volatile long catalogRefreshGeneration;
     private volatile Thread preparationThread;
+    private volatile Thread catalogRefreshThread;
+    private volatile boolean catalogRefreshRequested;
     private volatile boolean stagedOptionsRequireCompile;
     private volatile boolean lastFrameApplied;
     private volatile boolean terrainVertexCompiled;
@@ -67,29 +70,105 @@ public final class FirstPartyShaderRuntime {
         this(shaderpacksDirectory, shaderpacksDirectory.resolve(".lazybuilder-test-config"));
     }
 
-    public synchronized void refresh() {
-        // A catalog refresh changes the authority set behind any in-flight
-        // descriptor/source preparation. Invalidate the old generation before
-        // touching the filesystem so stale work can never publish afterwards.
+    public void refresh() {
+        long generation = beginCatalogRefresh();
+        CatalogScan scan = scanCatalog();
+        applyCatalogScan(generation, scan);
+    }
+
+    public void refreshAsync() {
+        Thread workerToStart = null;
+        synchronized (this) {
+            catalogRefreshRequested = true;
+            if (catalogRefreshThread == null || !catalogRefreshThread.isAlive()) {
+                Thread worker = Thread.ofVirtual()
+                        .name("LazyBuilder-Shader-Catalog")
+                        .unstarted(this::catalogRefreshLoop);
+                catalogRefreshThread = worker;
+                workerToStart = worker;
+            } else {
+                if (!"catalog-refresh-pending".equals(stage)) {
+                    stage = "catalog-refresh-pending";
+                    revision++;
+                }
+            }
+        }
+        if (workerToStart != null) workerToStart.start();
+    }
+
+    private void catalogRefreshLoop() {
+        Thread self = Thread.currentThread();
+        try {
+            while (!Thread.currentThread().isInterrupted()) {
+                long generation;
+                synchronized (this) {
+                    if (!catalogRefreshRequested) return;
+                    catalogRefreshRequested = false;
+                    generation = beginCatalogRefreshLocked();
+                }
+
+                CatalogScan scan = scanCatalog();
+                applyCatalogScan(generation, scan);
+            }
+        } finally {
+            synchronized (this) {
+                if (catalogRefreshThread == self) catalogRefreshThread = null;
+                if (catalogRefreshRequested && !"stopped".equals(stage)) {
+                    refreshAsync();
+                }
+            }
+        }
+    }
+
+    private long beginCatalogRefresh() {
+        synchronized (this) {
+            return beginCatalogRefreshLocked();
+        }
+    }
+
+    private long beginCatalogRefreshLocked() {
         compileRequestGeneration++;
         cancelPreparationLocked();
+        long generation = ++catalogRefreshGeneration;
+        stage = "catalog-scanning";
+        controlError = "";
+        revision++;
+        return generation;
+    }
 
+    private CatalogScan scanCatalog() {
         try {
             List<ShaderPackDescriptor> scanned = catalog.scan();
-            packs = List.copyOf(scanned);
-            catalogError = catalog.lastScanError();
+            return new CatalogScan(
+                    List.copyOf(scanned),
+                    catalog.lastScanError()
+            );
+        } catch (RuntimeException error) {
+            return new CatalogScan(List.of(), safeMessage(error));
+        }
+    }
+
+    private void applyCatalogScan(long generation, CatalogScan scan) {
+        synchronized (this) {
+            if (generation != catalogRefreshGeneration || "stopped".equals(stage)) return;
+
+            packs = scan.packs();
+            catalogError = scan.error();
+
             if (!catalogError.isBlank()) {
                 lastError = primaryError();
                 stage = "catalog-error";
                 revision++;
                 return;
             }
+
             if (!selectedPackId.isBlank()
                     && packs.stream().noneMatch(pack -> pack.id().equals(selectedPackId))) {
                 selectedPackId = "";
                 persisted = persisted.withSelectedPack("");
                 configStore.save(persisted);
             }
+
             if (!activePackId.isBlank()
                     && packs.stream().noneMatch(pack -> pack.id().equals(activePackId))) {
                 closePipelineLocked();
@@ -99,16 +178,18 @@ public final class FirstPartyShaderRuntime {
                 terrainIntegrated = false;
                 terrainReloadPending = true;
             }
+
             catalogError = "";
             lastError = primaryError();
-            if (pipeline == null) stage = lastError.isBlank() ? "source-ready" : "degraded";
-        } catch (RuntimeException error) {
-            packs = List.of();
-            catalogError = safeMessage(error);
-            lastError = primaryError();
-            stage = "catalog-error";
+            if (pipeline == null) {
+                stage = lastError.isBlank() ? "source-ready" : "degraded";
+            } else if (lastError.isBlank()) {
+                stage = terrainIntegrated ? "terrain-active" : "compiled";
+            } else {
+                stage = "degraded";
+            }
+            revision++;
         }
-        revision++;
     }
 
     public synchronized boolean select(String packId) {
@@ -1186,7 +1267,14 @@ public final class FirstPartyShaderRuntime {
 
     public synchronized void shutdown() {
         compileRequestGeneration++;
+        catalogRefreshGeneration++;
+        catalogRefreshRequested = false;
         cancelPreparationLocked();
+        Thread catalogWorker = catalogRefreshThread;
+        catalogRefreshThread = null;
+        if (catalogWorker != null && catalogWorker != Thread.currentThread()) {
+            catalogWorker.interrupt();
+        }
         stagedOptionsRequireCompile = false;
         terrainReloadPending = false;
         closePipelineLocked();
@@ -1224,6 +1312,16 @@ public final class FirstPartyShaderRuntime {
         String message = error == null ? "" : error.getMessage();
         if (message != null && !message.isBlank()) return message;
         return error == null ? "Unknown shader runtime error." : error.getClass().getSimpleName();
+    }
+
+    private record CatalogScan(
+            List<ShaderPackDescriptor> packs,
+            String error
+    ) {
+        private CatalogScan {
+            packs = packs == null ? List.of() : List.copyOf(packs);
+            error = error == null ? "" : error;
+        }
     }
 
     public record Snapshot(
