@@ -29,10 +29,10 @@ public final class FirstPartyRendererReadiness {
                     OptimizationDomain.TERRAIN_BUILD,
                     OptimizationDomain.TERRAIN_UPLOAD,
                     OptimizationDomain.TERRAIN_SUBMISSION,
-                    OptimizationDomain.IMMEDIATE_RENDERING,
+                    OptimizationDomain.DYNAMIC_BUFFER_GROWTH,
                     OptimizationDomain.TEXT_RENDERING,
                     OptimizationDomain.ENTITY_CULLING,
-                    OptimizationDomain.MODEL_MEMORY
+                    OptimizationDomain.BAKED_QUAD_MEMORY
             )) {
                 if (!policy.owns(domain)) {
                     blockers.add(domain.name().toLowerCase() + ":" + policy.decision(domain).owner());
