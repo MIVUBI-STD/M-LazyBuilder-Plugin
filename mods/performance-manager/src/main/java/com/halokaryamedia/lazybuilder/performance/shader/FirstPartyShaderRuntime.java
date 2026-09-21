@@ -778,6 +778,15 @@ public final class FirstPartyShaderRuntime {
     }
 
     public boolean updateOption(String optionId, String rawValue, boolean allowRecompile) {
+        return updateOptions(Map.of(optionId, rawValue == null ? "" : rawValue), allowRecompile);
+    }
+
+    public boolean updateOptions(
+            Map<String, String> updates,
+            boolean allowRecompile
+    ) {
+        if (updates == null || updates.isEmpty()) return true;
+
         boolean recompile;
         synchronized (this) {
             ShaderPackDescriptor selected = selectedPack();
@@ -789,20 +798,42 @@ public final class FirstPartyShaderRuntime {
                 return false;
             }
 
-            ShaderPackManifest.Option option = selected.manifest().options().stream()
-                    .filter(candidate -> candidate.id().equals(optionId))
-                    .findFirst()
-                    .orElse(null);
-            if (option == null) {
-                controlError = "Shader option is no longer available: " + optionId;
-                lastError = primaryError();
-                stage = "option-error";
-                revision++;
-                return false;
+            Map<String, ShaderPackManifest.Option> declared = new LinkedHashMap<>();
+            for (ShaderPackManifest.Option option : selected.manifest().options()) {
+                declared.put(option.id(), option);
             }
 
-            String sanitized = option.sanitize(rawValue);
-            persisted = persisted.withOption(selected.id(), option.id(), sanitized);
+            ShaderRuntimePreferences next = persisted;
+            boolean changed = false;
+            for (Map.Entry<String, String> update : updates.entrySet()) {
+                ShaderPackManifest.Option option = declared.get(update.getKey());
+                if (option == null) {
+                    controlError = "Shader option is no longer available: " + update.getKey();
+                    lastError = primaryError();
+                    stage = "option-error";
+                    revision++;
+                    return false;
+                }
+
+                String sanitized = option.sanitize(update.getValue());
+                String previous = option.sanitize(next.optionValue(
+                        selected.id(),
+                        option.id(),
+                        option.defaultValue()
+                ));
+                if (!previous.equals(sanitized)) {
+                    next = next.withOption(selected.id(), option.id(), sanitized);
+                    changed = true;
+                }
+            }
+
+            if (!changed) {
+                controlError = "";
+                lastError = primaryError();
+                return true;
+            }
+
+            persisted = next;
             configStore.save(persisted);
             controlError = "";
             lastError = primaryError();
