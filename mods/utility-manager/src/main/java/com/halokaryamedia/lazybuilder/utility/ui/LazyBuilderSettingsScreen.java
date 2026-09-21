@@ -774,6 +774,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private void applyWindowMode(WindowMode mode) {
         if (client == null) return;
 
+        WindowMode previous = currentWindowMode();
         boolean borderless = mode == WindowMode.BORDERLESS;
         UtilityPreferences updated = UtilityManagerClient.preferences().withBorderlessWindow(borderless);
         UtilityManagerClient.updatePreferences(updated);
@@ -782,7 +783,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         client.options.getFullscreen().setValue(fullscreen);
         client.options.write();
 
-        if (mode == WindowMode.BORDERLESS || currentWindowMode() == WindowMode.BORDERLESS) {
+        if (mode == WindowMode.BORDERLESS || previous == WindowMode.BORDERLESS) {
             UtilityNotifications.show(
                     "Window Mode",
                     "Borderless window changes apply on the next game launch."
