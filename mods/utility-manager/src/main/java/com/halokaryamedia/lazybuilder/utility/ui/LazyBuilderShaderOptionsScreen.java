@@ -238,12 +238,23 @@ public final class LazyBuilderShaderOptionsScreen extends Screen {
 
     @SuppressWarnings("unchecked")
     private void apply() {
-        Object action = share("lazybuilder-performance-manager:shader-option-update");
-        if (!(action instanceof BiConsumer<?, ?> raw)) return;
-
-        BiConsumer<String, String> update = (BiConsumer<String, String>) raw;
+        Map<String, String> changed = new LinkedHashMap<>();
         for (Map.Entry<String, String> value : staged.entrySet()) {
             if (!java.util.Objects.equals(original.get(value.getKey()), value.getValue())) {
+                changed.put(value.getKey(), value.getValue());
+            }
+        }
+        if (changed.isEmpty()) return;
+
+        Object batch = share("lazybuilder-performance-manager:shader-options-update");
+        if (batch instanceof java.util.function.Consumer<?> rawBatch) {
+            ((java.util.function.Consumer<Map<String, String>>) rawBatch)
+                    .accept(Map.copyOf(changed));
+        } else {
+            Object action = share("lazybuilder-performance-manager:shader-option-update");
+            if (!(action instanceof BiConsumer<?, ?> raw)) return;
+            BiConsumer<String, String> update = (BiConsumer<String, String>) raw;
+            for (Map.Entry<String, String> value : changed.entrySet()) {
                 update.accept(value.getKey(), value.getValue());
             }
         }
