@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.utility.visualproof;
 
+import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
 import com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionController;
 import com.halokaryamedia.lazybuilder.utility.connection.ReconnectState;
 import com.halokaryamedia.lazybuilder.utility.debug.CompactDebugRenderer;
@@ -153,6 +154,8 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
                     "utility-settings-interface-scrolled-620x480-gui2");
             captureInterfaceResetConfirmation(context, 1440, 900, 2,
                     "utility-settings-interface-reset-confirmation-1440x900-gui2");
+            captureModifiedInterfaceSetting(context, 1440, 900, 2,
+                    "utility-settings-interface-modified-1440x900-gui2");
             captureSettings(context, 1440, 900, 2,
                     LazyBuilderSettingsScreen.Category.TOOLS,
                     "utility-settings-tools-1440x900-gui2");
@@ -560,6 +563,42 @@ public final class UtilityManagerVisualProofTest implements FabricClientGameTest
         context.takeScreenshot(screenshotName);
         context.setScreen(() -> null);
         context.waitTicks(4);
+    }
+
+    private static void captureModifiedInterfaceSetting(
+            ClientGameTestContext context,
+            int width,
+            int height,
+            int guiScale,
+            String screenshotName
+    ) {
+        context.setScreen(() -> null);
+        configureViewport(context, width, height, guiScale);
+
+        boolean previous = context.computeOnClient(
+                client -> UtilityManagerClient.preferences().contextualScreenshotNames()
+        );
+        context.runOnClient(client -> UtilityManagerClient.updatePreferences(
+                UtilityManagerClient.preferences().withContextualScreenshotNames(!previous)
+        ));
+
+        try {
+            context.setScreen(() -> new LazyBuilderSettingsScreen(
+                    null,
+                    LazyBuilderSettingsScreen.Category.INTERFACE,
+                    LazyBuilderSettingsScreen.VideoPage.QUALITY,
+                    "Contextual Screenshot Names"
+            ));
+            context.waitForScreen(LazyBuilderSettingsScreen.class);
+            context.waitTicks(8);
+            context.takeScreenshot(screenshotName);
+        } finally {
+            context.setScreen(() -> null);
+            context.runOnClient(client -> UtilityManagerClient.updatePreferences(
+                    UtilityManagerClient.preferences().withContextualScreenshotNames(previous)
+            ));
+            context.waitTicks(4);
+        }
     }
 
     private static void captureInterfaceResetConfirmation(
