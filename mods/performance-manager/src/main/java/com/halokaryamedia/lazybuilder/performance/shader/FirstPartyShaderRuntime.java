@@ -141,6 +141,9 @@ public final class FirstPartyShaderRuntime {
     public void compileSelected() {
         String requested;
         long generation;
+        ShaderPackDescriptor descriptor;
+        Map<String, String> defines;
+
         synchronized (this) {
             requested = selectedPackId;
             if (requested == null || requested.isBlank()) {
@@ -150,40 +153,101 @@ public final class FirstPartyShaderRuntime {
                 revision++;
                 return;
             }
+
+            descriptor = packById(requested);
+            if (descriptor == null) {
+                controlError = "Shader pack is no longer available.";
+                lastError = primaryError();
+                stage = "selection-error";
+                revision++;
+                return;
+            }
+
             generation = ++compileRequestGeneration;
-            stage = "compile-queued";
+            defines = optionDefines(descriptor);
+            stage = "prepare-queued";
             controlError = "";
             compileError = "";
             lastError = primaryError();
             revision++;
         }
 
-        if (!RenderSystem.isOnRenderThread()) {
-            String target = requested;
-            long targetGeneration = generation;
-            RenderSystem.recordRenderCall(
-                    () -> compileSelectedOnRenderThread(target, targetGeneration)
-            );
-            return;
-        }
-        compileSelectedOnRenderThread(requested, generation);
+        String target = requested;
+        long targetGeneration = generation;
+        ShaderPackDescriptor targetDescriptor = descriptor;
+        Map<String, String> targetDefines = defines;
+
+        Thread.ofVirtual()
+                .name("LazyBuilder-Shader-Prepare")
+                .start(() -> prepareSelectedOffThread(
+                        target,
+                        targetGeneration,
+                        targetDescriptor,
+                        targetDefines
+                ));
     }
 
-    private void compileSelectedOnRenderThread(String requestedPackId, long generation) {
-        RenderSystem.assertOnRenderThread();
-
-        ShaderPackDescriptor descriptor;
+    private void prepareSelectedOffThread(
+            String requestedPackId,
+            long generation,
+            ShaderPackDescriptor descriptor,
+            Map<String, String> defines
+    ) {
         synchronized (this) {
             if (generation != compileRequestGeneration
                     || !requestedPackId.equals(selectedPackId)) {
                 return;
             }
-            descriptor = packById(requestedPackId);
-            if (descriptor == null) {
-                controlError = "Shader pack is no longer available.";
+            stage = "preparing";
+            revision++;
+        }
+
+        FirstPartyShaderPipeline.Prepared prepared;
+        try (ShaderPackSource.Session source = ShaderPackSource.openSession(descriptor)) {
+            prepared = FirstPartyShaderPipeline.prepare(source, defines);
+        } catch (Exception error) {
+            synchronized (this) {
+                if (generation != compileRequestGeneration
+                        || !requestedPackId.equals(selectedPackId)) {
+                    return;
+                }
+                compileError = safeMessage(error);
                 lastError = primaryError();
-                stage = "selection-error";
+                stage = "prepare-error";
                 revision++;
+            }
+            return;
+        }
+
+        synchronized (this) {
+            if (generation != compileRequestGeneration
+                    || !requestedPackId.equals(selectedPackId)) {
+                return;
+            }
+            stage = "compile-queued";
+            revision++;
+        }
+
+        FirstPartyShaderPipeline.Prepared targetPrepared = prepared;
+        RenderSystem.recordRenderCall(
+                () -> compilePreparedOnRenderThread(
+                        requestedPackId,
+                        generation,
+                        targetPrepared
+                )
+        );
+    }
+
+    private void compilePreparedOnRenderThread(
+            String requestedPackId,
+            long generation,
+            FirstPartyShaderPipeline.Prepared prepared
+    ) {
+        RenderSystem.assertOnRenderThread();
+
+        synchronized (this) {
+            if (generation != compileRequestGeneration
+                    || !requestedPackId.equals(selectedPackId)) {
                 return;
             }
             stage = "compiling";
@@ -192,12 +256,7 @@ public final class FirstPartyShaderRuntime {
 
         FirstPartyShaderPipeline candidate = null;
         try {
-            try (ShaderPackSource.Session source = ShaderPackSource.openSession(descriptor)) {
-                candidate = FirstPartyShaderPipeline.compile(
-                        source,
-                        optionDefines(descriptor)
-                );
-            }
+            candidate = FirstPartyShaderPipeline.compile(prepared);
 
             synchronized (this) {
                 if (generation != compileRequestGeneration
@@ -244,6 +303,10 @@ public final class FirstPartyShaderRuntime {
         } catch (Exception error) {
             if (candidate != null) candidate.close();
             synchronized (this) {
+                if (generation != compileRequestGeneration
+                        || !requestedPackId.equals(selectedPackId)) {
+                    return;
+                }
                 compileError = safeMessage(error);
                 lastError = primaryError();
                 stage = "compile-error";
