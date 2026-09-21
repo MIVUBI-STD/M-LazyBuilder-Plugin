@@ -16,7 +16,7 @@ Performance Manager owns client performance behavior only: frame timing/pressure
 
 The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, mirrored physical shared VBO/EBO drawing, GPU-to-GPU arena relocation, explicit per-draw transform streaming, a guarded true multi-draw submission backend, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.
 
-Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Chunk-meshing hot paths also avoid transient block-side lookup keys on cache hits and retain one cleared section-builder lookup cache per worker thread instead of reallocating it for every section build. Foreground upload work is now paced by the existing frame-pressure signal: normal frames allow up to 48 queued tasks per pass, elevated pressure reduces that to 24, and heavy pressure reduces it to 8; shutdown still drains fully. Terrain submission also reuses per-layer transform builders and grow-only native packing buffers to reduce per-frame allocation and direct-buffer churn.
+Chunk upload batching preserves queue order and shares one bind/unbind for consecutive uploads to the same `VertexBuffer`. Chunk-meshing hot paths also avoid transient block-side lookup keys on cache hits and retain one cleared section-builder lookup cache per worker thread instead of reallocating it for every section build. Foreground upload work is paced by frame pressure and capped again by the adaptive Performance Governor. The governor observes p95 frame time, upload/build backlog, free buffers, JVM pressure, and sampled culling profitability; it can enter throughput, balanced, or protective mode without changing Minecraft correctness work. Terrain submission also reuses per-layer transform builders and grow-only native packing buffers to reduce per-frame allocation and direct-buffer churn.
 
 Chunk rebuild backpressure uses the same `FramePressure` signal rather than creating a second scheduler. Only non-prioritized work can be deferred, and only while pressure is heavy, at least eight vanilla tasks are already queued, and the chunk buffer pool has one or fewer free buffers. The deferred queue is capped at 128 tasks, fails open when full, and releases work at 16/4/1 tasks per tick for normal/elevated/heavy pressure respectively, so sustained heavy pressure still makes forward progress. `reset` and `stop` cancel deferred tasks instead of carrying stale work into another builder lifecycle.
 
@@ -183,7 +183,7 @@ Enable it for a benchmark run with:
 -Dlazybuilder.performance.proof=true
 ```
 
-While a focused world is rendering, the logger emits one `LB_PERF_PROOF` sample every 120 rendered frames. Samples include FPS, average/worst recent frame time, upload queue pressure, rebuild deferral/release totals, vanilla terrain GPU residency, physical-arena residency/draws, exclusive resident count, retired duplicate backing bytes, promotion/recovery counts, relocation health, multi-draw submissions/failures, and active renderer ownership.
+While a focused world is rendering, the logger emits one `LB_PERF_PROOF` sample every 120 rendered frames. Samples include FPS, p50/p95/p99/p99.9 frame time, fixed-threshold stutter counts, upload queue pressure, governor mode/budgets, sampled culling CPU cost/yield, rebuild deferral/release totals, vanilla terrain GPU residency, physical-arena residency/draws, exclusive resident count, retired duplicate backing bytes, promotion/recovery counts, relocation health, multi-draw submissions/failures, GPU capability tier, reported VRAM where the driver exposes it, and asynchronous GPU timing for terrain, shadow, and post-process passes. GPU timing uses a query ring and never waits synchronously for a result.
 
 A useful two-run comparison keeps the same world, camera route, render distance, FPS target, resource pack, resolution, and other mods:
 
@@ -227,7 +227,7 @@ shadow reuse occurs when visibility/content/light keys are unchanged
 shader compile generations discard stale preparation safely
 ```
 
-Performance comparison must use identical world, camera route, resolution, render distance, resource pack, shader selection, and FPS target. Average/worst frame time and correctness are primary evidence; FPS alone is insufficient.
+Performance comparison must use identical world, camera route, resolution, render distance, resource pack, shader selection, and FPS target. p95/p99 frame time, stutter frequency, GPU stage time, recovery health, and correctness are primary evidence; FPS alone is insufficient. Optional fast paths must also demonstrate useful work: culling budget is profitability-aware and multi-draw enters a finite retryable cooldown when repeated preparation yields negligible draw-call savings.
 
 ## Configuration
 
