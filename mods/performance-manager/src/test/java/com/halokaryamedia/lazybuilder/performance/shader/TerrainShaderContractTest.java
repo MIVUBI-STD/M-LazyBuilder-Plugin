@@ -73,4 +73,19 @@ final class TerrainShaderContractTest {
                 )
         );
     }
+
+    @Test
+    void detectsNativeGBufferOutputs() {
+        String one = FRAGMENT + "\nlayout(location = 1) out vec4 LazyBuilderGBuffer1;\n";
+        String two = one + "layout(location=2) out vec4 LazyBuilderGBuffer2;\n";
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                1,
+                TerrainShaderContract.gbufferAttachmentCount(one)
+        );
+        org.junit.jupiter.api.Assertions.assertEquals(
+                2,
+                TerrainShaderContract.gbufferAttachmentCount(two)
+        );
+    }
 }
