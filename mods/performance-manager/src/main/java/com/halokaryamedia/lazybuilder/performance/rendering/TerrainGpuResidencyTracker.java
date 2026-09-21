@@ -110,7 +110,7 @@ public final class TerrainGpuResidencyTracker {
         }
         LEDGER.associate(buffer, sectionX, sectionY, sectionZ, layerSlot);
         ARENAS.associate(buffer, sectionX, sectionY, sectionZ, layerSlot);
-        invalidateDrawCommand(buffer);
+        invalidateAllDrawCommands();
 
         long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
         if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
@@ -142,7 +142,7 @@ public final class TerrainGpuResidencyTracker {
         long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
         if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
         ARENAS.recordPayload(buffer, arenaPayload);
-        invalidateDrawCommand(buffer);
+        invalidateAllDrawCommands();
     }
 
     public static void recordIndexDrawState(VertexBuffer buffer, int indexPayloadBytes) {
@@ -157,7 +157,7 @@ public final class TerrainGpuResidencyTracker {
         long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
         if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
         ARENAS.recordPayload(buffer, arenaPayload);
-        invalidateDrawCommand(buffer);
+        invalidateAllDrawCommands();
     }
 
     public static long capacityBytes(VertexBuffer buffer) {
@@ -225,6 +225,10 @@ public final class TerrainGpuResidencyTracker {
 
     private static void invalidateDrawCommand(VertexBuffer buffer) {
         if (buffer != null) DRAW_COMMANDS.remove(buffer);
+    }
+
+    private static void invalidateAllDrawCommands() {
+        DRAW_COMMANDS.clear();
     }
 
     public static TerrainGpuResidencyLedger.Snapshot snapshot() {
