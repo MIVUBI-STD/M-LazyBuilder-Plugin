@@ -58,9 +58,11 @@ final class FrameReadbackRing implements AutoCloseable {
         GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, slot.pbo);
         try {
             framebuffer.beginRead();
-            GL11C.glGetTexImage(
-                    GL11C.GL_TEXTURE_2D,
+            GL11C.glReadPixels(
                     0,
+                    0,
+                    width,
+                    height,
                     GL12C.GL_BGRA,
                     GL11C.GL_UNSIGNED_BYTE,
                     0L
@@ -68,8 +70,6 @@ final class FrameReadbackRing implements AutoCloseable {
             framebuffer.endRead();
 
             slot.fence = GL32C.glFenceSync(GL32C.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
-            slot.width = width;
-            slot.height = height;
             slot.repeatCount = Math.max(1, repeatCount);
         } finally {
             GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, previousPackBuffer);
@@ -151,8 +151,6 @@ final class FrameReadbackRing implements AutoCloseable {
         private int pbo;
         private long fence;
         private int capacity;
-        private int width;
-        private int height;
         private int repeatCount;
 
         boolean pending() {
@@ -174,8 +172,6 @@ final class FrameReadbackRing implements AutoCloseable {
                 GL32C.glDeleteSync(fence);
                 fence = 0L;
             }
-            width = 0;
-            height = 0;
             repeatCount = 0;
         }
 
