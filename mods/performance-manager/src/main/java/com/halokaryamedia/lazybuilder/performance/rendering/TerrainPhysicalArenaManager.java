@@ -358,6 +358,55 @@ public final class TerrainPhysicalArenaManager {
         return true;
     }
 
+    /**
+     * Secondary-pass draw using the currently prepared physical terrain resident.
+     *
+     * Unlike the primary draw path this intentionally does not advance ownership
+     * proof, promote exclusive residents, or count as a foreground terrain draw.
+     */
+    public static boolean drawSecondary(VertexBuffer source) {
+        if (source == null || !RenderSystem.isOnRenderThread() || !PHYSICAL_PATH_BREAKER.allow()) {
+            return false;
+        }
+
+        Prepared current = prepared;
+        if (current == null || current.source != source) return false;
+
+        Resident resident = RESIDENTS.get(source);
+        TerrainArenaDrawPlanner.Command command = TerrainGpuResidencyTracker.drawCommand(source);
+        if (resident != current.resident || !matches(command, resident)) {
+            prepared = null;
+            invalidate(source);
+            return false;
+        }
+
+        int baseVertex = TerrainPhysicalArenaPolicy.baseVertex(command);
+        if (baseVertex < 0) {
+            prepared = null;
+            return false;
+        }
+
+        TerrainArenaDrawStateRegistry.DrawState state = command.state();
+        try {
+            GL32C.glDrawElementsBaseVertex(
+                    state.mode().glMode,
+                    state.indexCount(),
+                    current.indexType.glType,
+                    current.indexByteOffset,
+                    baseVertex
+            );
+        } catch (RuntimeException ex) {
+            drawFailures++;
+            PHYSICAL_PATH_BREAKER.recordFailure();
+            prepared = null;
+            noteExternalBind();
+            return false;
+        }
+
+        prepared = null;
+        return true;
+    }
+
     public static void noteExternalBind() {
         boundArena = null;
         boundVao = -1;
