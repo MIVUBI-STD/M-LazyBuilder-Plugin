@@ -16,6 +16,7 @@ public final class PerformanceRuntime {
     private final FrameMonitor frameMonitor = new FrameMonitor();
     private final BackgroundResourcePolicy backgroundPolicy = new BackgroundResourcePolicy();
     private final CullingRuntime cullingRuntime = new CullingRuntime();
+    private final PerformanceGovernor governor = new PerformanceGovernor();
     private final PerformanceRuntimeProofLogger proofLogger = new PerformanceRuntimeProofLogger();
     private final PerformanceConfigStore configStore;
     private PerformancePreferences preferences;
@@ -49,16 +50,25 @@ public final class PerformanceRuntime {
             activeWorldIdentity = worldIdentity;
             frameMonitor.resetSession();
             cullingRuntime.clear();
+            governor.reset();
         }
 
         backgroundPolicy.update(client, preferences);
+
+        PerformanceGovernor.Profile governorProfile = updateGovernor(client);
+
         if (preferences.entityCulling() || preferences.blockEntityCulling()) {
-            cullingRuntime.tick(client, preferences, frameMonitor.pressure());
+            cullingRuntime.tick(client, preferences, frameMonitor.pressure(), governorProfile);
         }
         if (client != null && client.worldRenderer != null && preferences.renderingOptimizations()) {
+            int releaseBudget = Math.min(
+                    governorProfile.rebuildReleaseBudget(),
+                    com.halokaryamedia.lazybuilder.performance.rendering.ChunkRebuildBackpressurePolicy
+                            .releaseBudget(frameMonitor.pressure())
+            );
             ChunkRebuildBackpressure.drain(
                     client.worldRenderer.getChunkBuilder(),
-                    frameMonitor.pressure()
+                    releaseBudget
             );
         }
     }
@@ -76,8 +86,52 @@ public final class PerformanceRuntime {
         );
     }
 
+    private PerformanceGovernor.Profile updateGovernor(MinecraftClient client) {
+        int uploadBacklog = 0;
+        int buildBacklog = 0;
+        int freeBuffers = 0;
+        if (client != null && client.worldRenderer != null) {
+            var builder = client.worldRenderer.getChunkBuilder();
+            if (builder != null) {
+                uploadBacklog = Math.max(0, builder.getChunksToUpload());
+                buildBacklog = Math.max(0, builder.getToBatchCount());
+                freeBuffers = Math.max(0, builder.getFreeBufferCount());
+            }
+        }
+
+        Runtime jvm = Runtime.getRuntime();
+        long used = jvm.totalMemory() - jvm.freeMemory();
+        long max = jvm.maxMemory();
+        double memoryRatio = max <= 0L ? 0.0D : Math.min(1.0D, used / (double) max);
+
+        CullingRuntime.Snapshot culling = cullingRuntime.snapshot();
+        StageTimingMetrics.Snapshot entityTiming =
+                StageTimingMetrics.snapshot(StageTimingMetrics.Stage.ENTITY_CULLING);
+        StageTimingMetrics.Snapshot blockTiming =
+                StageTimingMetrics.snapshot(StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING);
+        long cacheHits = culling.entityCacheHits() + culling.blockEntityCacheHits();
+        long occluded = culling.entityOccludedDecisions() + culling.blockEntityOccludedDecisions();
+        double cullingCpu = Math.max(entityTiming.averageMs(), blockTiming.averageMs());
+
+        return governor.update(new PerformanceGovernor.Input(
+                frameMonitor.pressure(),
+                frameMonitor.timingSnapshot().p95Ms(),
+                uploadBacklog,
+                buildBacklog,
+                freeBuffers,
+                memoryRatio,
+                cacheHits,
+                occluded,
+                cullingCpu
+        ));
+    }
+
     public FramePressure pressure() {
         return frameMonitor.pressure();
+    }
+
+    public PerformanceGovernor.Profile governorProfile() {
+        return governor.profile();
     }
 
     public CullingRuntime.Snapshot cullingSnapshot() {
