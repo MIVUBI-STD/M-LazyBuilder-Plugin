@@ -156,12 +156,19 @@ public final class PerformanceManagerClient implements ClientModInitializer {
             return;
         }
 
+        MinecraftClient client = MinecraftClient.getInstance();
+        var framebuffer = client == null ? null : client.getFramebuffer();
+        int width = framebuffer == null ? 1 : Math.max(1, framebuffer.textureWidth);
+        int height = framebuffer == null ? 1 : Math.max(1, framebuffer.textureHeight);
+
         var position = context.camera().getPos();
         shaders.renderShadow(
                 position.getX(),
                 position.getY(),
                 position.getZ(),
-                context.world().getTimeOfDay()
+                context.world().getTimeOfDay(),
+                width,
+                height
         );
     }
 
