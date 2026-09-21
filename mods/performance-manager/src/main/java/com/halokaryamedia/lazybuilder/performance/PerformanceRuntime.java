@@ -121,7 +121,7 @@ public final class PerformanceRuntime {
 
         return governor.update(new PerformanceGovernor.Input(
                 frameMonitor.pressure(),
-                frameMonitor.timingSnapshot().p95Ms(),
+                frameMonitor.averageFrameTimeMs(),
                 uploadBacklog,
                 buildBacklog,
                 freeBuffers,
