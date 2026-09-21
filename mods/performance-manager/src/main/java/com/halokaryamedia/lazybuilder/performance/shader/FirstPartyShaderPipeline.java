@@ -40,41 +40,92 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
             ShaderPackSource source,
             Map<String, String> defines
     ) throws IOException, FirstPartyShaderCompiler.ShaderCompileException {
-        RenderSystem.assertOnRenderThread();
+        return compile(prepare(source, defines));
+    }
 
+    public static Prepared prepare(
+            ShaderPackSource source,
+            Map<String, String> defines
+    ) throws IOException {
         ShaderPipelineDefinition.Result definition = ShaderPipelineDefinition.discover(source);
-        String terrainVertex = ShaderSourcePreprocessor.preprocess(
-                source,
-                definition.terrain().vertexPath(),
-                defines
-        ).source();
-        String terrainFragment = ShaderSourcePreprocessor.preprocess(
-                source,
-                definition.terrain().fragmentPath(),
-                defines
-        ).source();
-        int gbufferAttachments = TerrainShaderContract.gbufferAttachmentCount(terrainFragment);
-        String terrainSourceFingerprint = fingerprint(terrainVertex, terrainFragment);
-        Map<String, FirstPartyShaderProgram> compiled = new LinkedHashMap<>();
+        Map<String, PreparedProgram> programs = new LinkedHashMap<>();
 
+        for (ShaderPipelineDefinition.Program program : definition.programs()) {
+            String vertex = ShaderSourcePreprocessor.preprocess(
+                    source,
+                    program.vertexPath(),
+                    defines
+            ).source();
+            String fragment = ShaderSourcePreprocessor.preprocess(
+                    source,
+                    program.fragmentPath(),
+                    defines
+            ).source();
+            FirstPartyShaderCompiler.validate(program.name(), vertex, fragment);
+            programs.put(
+                    program.name(),
+                    new PreparedProgram(program.name(), vertex, fragment)
+            );
+        }
+
+        PreparedProgram terrain = programs.get("terrain");
+        if (terrain == null) throw new IOException("Prepared terrain shader is unavailable.");
+
+        return new Prepared(
+                Map.copyOf(programs),
+                TerrainShaderContract.gbufferAttachmentCount(terrain.fragmentSource()),
+                fingerprint(terrain.vertexSource(), terrain.fragmentSource())
+        );
+    }
+
+    public static FirstPartyShaderPipeline compile(Prepared prepared)
+            throws FirstPartyShaderCompiler.ShaderCompileException {
+        RenderSystem.assertOnRenderThread();
+        if (prepared == null) throw new IllegalArgumentException("Missing prepared shader pipeline");
+
+        Map<String, FirstPartyShaderProgram> compiled = new LinkedHashMap<>();
         try {
-            for (ShaderPipelineDefinition.Program program : definition.programs()) {
+            for (PreparedProgram program : prepared.programs().values()) {
                 compiled.put(
                         program.name(),
-                        FirstPartyShaderCompiler.compile(source, program, defines)
+                        FirstPartyShaderCompiler.compilePrepared(
+                                program.name(),
+                                program.vertexSource(),
+                                program.fragmentSource()
+                        )
                 );
             }
             return new FirstPartyShaderPipeline(
                     compiled,
-                    gbufferAttachments,
-                    terrainSourceFingerprint
+                    prepared.gbufferAttachments(),
+                    prepared.terrainSourceFingerprint()
             );
-        } catch (IOException | FirstPartyShaderCompiler.ShaderCompileException | RuntimeException error) {
+        } catch (FirstPartyShaderCompiler.ShaderCompileException | RuntimeException error) {
             for (FirstPartyShaderProgram program : compiled.values()) {
                 program.close();
             }
             throw error;
         }
+    }
+
+    public record Prepared(
+            Map<String, PreparedProgram> programs,
+            int gbufferAttachments,
+            String terrainSourceFingerprint
+    ) {
+        public Prepared {
+            programs = programs == null ? Map.of() : Map.copyOf(programs);
+            terrainSourceFingerprint = terrainSourceFingerprint == null
+                    ? ""
+                    : terrainSourceFingerprint;
+        }
+    }
+
+    public record PreparedProgram(
+            String name,
+            String vertexSource,
+            String fragmentSource
+    ) {
     }
 
     public FirstPartyShaderProgram program(String name) {
