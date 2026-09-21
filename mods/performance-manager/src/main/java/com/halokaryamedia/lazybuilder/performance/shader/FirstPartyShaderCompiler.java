@@ -127,7 +127,9 @@ public final class FirstPartyShaderCompiler {
         switch (name) {
             case "shadow" -> program.prewarmUniforms(
                     "LazyBuilderShadowViewProjection",
-                    "LazyBuilderModelOffset"
+                    "LazyBuilderModelOffset",
+                    "LazyBuilderBlockAtlas",
+                    "LazyBuilderShadowAlphaCutoff"
             );
             case "composite", "final" -> program.prewarmUniforms(
                     "LazyBuilderColorTexture",
