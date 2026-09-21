@@ -109,4 +109,32 @@ final class ShaderSourcePreprocessorTest {
         assertTrue(zeta < 0);
         assertTrue(body > alpha);
     }
+    @Test
+    void rejectsExcessiveIncludeExpansion() throws Exception {
+        Path pack = temp.resolve("too-many-includes");
+        Files.createDirectories(pack.resolve("shaders"));
+        Files.writeString(pack.resolve("shaders/shared.glsl"), "float sharedValue = 1.0;\n");
+
+        StringBuilder main = new StringBuilder("#version 150\n");
+        for (int index = 0; index < 300; index++) {
+            main.append("#include \"shared.glsl\"\n");
+        }
+        main.append("void main(){}\n");
+        Files.writeString(pack.resolve("shaders/main.vsh"), main.toString());
+
+        ShaderPackDescriptor descriptor = new ShaderPackDescriptor(
+                "too-many-includes",
+                "Too Many Includes",
+                pack,
+                ShaderPackDescriptor.Kind.DIRECTORY
+        );
+
+        assertThrows(
+                IOException.class,
+                () -> ShaderSourcePreprocessor.preprocess(
+                        ShaderPackSource.open(descriptor),
+                        "shaders/main.vsh"
+                )
+        );
+    }
 }
