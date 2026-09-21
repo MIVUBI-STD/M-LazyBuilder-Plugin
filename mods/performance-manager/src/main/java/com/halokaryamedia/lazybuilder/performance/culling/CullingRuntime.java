@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.performance.culling;
 
 import com.halokaryamedia.lazybuilder.performance.FramePressure;
 import com.halokaryamedia.lazybuilder.performance.PerformancePreferences;
+import com.halokaryamedia.lazybuilder.performance.PerformanceGovernor;
 import com.halokaryamedia.lazybuilder.performance.StageTimingMetrics;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
@@ -135,6 +136,15 @@ public final class CullingRuntime {
             PerformancePreferences preferences,
             FramePressure pressure
     ) {
+        tick(client, preferences, pressure, PerformanceGovernor.Profile.balanced());
+    }
+
+    public void tick(
+            MinecraftClient client,
+            PerformancePreferences preferences,
+            FramePressure pressure,
+            PerformanceGovernor.Profile governorProfile
+    ) {
         if (client == null || client.world == null) {
             clear();
             return;
@@ -146,8 +156,9 @@ public final class CullingRuntime {
         if (!preferences.entityCulling() && !preferences.blockEntityCulling()) return;
 
         lastPressure = pressure == null ? FramePressure.NORMAL : pressure;
-        int entityBudget = entityBudget(lastPressure);
-        int blockEntityBudget = blockEntityBudget(lastPressure);
+        int budgetPercent = governorProfile == null ? 100 : governorProfile.cullingBudgetPercent();
+        int entityBudget = scaledBudget(entityBudget(lastPressure), budgetPercent);
+        int blockEntityBudget = scaledBudget(blockEntityBudget(lastPressure), budgetPercent);
 
         for (int i = 0; i < entityBudget; i++) {
             Entity entity = entityQueue.poll();
@@ -167,6 +178,11 @@ public final class CullingRuntime {
             }
             evaluateBlockEntityTimed(client, blockEntity);
         }
+    }
+
+    private static int scaledBudget(int base, int percent) {
+        if (base <= 0) return 0;
+        return Math.max(1, (base * Math.max(10, Math.min(100, percent)) + 99) / 100);
     }
 
     private static int entityBudget(FramePressure pressure) {
