@@ -48,7 +48,7 @@ final class FirstPartyRendererReadinessTest {
         var readiness = FirstPartyRendererReadiness.evaluate(renderer, policy);
 
         assertTrue(readiness.ready());
-        assertTrue(policy.owns(OptimizationCompatibility.OptimizationDomain.MODEL_MEMORY));
+        assertTrue(policy.owns(OptimizationCompatibility.OptimizationDomain.BAKED_QUAD_MEMORY));
     }
     @Test
     void externalEntityCullingBlocksStrictStandaloneReadiness() {
