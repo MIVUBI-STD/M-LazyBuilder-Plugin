@@ -1633,13 +1633,14 @@ public final class LazyBuilderSettingsScreen extends Screen {
             boolean hovered = mouseX >= left && mouseX < right
                     && mouseY >= itemY && mouseY < itemY + DropdownState.ITEM_HEIGHT;
 
+            boolean keyboardFocused = dropdown.isFocused(choiceIndex);
             int fill = choice.selected()
                     ? 0xCC1F6558
-                    : hovered ? 0xFF252C34 : 0xFF1A1F25;
+                    : (hovered || keyboardFocused) ? 0xFF252C34 : 0xFF1A1F25;
             context.fill(left, itemY, right, itemY + DropdownState.ITEM_HEIGHT - 1, fill);
             context.fill(left, itemY + DropdownState.ITEM_HEIGHT - 1, right, itemY + DropdownState.ITEM_HEIGHT, DIVIDER);
 
-            int textColor = choice.selected() || hovered ? TEXT_PRIMARY : TEXT_SECONDARY;
+            int textColor = choice.selected() || hovered || keyboardFocused ? TEXT_PRIMARY : TEXT_SECONDARY;
             context.drawTextWithShadow(
                     textRenderer,
                     Text.literal(textRenderer.trimToWidth(choice.label(), dropdown.width - 30)),
@@ -1697,10 +1698,30 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (dropdown != null && keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
-            dropdown = null;
-            clearAndInit();
-            return true;
+        if (dropdown != null) {
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+                dropdown = null;
+                clearAndInit();
+                return true;
+            }
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_UP) {
+                dropdown.moveSelection(-1);
+                return true;
+            }
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN) {
+                dropdown.moveSelection(1);
+                return true;
+            }
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ENTER
+                    || keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_KP_ENTER
+                    || keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_SPACE) {
+                DropdownChoice choice = dropdown.focusedChoice();
+                if (choice != null) {
+                    dropdown = null;
+                    choice.action().run();
+                    return true;
+                }
+            }
         }
         if (Screen.hasControlDown() && keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_F) {
             openSettingsSearch();
@@ -2029,10 +2050,13 @@ public final class LazyBuilderSettingsScreen extends Screen {
         private int width;
         private int firstVisible;
         private int visibleCount;
+        private int focusedIndex = -1;
 
         private DropdownState(String anchor, List<DropdownChoice> choices) {
             this.anchor = anchor;
             this.choices = List.copyOf(choices);
+            this.focusedIndex = selectedIndex();
+            if (this.focusedIndex < 0 && !this.choices.isEmpty()) this.focusedIndex = 0;
         }
 
         private void position(
@@ -2074,6 +2098,27 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 if (choices.get(i).selected()) return i;
             }
             return -1;
+        }
+
+        private void moveSelection(int delta) {
+            if (choices.isEmpty()) return;
+            if (focusedIndex < 0) focusedIndex = 0;
+            focusedIndex = Math.max(0, Math.min(choices.size() - 1, focusedIndex + delta));
+
+            if (focusedIndex < firstVisible) {
+                firstVisible = focusedIndex;
+            } else if (focusedIndex >= firstVisible + visibleCount) {
+                firstVisible = Math.max(0, focusedIndex - visibleCount + 1);
+            }
+        }
+
+        private DropdownChoice focusedChoice() {
+            if (focusedIndex < 0 || focusedIndex >= choices.size()) return null;
+            return choices.get(focusedIndex);
+        }
+
+        private boolean isFocused(int choiceIndex) {
+            return choiceIndex == focusedIndex;
         }
 
         private void scroll(double verticalAmount) {
