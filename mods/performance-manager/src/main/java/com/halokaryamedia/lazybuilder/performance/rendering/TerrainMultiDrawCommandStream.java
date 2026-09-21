@@ -6,6 +6,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.AbstractList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /**
  * Packs physical-ready terrain draws into GPU-ready command and transform payloads.
@@ -23,7 +24,8 @@ public final class TerrainMultiDrawCommandStream {
             ByteBuffer.allocateDirect(TRANSFORM_BYTES).order(ByteOrder.nativeOrder());
     private static final LayerPacket[] EMPTY_LAYERS = emptyLayers();
     private static final PacketBuilder[] PACKET_BUILDERS = packetBuilders();
-    private static volatile LayerPacket[] current = EMPTY_LAYERS.clone();
+    private static final AtomicReferenceArray<LayerPacket> current =
+            new AtomicReferenceArray<>(EMPTY_LAYERS);
 
     private TerrainMultiDrawCommandStream() {
     }
@@ -35,24 +37,20 @@ public final class TerrainMultiDrawCommandStream {
     public static synchronized void publish(TerrainDrawTransformStream.LayerSnapshot layer) {
         if (layer == null || layer.layerSlot() < 0 || layer.layerSlot() >= LAYER_COUNT) return;
         LayerPacket packet = PACKET_BUILDERS[layer.layerSlot()].build(layer);
-        LayerPacket[] next = current.clone();
-        next[packet.layerSlot()] = packet;
-        current = next;
+        current.set(packet.layerSlot(), packet);
     }
 
     public static LayerPacket layer(int layerSlot) {
-        LayerPacket[] snapshot = current;
-        if (layerSlot < 0 || layerSlot >= snapshot.length) return LayerPacket.empty(layerSlot);
-        return snapshot[layerSlot];
+        if (layerSlot < 0 || layerSlot >= LAYER_COUNT) return LayerPacket.empty(layerSlot);
+        LayerPacket packet = current.get(layerSlot);
+        return packet == null ? LayerPacket.empty(layerSlot) : packet;
     }
 
     public static synchronized void clearLayer(int layerSlot) {
         if (layerSlot < 0 || layerSlot >= LAYER_COUNT) return;
-        LayerPacket existing = current[layerSlot];
+        LayerPacket existing = current.get(layerSlot);
         if (existing != null && existing.commandCount() == 0) return;
-        LayerPacket[] next = current.clone();
-        next[layerSlot] = EMPTY_LAYERS[layerSlot];
-        current = next;
+        current.set(layerSlot, EMPTY_LAYERS[layerSlot]);
     }
 
     public static Snapshot snapshot() {
@@ -61,7 +59,9 @@ public final class TerrainMultiDrawCommandStream {
         long reductions = 0L;
         long commandBytes = 0L;
         long transformBytes = 0L;
-        for (LayerPacket layer : current) {
+        for (int layerIndex = 0; layerIndex < LAYER_COUNT; layerIndex++) {
+            LayerPacket layer = current.get(layerIndex);
+            if (layer == null) continue;
             commands += layer.commandCount();
             runs += layer.candidateRuns();
             reductions += layer.potentialDrawCallReduction();
@@ -87,7 +87,9 @@ public final class TerrainMultiDrawCommandStream {
     }
 
     public static synchronized void clear() {
-        current = EMPTY_LAYERS.clone();
+        for (int index = 0; index < LAYER_COUNT; index++) {
+            current.set(index, EMPTY_LAYERS[index]);
+        }
     }
 
     private static ByteBuffer emptyBuffer() {
