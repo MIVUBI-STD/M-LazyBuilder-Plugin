@@ -29,6 +29,12 @@ public final class FirstPartyShaderCompiler {
 
         if ("terrain".equals(program.name())) {
             TerrainShaderContract.validate(vertex.source(), fragment.source());
+        } else if ("composite".equals(program.name()) || "final".equals(program.name())) {
+            PostProcessShaderContract.validate(
+                    program.name(),
+                    vertex.source(),
+                    fragment.source()
+            );
         }
 
         int vertexShader = compileStage(
