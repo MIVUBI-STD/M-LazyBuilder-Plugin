@@ -314,6 +314,113 @@ public final class TerrainPhysicalArenaManager {
         return true;
     }
 
+    /**
+     * Validate and bind one already-planned multi-draw run without rebinding once
+     * per resident. All commands must remain in the same physical arena/state
+     * family. Sequential index capacity is grown once to the largest command.
+     */
+    public static boolean bindMultiDrawRun(
+            TerrainMultiDrawCommandStream.LayerPacket packet,
+            int start,
+            int end
+    ) {
+        if (packet == null
+                || !RenderSystem.isOnRenderThread()
+                || !PHYSICAL_PATH_BREAKER.allow()) {
+            return false;
+        }
+
+        int from = Math.max(0, start);
+        int to = Math.min(packet.commandCount(), Math.max(from, end));
+        if (to - from < 2) return false;
+
+        TerrainArenaDrawPlanner.Command firstCommand = packet.arenaCommand(from);
+        TerrainArenaDrawStateRegistry.DrawState firstState =
+                firstCommand == null ? null : firstCommand.state();
+        VertexBuffer firstSource = packet.source(from);
+        Resident firstResident = firstSource == null ? null : RESIDENTS.get(firstSource);
+        if (firstState == null || !matches(firstCommand, firstResident)) return false;
+
+        Arena arena = ARENAS.get(firstResident.arenaKey);
+        if (arena == null || firstResident.arenaEpoch != arena.epoch) return false;
+
+        boolean customIndices = firstState.indexPayloadBytes() > 0;
+        int maxSequentialIndexCount = firstState.indexCount();
+
+        for (int index = from; index < to; index++) {
+            VertexBuffer source = packet.source(index);
+            TerrainArenaDrawPlanner.Command command = packet.arenaCommand(index);
+            TerrainArenaDrawStateRegistry.DrawState state =
+                    command == null ? null : command.state();
+            Resident resident = source == null ? null : RESIDENTS.get(source);
+
+            if (state == null
+                    || !matches(command, resident)
+                    || resident.arenaEpoch != arena.epoch
+                    || !resident.arenaKey.equals(firstResident.arenaKey)
+                    || state.format() != firstState.format()
+                    || state.mode() != firstState.mode()
+                    || state.indexType() != firstState.indexType()
+                    || (state.indexPayloadBytes() > 0) != customIndices) {
+                return false;
+            }
+
+            if (customIndices) {
+                if (arena.indexBuffer == null
+                        || resident.indexBytes != state.indexPayloadBytes()) {
+                    return false;
+                }
+            } else {
+                maxSequentialIndexCount = Math.max(
+                        maxSequentialIndexCount,
+                        state.indexCount()
+                );
+            }
+        }
+
+        VaoState vao = arena.vaos.get(firstState.format());
+        try {
+            if (vao == null) {
+                vao = createVao(arena, firstState.format());
+                arena.vaos.put(firstState.format(), vao);
+            } else if (boundArena == arena && boundVao == vao.id) {
+                physicalBindReuses++;
+            } else {
+                BufferRenderer.resetCurrentVertexBuffer();
+                GlStateManager._glBindVertexArray(vao.id);
+                boundArena = arena;
+                boundVao = vao.id;
+                physicalBufferBinds++;
+            }
+
+            if (customIndices) {
+                if (!vao.customIndexBound) {
+                    arena.indexBuffer.bind();
+                    vao.customIndexBound = true;
+                    vao.sequentialMode = null;
+                }
+            } else {
+                RenderSystem.ShapeIndexBuffer sequential =
+                        RenderSystem.getSequentialBuffer(firstState.mode());
+                if (vao.customIndexBound
+                        || vao.sequentialMode != firstState.mode()
+                        || !sequential.isLargeEnough(maxSequentialIndexCount)) {
+                    sequential.bindAndGrow(maxSequentialIndexCount);
+                    vao.customIndexBound = false;
+                    vao.sequentialMode = firstState.mode();
+                }
+            }
+
+            prepared = null;
+            return true;
+        } catch (RuntimeException error) {
+            bufferProvisionFailures++;
+            PHYSICAL_PATH_BREAKER.recordFailure();
+            noteExternalBind();
+            return false;
+        }
+    }
+
     public static boolean draw(VertexBuffer source) {
         if (source == null || !RenderSystem.isOnRenderThread() || !PHYSICAL_PATH_BREAKER.allow()) return false;
         Prepared current = prepared;
