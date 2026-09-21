@@ -13,6 +13,7 @@ public final class ShaderPipelineDefinition {
         List<Program> programs = new ArrayList<>();
 
         addRequired(source, programs, "terrain");
+        addOptional(source, programs, "shadow");
         addOptional(source, programs, "composite");
         addOptional(source, programs, "final");
 
