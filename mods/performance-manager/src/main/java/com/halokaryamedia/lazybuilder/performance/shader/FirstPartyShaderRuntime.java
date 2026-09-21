@@ -464,28 +464,20 @@ public final class FirstPartyShaderRuntime {
     }
 
     public synchronized TerrainSource terrainSource(boolean vertex) {
-        ShaderPackDescriptor active = packById(activePackId);
-        if (pipeline == null || active == null) return TerrainSource.NONE;
+        FirstPartyShaderPipeline current = pipeline;
+        if (current == null || activePackId.isBlank()) return TerrainSource.NONE;
 
-        String path = vertex ? "shaders/terrain.vsh" : "shaders/terrain.fsh";
-        try {
-            ShaderSourcePreprocessor.Result result;
-            try (ShaderPackSource.Session source = ShaderPackSource.openSession(active)) {
-                result = ShaderSourcePreprocessor.preprocess(
-                        source,
-                        path,
-                        optionDefines(active)
-                );
-            }
-            return new TerrainSource(true, result.source(), activePackId, "");
-        } catch (Exception error) {
-            String message = safeMessage(error);
+        String source = current.terrainSource(vertex);
+        if (source.isBlank()) {
+            String message = "Active shader pipeline lost its prepared terrain source.";
             terrainError = message;
             lastError = primaryError();
             stage = "terrain-source-error";
             revision++;
             return new TerrainSource(false, "", activePackId, message);
         }
+
+        return new TerrainSource(true, source, activePackId, "");
     }
 
     public synchronized void recordTerrainCompile(boolean vertex, boolean success, String error) {
