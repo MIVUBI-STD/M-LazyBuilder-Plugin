@@ -22,8 +22,16 @@ public final class LazyBuilderShaderScreen extends Screen {
     private static final int DIVIDER = 0x44545C66;
     private static final int FOOTER_HEIGHT = 40;
 
+    private enum FailedAction {
+        NONE,
+        TOGGLE,
+        OPEN_MANAGER,
+        OPEN_FOLDER
+    }
+
     private final Screen parent;
     private String failure;
+    private FailedAction failedAction = FailedAction.NONE;
 
     public LazyBuilderShaderScreen(Screen parent) {
         super(Text.literal("Shaders"));
@@ -250,6 +258,7 @@ public final class LazyBuilderShaderScreen extends Screen {
 
     private void toggleShaders() {
         failure = null;
+        failedAction = FailedAction.NONE;
         try {
             Object config = irisConfig();
             Method currentMethod = config.getClass().getMethod("areShadersEnabled");
@@ -258,12 +267,13 @@ public final class LazyBuilderShaderScreen extends Screen {
             applyMethod.invoke(config, !current);
             clearAndInit();
         } catch (ReflectiveOperationException | RuntimeException error) {
-            fail(error);
+            fail(error, FailedAction.TOGGLE);
         }
     }
 
     private void openIrisManager() {
         failure = null;
+        failedAction = FailedAction.NONE;
         try {
             Object api = irisApi();
             Object screen = api.getClass().getMethod("openMainIrisScreenObj", Object.class).invoke(api, this);
@@ -272,14 +282,16 @@ public final class LazyBuilderShaderScreen extends Screen {
                 return;
             }
             failure = "Iris did not provide a shader management screen.";
+            failedAction = FailedAction.OPEN_MANAGER;
             clearAndInit();
         } catch (ReflectiveOperationException | RuntimeException error) {
-            fail(error);
+            fail(error, FailedAction.OPEN_MANAGER);
         }
     }
 
     private void openShaderFolder() {
         failure = null;
+        failedAction = FailedAction.NONE;
         try {
             Class<?> iris = Class.forName("net.irisshaders.iris.Iris");
             Object path = iris.getMethod("getShaderpacksDirectory").invoke(null);
@@ -288,23 +300,32 @@ public final class LazyBuilderShaderScreen extends Screen {
                 return;
             }
             failure = "Shader folder is unavailable.";
+            failedAction = FailedAction.OPEN_FOLDER;
             clearAndInit();
         } catch (ReflectiveOperationException | RuntimeException error) {
-            fail(error);
+            fail(error, FailedAction.OPEN_FOLDER);
         }
     }
 
     private void retry() {
+        FailedAction action = failedAction;
         failure = null;
-        clearAndInit();
+        failedAction = FailedAction.NONE;
+        switch (action) {
+            case TOGGLE -> toggleShaders();
+            case OPEN_MANAGER -> openIrisManager();
+            case OPEN_FOLDER -> openShaderFolder();
+            case NONE -> clearAndInit();
+        }
     }
 
-    private void fail(Throwable error) {
+    private void fail(Throwable error, FailedAction action) {
         Throwable cause = error.getCause() == null ? error : error.getCause();
         String message = cause.getMessage();
         failure = message == null || message.isBlank()
                 ? cause.getClass().getSimpleName()
                 : message;
+        failedAction = action;
         clearAndInit();
     }
 
