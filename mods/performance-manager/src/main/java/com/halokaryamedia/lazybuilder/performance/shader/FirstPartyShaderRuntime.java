@@ -47,7 +47,12 @@ public final class FirstPartyShaderRuntime {
     private volatile boolean terrainIntegrated;
     private volatile boolean terrainReloadPending;
     private volatile long terrainGeneration;
+    private volatile long terrainReloadActiveGeneration = -1L;
     private FirstPartyShaderPipeline pipeline;
+    private FirstPartyShaderPipeline terrainRollbackPipeline;
+    private String terrainRollbackPackId = "";
+    private boolean terrainRollbackIntegrated;
+    private String pendingTerrainPackId = "";
     private FirstPartyShaderPostProcessor postProcessor;
     private FirstPartyShaderGBuffer gbuffer;
     private FirstPartyShadowRenderer shadowRenderer;
@@ -199,6 +204,14 @@ public final class FirstPartyShaderRuntime {
     }
 
     public synchronized boolean select(String packId) {
+        if (terrainReloadActiveGeneration >= 0L) {
+            controlError = "A terrain shader change is still being applied.";
+            lastError = primaryError();
+            stage = "terrain-reload-busy";
+            revision++;
+            return false;
+        }
+
         String requested = packId == null ? "" : packId.trim();
         if (requested.isBlank()) {
             compileRequestGeneration++;
@@ -227,6 +240,9 @@ public final class FirstPartyShaderRuntime {
         compileRequestGeneration++;
         cancelPreparationLocked();
         stagedOptionsRequireCompile = false;
+        terrainReloadActiveGeneration = -1L;
+        pendingTerrainPackId = "";
+        clearTerrainRollbackLocked();
         selectedPackId = requested;
         persisted = persisted.withSelectedPack(requested);
         configStore.save(persisted);
@@ -246,6 +262,14 @@ public final class FirstPartyShaderRuntime {
         Map<String, String> defines;
 
         synchronized (this) {
+            if (terrainReloadActiveGeneration >= 0L) {
+                controlError = "A terrain shader change is still being applied.";
+                lastError = primaryError();
+                stage = "terrain-reload-busy";
+                revision++;
+                return;
+            }
+
             requested = selectedPackId;
             if (requested == null || requested.isBlank()) {
                 controlError = "No shader pack selected.";
@@ -392,15 +416,18 @@ public final class FirstPartyShaderRuntime {
                         .equals(candidate.terrainSourceFingerprint());
                 boolean requiresTerrainReload = terrainChanged || !previousTerrainIntegrated;
 
-                pipeline = candidate;
-                candidate = null;
-                releaseUnusedAuxiliariesLocked(pipeline);
-                activePackId = requestedPackId;
-                persisted = persisted.withSelectedPack(requestedPackId).withEnabled(true);
-                configStore.save(persisted);
-                lastFrameApplied = false;
-
                 if (requiresTerrainReload) {
+                    clearTerrainRollbackLocked();
+
+                    terrainRollbackPipeline = previous;
+                    terrainRollbackPackId = activePackId;
+                    terrainRollbackIntegrated = previousTerrainIntegrated;
+
+                    pipeline = candidate;
+                    candidate = null;
+                    pendingTerrainPackId = requestedPackId;
+                    releaseUnusedAuxiliariesLocked(pipeline);
+                    lastFrameApplied = false;
                     terrainVertexCompiled = false;
                     terrainFragmentCompiled = false;
                     terrainIntegrated = false;
@@ -408,17 +435,24 @@ public final class FirstPartyShaderRuntime {
                     terrainReloadPending = true;
                     stage = "compiled";
                 } else {
+                    pipeline = candidate;
+                    candidate = null;
+                    releaseUnusedAuxiliariesLocked(pipeline);
+                    activePackId = requestedPackId;
+                    pendingTerrainPackId = "";
+                    persisted = persisted.withSelectedPack(requestedPackId).withEnabled(true);
+                    configStore.save(persisted);
+                    lastFrameApplied = false;
                     terrainReloadPending = false;
+                    terrainError = "";
                     stage = "terrain-active";
+                    if (previous != null) previous.close();
                 }
 
                 compileError = "";
                 controlError = "";
-                terrainError = requiresTerrainReload ? terrainError : "";
                 lastError = primaryError();
                 revision++;
-
-                if (previous != null) previous.close();
             }
         } catch (Exception error) {
             if (candidate != null) candidate.close();
@@ -513,6 +547,7 @@ public final class FirstPartyShaderRuntime {
     public synchronized long consumeTerrainReloadGeneration() {
         if (!terrainReloadPending) return -1L;
         terrainReloadPending = false;
+        terrainReloadActiveGeneration = terrainGeneration;
         return terrainGeneration;
     }
 
@@ -547,34 +582,48 @@ public final class FirstPartyShaderRuntime {
             String sourceStatus
     ) {
         if (generation != terrainGeneration) return;
+        if (terrainReloadActiveGeneration == generation) {
+            terrainReloadActiveGeneration = -1L;
+        }
 
         if (!success) {
-            terrainError = error == null || error.isBlank()
+            String failure = error == null || error.isBlank()
                     ? "Minecraft shader reload failed while applying the terrain shader."
                     : error;
+            rollbackTerrainCandidateLocked(failure);
+            return;
+        }
+
+        if (pipeline != null && terrainIntegrated) {
+            activePackId = pendingTerrainPackId.isBlank()
+                    ? activePackId
+                    : pendingTerrainPackId;
+            pendingTerrainPackId = "";
+            persisted = persisted.withSelectedPack(activePackId).withEnabled(true);
+            configStore.save(persisted);
+            clearTerrainRollbackLocked();
+            terrainError = "";
             lastError = primaryError();
-            stage = "terrain-reload-error";
+            stage = lastError.isBlank()
+                    ? (lastFrameApplied ? "terrain+postprocess-active" : "terrain-active")
+                    : "degraded";
             revision++;
             return;
         }
 
-        if (pipeline != null && !terrainIntegrated && terrainError.isBlank()) {
-            terrainError = switch (sourceStatus == null ? "" : sourceStatus) {
-                case "external-resource-pack" ->
-                        "A Resource Pack overrides Minecraft's terrain shader; LazyBuilder terrain integration stayed disabled.";
-                case "renderer-owned" ->
-                        "Another renderer owns Minecraft's terrain shader path.";
-                case "contract-missing" ->
-                        "The active terrain shader does not expose the LazyBuilder transform contract.";
-                case "compile-fallback", "first-party-compile-fallback" ->
-                        "First-party terrain source fell back to Minecraft after compilation failed.";
-                default ->
-                        "Minecraft shader reload completed without first-party terrain integration.";
-            };
-            lastError = primaryError();
-            stage = "terrain-reload-incomplete";
-            revision++;
-        }
+        String failure = switch (sourceStatus == null ? "" : sourceStatus) {
+            case "external-resource-pack" ->
+                    "A Resource Pack overrides Minecraft's terrain shader; LazyBuilder terrain integration stayed disabled.";
+            case "renderer-owned" ->
+                    "Another renderer owns Minecraft's terrain shader path.";
+            case "contract-missing" ->
+                    "The active terrain shader does not expose the LazyBuilder transform contract.";
+            case "compile-fallback", "first-party-compile-fallback" ->
+                    "First-party terrain source fell back to Minecraft after compilation failed.";
+            default ->
+                    "Minecraft shader reload completed without first-party terrain integration.";
+        };
+        discardTerrainCandidateAfterSuccessfulFallbackLocked(failure);
     }
 
     public synchronized TerrainSource terrainSource(boolean vertex) {
@@ -587,7 +636,10 @@ public final class FirstPartyShaderRuntime {
         }
 
         FirstPartyShaderPipeline current = pipeline;
-        if (current == null || activePackId.isBlank()) return TerrainSource.NONE;
+        String sourcePackId = pendingTerrainPackId.isBlank()
+                ? activePackId
+                : pendingTerrainPackId;
+        if (current == null || sourcePackId.isBlank()) return TerrainSource.NONE;
 
         String source = current.terrainSource(vertex);
         if (source.isBlank()) {
@@ -596,10 +648,10 @@ public final class FirstPartyShaderRuntime {
             lastError = primaryError();
             stage = "terrain-source-error";
             revision++;
-            return new TerrainSource(false, "", activePackId, message);
+            return new TerrainSource(false, "", sourcePackId, message);
         }
 
-        return new TerrainSource(true, source, activePackId, "");
+        return new TerrainSource(true, source, sourcePackId, "");
     }
 
     public synchronized void recordTerrainCompile(boolean vertex, boolean success, String error) {
@@ -675,7 +727,7 @@ public final class FirstPartyShaderRuntime {
         FirstPartyShaderPipeline current;
         ShaderMemoryBudget.ShadowPlan shadowPlan;
         synchronized (this) {
-            current = pipeline;
+            current = terrainIntegrated ? pipeline : null;
             if (current == null || !current.has("shadow")) {
                 FirstPartyShadowRenderer previous = shadowRenderer;
                 shadowRenderer = null;
@@ -909,7 +961,7 @@ public final class FirstPartyShaderRuntime {
     ) {
         FirstPartyShaderPipeline current;
         synchronized (this) {
-            current = pipeline;
+            current = terrainIntegrated ? pipeline : null;
             if (current == null) {
                 lastFrameApplied = false;
                 return false;
@@ -1203,6 +1255,9 @@ public final class FirstPartyShaderRuntime {
         values.put("compileGeneration", compileRequestGeneration);
         values.put("terrainReloadPending", terrainReloadPending);
         values.put("terrainGeneration", terrainGeneration);
+        values.put("terrainReloadActiveGeneration", terrainReloadActiveGeneration);
+        values.put("terrainCandidatePackId", pendingTerrainPackId);
+        values.put("terrainRollbackAvailable", terrainRollbackPipeline != null);
         values.put("invalidPackCount", catalog.invalidEntries().size());
         values.put("catalogHealthy", catalogError.isBlank());
         return Map.copyOf(values);
@@ -1313,6 +1368,84 @@ public final class FirstPartyShaderRuntime {
                 .orElse(null);
     }
 
+    private void rollbackTerrainCandidateLocked(String failure) {
+        FirstPartyShaderPipeline failed = pipeline;
+        FirstPartyShaderPipeline restore = terrainRollbackPipeline;
+        String restorePackId = terrainRollbackPackId;
+        boolean restoreIntegrated = terrainRollbackIntegrated;
+
+        terrainRollbackPipeline = null;
+        terrainRollbackPackId = "";
+        terrainRollbackIntegrated = false;
+        pendingTerrainPackId = "";
+
+        pipeline = restore;
+        activePackId = restorePackId;
+        terrainIntegrated = restore != null && restoreIntegrated;
+        terrainVertexCompiled = terrainIntegrated;
+        terrainFragmentCompiled = terrainIntegrated;
+        terrainReloadPending = false;
+
+        if (failed != null && failed != restore) failed.close();
+
+        terrainError = failure == null ? "" : failure;
+        lastError = primaryError();
+        stage = terrainIntegrated
+                ? "terrain-rollback-active"
+                : "terrain-reload-error";
+        revision++;
+    }
+
+    private void discardTerrainCandidateAfterSuccessfulFallbackLocked(String failure) {
+        FirstPartyShaderPipeline failed = pipeline;
+        FirstPartyShaderPipeline previous = terrainRollbackPipeline;
+
+        pipeline = null;
+        terrainRollbackPipeline = null;
+        terrainRollbackPackId = "";
+        terrainRollbackIntegrated = false;
+        pendingTerrainPackId = "";
+        activePackId = "";
+        terrainIntegrated = false;
+        terrainVertexCompiled = false;
+        terrainFragmentCompiled = false;
+        terrainReloadPending = false;
+
+        if (failed != null) failed.close();
+        if (previous != null && previous != failed) previous.close();
+
+        persisted = persisted.withEnabled(false);
+        configStore.save(persisted);
+        releaseAllAuxiliariesLocked();
+
+        terrainError = failure == null ? "" : failure;
+        lastError = primaryError();
+        stage = "terrain-reload-incomplete";
+        revision++;
+    }
+
+    private void clearTerrainRollbackLocked() {
+        FirstPartyShaderPipeline rollback = terrainRollbackPipeline;
+        terrainRollbackPipeline = null;
+        terrainRollbackPackId = "";
+        terrainRollbackIntegrated = false;
+        if (rollback != null && rollback != pipeline) rollback.close();
+    }
+
+    private void releaseAllAuxiliariesLocked() {
+        FirstPartyShaderPostProcessor processor = postProcessor;
+        postProcessor = null;
+        if (processor != null) processor.close();
+
+        FirstPartyShaderGBuffer frameGBuffer = gbuffer;
+        gbuffer = null;
+        if (frameGBuffer != null) frameGBuffer.close();
+
+        FirstPartyShadowRenderer shadows = shadowRenderer;
+        shadowRenderer = null;
+        if (shadows != null) shadows.close();
+    }
+
     private void releaseUnusedAuxiliariesLocked(FirstPartyShaderPipeline next) {
         if (next == null) return;
 
@@ -1341,6 +1474,13 @@ public final class FirstPartyShaderRuntime {
         pipeline = null;
         if (current != null) current.close();
 
+        FirstPartyShaderPipeline rollback = terrainRollbackPipeline;
+        terrainRollbackPipeline = null;
+        terrainRollbackPackId = "";
+        terrainRollbackIntegrated = false;
+        pendingTerrainPackId = "";
+        if (rollback != null && rollback != current) rollback.close();
+
         FirstPartyShaderPostProcessor processor = postProcessor;
         postProcessor = null;
         if (processor != null) processor.close();
@@ -1366,6 +1506,7 @@ public final class FirstPartyShaderRuntime {
         }
         stagedOptionsRequireCompile = false;
         terrainReloadPending = false;
+        terrainReloadActiveGeneration = -1L;
         terrainGeneration++;
         closePipelineLocked();
 
