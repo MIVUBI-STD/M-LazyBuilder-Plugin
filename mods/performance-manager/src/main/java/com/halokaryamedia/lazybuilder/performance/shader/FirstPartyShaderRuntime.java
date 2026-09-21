@@ -498,6 +498,11 @@ public final class FirstPartyShaderRuntime {
      * the same reload.
      */
     public synchronized void invalidateTerrainIntegrationForResourceReload() {
+        invalidateTerrainIntegrationForResourceReload(terrainGeneration);
+    }
+
+    public synchronized void invalidateTerrainIntegrationForResourceReload(long generation) {
+        if (generation != terrainGeneration) return;
         terrainVertexCompiled = false;
         terrainFragmentCompiled = false;
         terrainIntegrated = false;
