@@ -23,9 +23,17 @@ public final class FirstPartyShadowMap implements AutoCloseable {
         size = safeSize;
 
         framebufferId = GL30C.glGenFramebuffers();
+        if (framebufferId == 0) {
+            deleteNow();
+            throw new IllegalStateException("OpenGL could not allocate shadow framebuffer.");
+        }
         GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebufferId);
 
         depthTextureId = GL11C.glGenTextures();
+        if (depthTextureId == 0) {
+            deleteNow();
+            throw new IllegalStateException("OpenGL could not allocate shadow depth texture.");
+        }
         GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, depthTextureId);
         GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
         GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
