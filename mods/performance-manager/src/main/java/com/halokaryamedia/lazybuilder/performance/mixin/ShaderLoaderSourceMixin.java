@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.mixin;
 
 import com.google.common.collect.ImmutableMap;
+import com.halokaryamedia.lazybuilder.performance.rendering.TerrainShaderCompileFallbackState;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainShaderSourceTransformer;
 import net.minecraft.client.gl.CompiledShader;
 import net.minecraft.client.gl.ShaderLoader;
@@ -29,7 +30,7 @@ abstract class ShaderLoaderSourceMixin {
                 && id != null
                 && "minecraft".equals(id.getNamespace())
                 && "shaders/core/terrain.vsh".equals(id.getPath())) {
-            CompiledShaderMixin.lazybuilder$resetTerrainFallbackState();
+            TerrainShaderCompileFallbackState.reset();
         }
 
         TerrainShaderSourceTransformer.observeResource(
