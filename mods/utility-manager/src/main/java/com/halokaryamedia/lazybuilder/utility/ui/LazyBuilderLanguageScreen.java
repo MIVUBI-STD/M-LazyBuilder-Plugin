@@ -140,7 +140,8 @@ public final class LazyBuilderLanguageScreen extends Screen {
     }
 
     private void applyLanguage(String code) {
-        if (client == null || code.equals(currentLanguageCode())) return;
+        if (client == null) return;
+        if (code.equals(currentLanguageCode()) && failure == null) return;
         failure = null;
         failedLanguageCode = null;
 
