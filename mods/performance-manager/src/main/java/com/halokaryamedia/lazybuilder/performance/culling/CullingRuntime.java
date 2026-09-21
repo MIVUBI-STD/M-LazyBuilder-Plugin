@@ -66,6 +66,7 @@ public final class CullingRuntime {
     private long blockEntityEvaluations;
     private long entityQueueDrops;
     private long blockEntityQueueDrops;
+    private long sectionOpenBypasses;
     private long entityOccludedDecisions;
     private long blockEntityOccludedDecisions;
     private FramePressure lastPressure = FramePressure.NORMAL;
@@ -89,6 +90,10 @@ public final class CullingRuntime {
         double targetY = (box.minY + box.maxY) * 0.5D;
         double targetZ = (box.minZ + box.maxZ) * 0.5D;
         if (squaredDistance(camera, targetX, targetY, targetZ) <= ALWAYS_VISIBLE_DISTANCE_SQ) return true;
+        if (SectionVisibilityHint.isOpen(targetX, targetY, targetZ)) {
+            sectionOpenBypasses++;
+            return true;
+        }
 
         CacheEntry entry = entities.get(entity);
         long now = frameNowNanos > 0L ? frameNowNanos : System.nanoTime();
@@ -122,6 +127,10 @@ public final class CullingRuntime {
         double targetY = blockEntity.getPos().getY() + 0.5D;
         double targetZ = blockEntity.getPos().getZ() + 0.5D;
         if (squaredDistance(camera, targetX, targetY, targetZ) <= ALWAYS_VISIBLE_DISTANCE_SQ) return true;
+        if (SectionVisibilityHint.isOpen(targetX, targetY, targetZ)) {
+            sectionOpenBypasses++;
+            return true;
+        }
 
         CacheEntry entry = blockEntities.get(blockEntity);
         long now = frameNowNanos > 0L ? frameNowNanos : System.nanoTime();
@@ -217,6 +226,7 @@ public final class CullingRuntime {
                 blockEntityOccludedDecisions,
                 sampledAverageEvaluationMs(),
                 sampledEvaluationCount,
+                sectionOpenBypasses,
                 entityQueueDrops,
                 blockEntityQueueDrops
         );
@@ -238,12 +248,14 @@ public final class CullingRuntime {
         blockEntityEvaluations = 0L;
         entityQueueDrops = 0L;
         blockEntityQueueDrops = 0L;
+        sectionOpenBypasses = 0L;
         entityOccludedDecisions = 0L;
         blockEntityOccludedDecisions = 0L;
         timingSampleCursor = 0L;
         sampledEvaluationCount = 0L;
         sampledEvaluationEmaMs = 0.0D;
         lastPressure = FramePressure.NORMAL;
+        SectionVisibilityHint.clear();
     }
 
     private static boolean eligible(MinecraftClient client, Entity entity) {
@@ -561,6 +573,7 @@ public final class CullingRuntime {
             long blockEntityOccludedDecisions,
             double sampledAverageEvaluationMs,
             long sampledEvaluationCount,
+            long sectionOpenBypasses,
             long entityQueueDrops,
             long blockEntityQueueDrops
     ) {}
