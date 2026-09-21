@@ -20,6 +20,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
     public boolean render(
             FirstPartyShaderPipeline pipeline,
             int targetFramebuffer,
+            int sourceDepthTexture,
             int width,
             int height,
             float timeSeconds
@@ -36,13 +37,14 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             scratch.ensureSize(width, height);
             ensureVao();
 
-            copyFramebuffer(targetFramebuffer, scene.framebufferId(), width, height, true);
+            copyColor(targetFramebuffer, scene.framebufferId(), width, height);
 
             FirstPartyShaderFramebuffer current = scene;
             if (hasComposite) {
                 runPass(
                         pipeline.program("composite"),
                         current,
+                        sourceDepthTexture,
                         scratch.framebufferId(),
                         width,
                         height,
@@ -55,13 +57,14 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
                 runPass(
                         pipeline.program("final"),
                         current,
+                        sourceDepthTexture,
                         targetFramebuffer,
                         width,
                         height,
                         timeSeconds
                 );
             } else {
-                copyFramebuffer(current.framebufferId(), targetFramebuffer, width, height, false);
+                copyColor(current.framebufferId(), targetFramebuffer, width, height);
             }
             return true;
         } finally {
@@ -72,6 +75,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
     private void runPass(
             FirstPartyShaderProgram program,
             FirstPartyShaderFramebuffer input,
+            int sourceDepthTexture,
             int outputFramebuffer,
             int width,
             int height,
@@ -88,7 +92,9 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         program.bind();
 
         bindTexture(program, "LazyBuilderColorTexture", 0, input.colorTextureId());
-        bindTexture(program, "LazyBuilderDepthTexture", 1, input.depthTextureId());
+        if (sourceDepthTexture > 0) {
+            bindTexture(program, "LazyBuilderDepthTexture", 1, sourceDepthTexture);
+        }
 
         int resolution = program.uniformLocation("LazyBuilderResolution");
         if (resolution >= 0) GL20C.glUniform2f(resolution, width, height);
@@ -112,20 +118,18 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         if (location >= 0) GL20C.glUniform1i(location, unit);
     }
 
-    private static void copyFramebuffer(
+    private static void copyColor(
             int source,
             int target,
             int width,
-            int height,
-            boolean includeDepth
+            int height
     ) {
         GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, source);
         GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, target);
-        int mask = GL11C.GL_COLOR_BUFFER_BIT | (includeDepth ? GL11C.GL_DEPTH_BUFFER_BIT : 0);
         GL30C.glBlitFramebuffer(
                 0, 0, width, height,
                 0, 0, width, height,
-                mask,
+                GL11C.GL_COLOR_BUFFER_BIT,
                 GL11C.GL_NEAREST
         );
     }
