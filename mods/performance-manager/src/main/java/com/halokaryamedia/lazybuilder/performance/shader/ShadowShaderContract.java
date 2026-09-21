@@ -33,6 +33,21 @@ public final class ShadowShaderContract {
         }
     }
 
+    public static boolean supportsCutout(
+            String vertexSource,
+            String fragmentSource
+    ) {
+        String vertex = ShaderSourceSyntax.codeOnly(vertexSource);
+        String fragment = ShaderSourceSyntax.codeOnly(fragmentSource);
+        return (vertexSource != null && vertexSource.contains("#define LAZYBUILDER_CUTOUT_SHADOWS 1"))
+                && (fragmentSource != null && fragmentSource.contains("#define LAZYBUILDER_CUTOUT_SHADOWS 1"))
+                && vertex.contains("in vec2 UV0")
+                && vertex.contains("out vec2 LazyBuilderShadowTexCoord")
+                && fragment.contains("in vec2 LazyBuilderShadowTexCoord")
+                && fragment.contains("uniform sampler2D LazyBuilderBlockAtlas")
+                && fragment.contains("uniform float LazyBuilderShadowAlphaCutoff");
+    }
+
     private static void require(String source, String token, String label) throws IOException {
         if (!source.contains(token)) throw new IOException("Native " + label + " is missing");
     }
