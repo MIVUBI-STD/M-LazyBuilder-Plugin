@@ -464,35 +464,33 @@ public final class TerrainPhysicalArenaManager {
     }
 
     static void recordMultiDrawSuccess(
-            java.util.List<TerrainMultiDrawCommandStream.PackedCommand> commands,
+            TerrainMultiDrawCommandStream.LayerPacket packet,
             int start,
             int end
     ) {
-        if (commands == null) return;
+        if (packet == null) return;
         int from = Math.max(0, start);
-        int to = Math.max(from, Math.min(commands.size(), end));
+        int to = Math.max(from, Math.min(packet.commandCount(), end));
         for (int index = from; index < to; index++) {
-            TerrainMultiDrawCommandStream.PackedCommand command = commands.get(index);
-            if (command != null && command.source() != null) {
-                OWNERSHIP_PROOF.recordDraw(command.source());
-                promoteExclusiveIfEligible(command.source());
+            VertexBuffer source = packet.source(index);
+            if (source != null) {
+                OWNERSHIP_PROOF.recordDraw(source);
+                promoteExclusiveIfEligible(source);
             }
         }
     }
 
     static void recordMultiDrawFailure(
-            java.util.List<TerrainMultiDrawCommandStream.PackedCommand> commands,
+            TerrainMultiDrawCommandStream.LayerPacket packet,
             int start,
             int end
     ) {
-        if (commands == null) return;
+        if (packet == null) return;
         int from = Math.max(0, start);
-        int to = Math.max(from, Math.min(commands.size(), end));
+        int to = Math.max(from, Math.min(packet.commandCount(), end));
         for (int index = from; index < to; index++) {
-            TerrainMultiDrawCommandStream.PackedCommand command = commands.get(index);
-            if (command != null && command.source() != null) {
-                OWNERSHIP_PROOF.reset(command.source());
-            }
+            VertexBuffer source = packet.source(index);
+            if (source != null) OWNERSHIP_PROOF.reset(source);
         }
     }
 
