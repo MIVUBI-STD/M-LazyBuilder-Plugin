@@ -7,7 +7,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.HashSet;
 import java.util.Locale;
+import java.util.Set;
 import java.util.Map;
 import java.util.Properties;
 
@@ -51,6 +53,15 @@ public record ShaderPackManifest(
             if (option != null) options.add(option);
         }
         options.sort(Comparator.comparing(Option::id));
+
+        Set<String> defineNames = new HashSet<>();
+        for (Option option : options) {
+            if (!defineNames.add(option.defineName())) {
+                throw new IOException(
+                        "Shader option define collision: " + option.defineName()
+                );
+            }
+        }
 
         return new ShaderPackManifest(
                 properties.getProperty("name", fallbackName),
