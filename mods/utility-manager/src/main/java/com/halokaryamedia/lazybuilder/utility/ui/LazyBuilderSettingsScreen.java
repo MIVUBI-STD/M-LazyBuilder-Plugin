@@ -931,9 +931,20 @@ public final class LazyBuilderSettingsScreen extends Screen {
         int left = shellLeft();
         int shellRight = left + shellWidth();
 
+        this.addDrawableChild(new LazyBuilderSettingsControlWidget(
+                left + 8,
+                y,
+                92,
+                22,
+                Text.literal("Search"),
+                true,
+                LazyBuilderSettingsControlWidget.Kind.FOOTER,
+                this::openSettingsSearch
+        ));
+
         if (category == Category.INTERFACE) {
             this.addDrawableChild(new LazyBuilderSettingsControlWidget(
-                    left + 8,
+                    left + 108,
                     y,
                     92,
                     22,
@@ -954,6 +965,10 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 LazyBuilderSettingsControlWidget.Kind.FOOTER,
                 this::close
         ));
+    }
+
+    private void openSettingsSearch() {
+        if (client != null) client.setScreen(new LazyBuilderSettingsSearchScreen(this));
     }
 
     private void confirmResetCurrentCategory() {
@@ -1379,6 +1394,10 @@ public final class LazyBuilderSettingsScreen extends Screen {
         if (dropdown != null && keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
             dropdown = null;
             clearAndInit();
+            return true;
+        }
+        if (Screen.hasControlDown() && keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_F) {
+            openSettingsSearch();
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
