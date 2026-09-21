@@ -1351,8 +1351,14 @@ public final class FirstPartyShaderRuntime {
         ShaderRuntimePreferences migrated = persisted;
         for (ShaderPackDescriptor pack : packs) {
             String legacyId = ShaderPackCatalog.legacyId(pack);
-            if (legacyId.isBlank() || legacyId.equals(pack.id())) continue;
-            migrated = migrated.migratePackId(legacyId, pack.id());
+            if (!legacyId.isBlank() && !legacyId.equals(pack.id())) {
+                migrated = migrated.migratePackId(legacyId, pack.id());
+            }
+
+            String sourceDerivedId = ShaderPackCatalog.sourceDerivedId(pack);
+            if (!sourceDerivedId.isBlank() && !sourceDerivedId.equals(pack.id())) {
+                migrated = migrated.migratePackId(sourceDerivedId, pack.id());
+            }
         }
 
         if (migrated.equals(persisted)) return;
