@@ -60,7 +60,8 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
                 cameraY,
                 cameraZ,
                 timeOfDay,
-                DEFAULT_RESOLUTION
+                DEFAULT_RESOLUTION,
+                1
         );
     }
 
@@ -72,7 +73,20 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             long timeOfDay,
             int requestedResolution
     ) {
+        return render(pipeline, cameraX, cameraY, cameraZ, timeOfDay, requestedResolution, 1);
+    }
+
+    public Snapshot render(
+            FirstPartyShaderPipeline pipeline,
+            double cameraX,
+            double cameraY,
+            double cameraZ,
+            long timeOfDay,
+            int requestedResolution,
+            int reuseMultiplier
+    ) {
         RenderSystem.assertOnRenderThread();
+        int reuse = Math.max(1, Math.min(8, reuseMultiplier));
         if (pipeline == null || !pipeline.has("shadow")) {
             snapshot = Snapshot.EMPTY;
             return snapshot;
@@ -102,12 +116,12 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
             return snapshot;
         }
 
-        float centerX = snap((float) cameraX);
-        float centerY = snap((float) cameraY);
-        float centerZ = snap((float) cameraZ);
+        float centerX = snap((float) cameraX, reuse);
+        float centerY = snap((float) cameraY, reuse);
+        float centerZ = snap((float) cameraZ, reuse);
         long terrainContentRevision = TerrainGpuResidencyTracker.contentRevision();
 
-        long quantizedTime = quantizeTime(timeOfDay);
+        long quantizedTime = quantizeTime(timeOfDay, reuse);
         int shadowResolution = Math.max(256, Math.min(4096, requestedResolution));
         boolean cutoutReady = pipeline.cutoutShadowReady();
         int blockAtlasTexture = cutoutReady ? blockAtlasTextureId() : 0;
@@ -296,13 +310,15 @@ public final class FirstPartyShadowRenderer implements AutoCloseable {
         return projection.mul(view, new Matrix4f());
     }
 
-    private static long quantizeTime(long timeOfDay) {
+    private static long quantizeTime(long timeOfDay, int reuseMultiplier) {
         long normalized = Math.floorMod(timeOfDay, 24000L);
-        return (normalized / TIME_SNAP_TICKS) * TIME_SNAP_TICKS;
+        long quantum = TIME_SNAP_TICKS * Math.max(1, Math.min(8, reuseMultiplier));
+        return (normalized / quantum) * quantum;
     }
 
-    private static float snap(float value) {
-        return Math.round(value / CENTER_SNAP) * CENTER_SNAP;
+    private static float snap(float value, int reuseMultiplier) {
+        float quantum = CENTER_SNAP * Math.max(1, Math.min(8, reuseMultiplier));
+        return Math.round(value / quantum) * quantum;
     }
 
     private static void uploadMatrix(
