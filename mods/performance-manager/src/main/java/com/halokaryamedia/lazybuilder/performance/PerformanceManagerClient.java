@@ -7,6 +7,7 @@ import com.halokaryamedia.lazybuilder.performance.memory.MemoryDeduplicator;
 import com.halokaryamedia.lazybuilder.performance.rendering.PerformanceShaderReloadInvalidator;
 import com.halokaryamedia.lazybuilder.performance.shader.FirstPartyShaderRuntime;
 import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.fabricmc.fabric.api.resource.ResourceManagerHelper;
@@ -33,7 +34,10 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     public void onInitializeClient() {
         FabricLoader loader = FabricLoader.getInstance();
         runtime = new PerformanceRuntime(loader.getConfigDir());
-        shaderRuntime = new FirstPartyShaderRuntime(loader.getGameDir().resolve("shaderpacks"));
+        shaderRuntime = new FirstPartyShaderRuntime(
+                loader.getGameDir().resolve("shaderpacks"),
+                loader.getConfigDir()
+        );
         var share = loader.getObjectShare();
         share.put(
                 "lazybuilder-performance-manager:settings-snapshot",
@@ -78,6 +82,10 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         MemoryDeduplicator.register();
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES)
                 .registerReloadListener(new PerformanceShaderReloadInvalidator());
+
+        ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
+            if (shaderRuntime != null) shaderRuntime.activateConfiguredSelection();
+        });
 
         WorldRenderEvents.END.register(context -> {
             long now = System.nanoTime();
