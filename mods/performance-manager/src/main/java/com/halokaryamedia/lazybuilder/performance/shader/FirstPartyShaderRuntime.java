@@ -1031,6 +1031,27 @@ public final class FirstPartyShaderRuntime {
         );
     }
 
+    public synchronized Map<String, Object> diagnosticsMap() {
+        FirstPartyShadowRenderer.Snapshot shadow = shadowSnapshot();
+        FirstPartyShaderGBuffer.Snapshot gbufferSnapshot = gbuffer == null
+                ? new FirstPartyShaderGBuffer.Snapshot(false, "inactive", 0, 0, 0, 0L)
+                : gbuffer.snapshot();
+
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("shadowStatus", shadow.status());
+        values.put("shadowResolution", shadow.resolution());
+        values.put("shadowDrawnBuffers", shadow.drawnBuffers());
+        values.put("shadowSkippedBuffers", shadow.skippedBuffers());
+        values.put("shadowReusedFrames", shadow.reusedFrames());
+        values.put("gbufferStatus", gbufferSnapshot.status());
+        values.put("gbufferActive", gbufferSnapshot.active());
+        values.put("gbufferAttachments", gbufferSnapshot.attachmentCount());
+        values.put("gbufferStaleFrameRecoveries", gbufferSnapshot.staleFrameRecoveries());
+        values.put("compileGeneration", compileRequestGeneration);
+        values.put("terrainReloadPending", terrainReloadPending);
+        return Map.copyOf(values);
+    }
+
     public synchronized Map<String, Object> snapshotMap() {
         long currentRevision = revision;
         if (cachedSnapshotMapRevision == currentRevision) {
