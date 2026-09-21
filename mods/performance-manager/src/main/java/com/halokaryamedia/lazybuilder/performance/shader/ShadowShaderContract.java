@@ -8,7 +8,9 @@ public final class ShadowShaderContract {
     }
 
     public static void validate(String vertexSource, String fragmentSource) throws IOException {
-        if (vertexSource == null || !vertexSource.stripLeading().startsWith("#version")) {
+        String vertexCode = ShaderSourceSyntax.codeOnly(vertexSource);
+        String fragmentCode = ShaderSourceSyntax.codeOnly(fragmentSource);
+        if (!ShaderSourceSyntax.startsWithVersion(vertexSource)) {
             throw new IOException("shadow vertex shader is missing #version");
         }
         require(vertexSource, "in vec3 Position", "shadow vertex attribute Position");
@@ -23,10 +25,10 @@ public final class ShadowShaderContract {
                 "shadow uniform LazyBuilderModelOffset"
         );
 
-        if (fragmentSource == null || !fragmentSource.stripLeading().startsWith("#version")) {
+        if (!ShaderSourceSyntax.startsWithVersion(fragmentSource)) {
             throw new IOException("shadow fragment shader is missing #version");
         }
-        if (!fragmentSource.contains("void main")) {
+        if (!fragmentCode.contains("void main")) {
             throw new IOException("shadow fragment shader must provide main()");
         }
     }
