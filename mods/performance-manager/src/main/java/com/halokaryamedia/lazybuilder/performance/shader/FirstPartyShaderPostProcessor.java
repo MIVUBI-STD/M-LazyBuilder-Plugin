@@ -42,6 +42,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         boolean hasComposite = pipeline.has("composite");
         boolean hasFinal = pipeline.has("final");
         if (!hasComposite && !hasFinal) return false;
+        if (!hasComposite) scratch.release();
 
         boolean shadowReady = shadow != null && shadow.ready() && shadow.textureId() > 0;
         int highestTextureUnit = shadowReady
