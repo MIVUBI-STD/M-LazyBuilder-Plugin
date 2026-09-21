@@ -18,9 +18,14 @@ import com.halokaryamedia.lazybuilder.utility.ui.PauseMenuController;
 import com.halokaryamedia.lazybuilder.utility.window.BorderlessWindowController;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
+import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -35,6 +40,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
     private static final ChatCollapseState CHAT_COLLAPSE_STATE = new ChatCollapseState();
     private static UtilityConfigStore configStore;
     private static UtilityPreferences preferences = UtilityPreferences.defaults();
+    private static KeyBinding toggleRecordingKey;
 
     @Override
     public void onInitializeClient() {
@@ -61,6 +67,17 @@ public final class UtilityManagerClient implements ClientModInitializer {
         PauseMenuController.register();
         CompactDebugNetworking.register();
         MinecraftMessageBridge.register();
+
+        toggleRecordingKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.lazybuilder.capture.toggle_recording",
+                InputUtil.Type.KEYSYM,
+                GLFW.GLFW_KEY_F9,
+                "key.categories.lazybuilder"
+        ));
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (toggleRecordingKey == null) return;
+            while (toggleRecordingKey.wasPressed()) CaptureManager.toggleVideo(client);
+        });
 
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> CaptureManager.shutdown());
 
