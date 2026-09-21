@@ -37,9 +37,13 @@ public final class ShaderPackCatalog {
 
                 entries.forEach(path -> {
                     if (!looksLikePack(path)) return;
-                    if (isCandidate(path)) {
-                        raw.add(descriptor(path));
-                    } else {
+                    try {
+                        if (isCandidate(path)) {
+                            raw.add(descriptor(path));
+                        } else {
+                            invalid.add(fileName(path));
+                        }
+                    } catch (RuntimeException error) {
                         invalid.add(fileName(path));
                     }
                 });
@@ -54,7 +58,7 @@ public final class ShaderPackCatalog {
                 lastScanError = "";
                 return List.copyOf(result);
             }
-        } catch (IOException error) {
+        } catch (IOException | RuntimeException error) {
             invalidEntries = List.of();
             String message = error.getMessage();
             lastScanError = message == null || message.isBlank()
@@ -120,7 +124,7 @@ public final class ShaderPackCatalog {
                     draft.kind(),
                     manifest
             );
-        } catch (IOException ignored) {
+        } catch (IOException | RuntimeException ignored) {
             return draft;
         }
     }
