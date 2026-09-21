@@ -1,6 +1,6 @@
 import { runtimeApi, RuntimeError } from './runtimeApi';
 import { runtimePreviewProduct } from './runtimePreviewProduct';
-import type { ServerBackupEstimate, ServerBackupSummary, ServerRuntimeSummary, SystemSnapshot } from './runtimeApi';
+import type { ServerBackupEstimate, ServerBackupSummary, ServerRuntimeSummary, SystemActivitySnapshot, SystemSnapshot } from './runtimeApi';
 
 const previewBackup: ServerBackupSummary = {
   id: 'backup-1788400100000-1000',
@@ -14,6 +14,15 @@ const previewBackup: ServerBackupSummary = {
 let previewBackups: ServerBackupSummary[] = [previewBackup];
 
 const productionRuntimeProduct = runtimeApi;
+
+
+async function previewSystemActivity(): Promise<SystemActivitySnapshot> {
+  const [launcherOperations, worldTasks] = await Promise.all([
+    runtimePreviewProduct.operations.list(),
+    runtimePreviewProduct.worlds.tasks()
+  ]);
+  return { launcherOperations, worldTasks, worldTasksAvailable: true, warnings: [] };
+}
 
 async function previewSystemSnapshot(): Promise<SystemSnapshot> {
   const [workspace, runtimes, operations] = await Promise.all([
@@ -69,7 +78,7 @@ async function previewRuntimeSummaries(): Promise<ServerRuntimeSummary[]> {
 }
 
 const previewRuntimeProduct = {
-  system: { snapshot: previewSystemSnapshot },
+  system: { snapshot: previewSystemSnapshot, activity: previewSystemActivity },
   ...runtimePreviewProduct,
   readiness: runtimePreviewProduct.health,
   diagnostics: {
