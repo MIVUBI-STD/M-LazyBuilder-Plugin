@@ -60,6 +60,10 @@ final class PerformanceRuntimeProofLogger {
                 StageTimingMetrics.snapshot(StageTimingMetrics.Stage.ENTITY_CULLING);
         StageTimingMetrics.Snapshot blockEntityCullTiming =
                 StageTimingMetrics.snapshot(StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING);
+        StageTimingMetrics.Snapshot chunkUploadTiming =
+                StageTimingMetrics.snapshot(StageTimingMetrics.Stage.CHUNK_UPLOAD);
+        StageTimingMetrics.Snapshot terrainSubmissionTiming =
+                StageTimingMetrics.snapshot(StageTimingMetrics.Stage.TERRAIN_SUBMISSION);
         PerformanceGovernor.Profile governor = PerformanceManagerClient.governorProfile();
         GpuCapabilityProfile.Snapshot gpu = GpuCapabilityProfile.current();
         GpuStageTimer.Snapshot terrainGpu = GpuStageTimer.snapshot(GpuStageTimer.Stage.TERRAIN);
@@ -105,6 +109,8 @@ final class PerformanceRuntimeProofLogger {
                         + "stutter_16ms={} stutter_25ms={} stutter_33ms={} stutter_50ms={} "
                         + "entity_cull_cpu_avg_ms={} entity_cull_cpu_max_ms={} "
                         + "block_entity_cull_cpu_avg_ms={} block_entity_cull_cpu_max_ms={} "
+                        + "chunk_upload_cpu_avg_ms={} chunk_upload_cpu_max_ms={} "
+                        + "terrain_submit_cpu_avg_ms={} terrain_submit_cpu_max_ms={} "
                         + "governor_mode={} governor_upload_budget={} governor_rebuild_budget={} "
                         + "governor_culling_budget={} governor_shadow_reuse={} "
                         + "gpu_tier={} gpu_timer_queries={} gpu_draw_id={} gpu_vram_bytes={} "
@@ -166,6 +172,10 @@ final class PerformanceRuntimeProofLogger {
                 entityCullTiming.maxMs(),
                 blockEntityCullTiming.averageMs(),
                 blockEntityCullTiming.maxMs(),
+                chunkUploadTiming.averageMs(),
+                chunkUploadTiming.maxMs(),
+                terrainSubmissionTiming.averageMs(),
+                terrainSubmissionTiming.maxMs(),
                 governor.mode(),
                 governor.chunkUploadBudget(),
                 governor.rebuildReleaseBudget(),
