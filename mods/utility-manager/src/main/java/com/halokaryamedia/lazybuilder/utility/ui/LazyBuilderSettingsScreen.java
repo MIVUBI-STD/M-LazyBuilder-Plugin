@@ -1595,13 +1595,27 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 context.fill(row.x, row.y + ROW_HEIGHT - 1, row.x + row.width, row.y + ROW_HEIGHT, DIVIDER);
 
                 int textMax = Math.max(70, row.width - CONTROL_WIDTH - 34);
+                String visibleTitle = textRenderer.trimToWidth(row.title, textMax);
                 context.drawTextWithShadow(
                         textRenderer,
-                        Text.literal(textRenderer.trimToWidth(row.title, textMax)),
+                        Text.literal(visibleTitle),
                         row.x + 8,
                         row.y + 12,
                         TEXT_PRIMARY
                 );
+                if (isAuthoritativelyModified(row)) {
+                    int dotX = Math.min(
+                            row.x + textMax - 4,
+                            row.x + 12 + textRenderer.getWidth(visibleTitle)
+                    );
+                    context.drawTextWithShadow(
+                            textRenderer,
+                            Text.literal("•"),
+                            dotX,
+                            row.y + 12,
+                            ACCENT
+                    );
+                }
             }
         }
         context.disableScissor();
@@ -1613,6 +1627,54 @@ public final class LazyBuilderSettingsScreen extends Screen {
         // rows behind the dropdown cannot bleed through due to batched GUI layers.
         context.draw();
         renderDropdown(context, mouseX, mouseY);
+    }
+
+    private boolean isAuthoritativelyModified(Row row) {
+        UtilityPreferences current = UtilityManagerClient.preferences();
+        UtilityPreferences defaults = UtilityPreferences.defaults();
+
+        return switch (row.title) {
+            case "Keep Unsent Message" -> current.keepChatDraft() != defaults.keepChatDraft();
+            case "Search Chat" -> current.chatSearch() != defaults.chatSearch();
+            case "Extended History" -> current.extendedChatHistory() != defaults.extendedChatHistory();
+            case "Timestamps" -> current.chatTimestamps() != defaults.chatTimestamps();
+            case "Show Signing Indicators" ->
+                    current.hideChatSigningIndicators() != defaults.hideChatSigningIndicators();
+            case "Show Report Button" ->
+                    current.hideChatReportButton() != defaults.hideChatReportButton();
+            case "Compact Debug HUD" -> current.compactDebugHud() != defaults.compactDebugHud();
+            case "Contextual Screenshot Names" ->
+                    current.contextualScreenshotNames() != defaults.contextualScreenshotNames();
+            case "Quick Creative Search" ->
+                    current.instantCreativeSearch() != defaults.instantCreativeSearch();
+            case "Reconnect Button" -> current.reconnectButton() != defaults.reconnectButton();
+            case "Keep Narrator Off" -> current.suppressNarrator() != defaults.suppressNarrator();
+            case "Reduce FPS in Background" -> {
+                PerformanceState state = performanceState();
+                yield state != null && !state.backgroundFpsPolicy();
+            }
+            case "Background FPS" -> {
+                PerformanceState state = performanceState();
+                yield state != null && state.unfocusedFpsLimit() != 30;
+            }
+            case "Minimized FPS" -> {
+                PerformanceState state = performanceState();
+                yield state != null && state.minimizedFpsLimit() != 10;
+            }
+            case "Skip Hidden Objects" -> {
+                PerformanceState state = performanceState();
+                yield state != null && state.hiddenObjectSkipping();
+            }
+            case "Optimized World Rendering" -> {
+                PerformanceState state = performanceState();
+                yield state != null && !state.renderingOptimizations();
+            }
+            case "Memory Optimization" -> {
+                PerformanceState state = performanceState();
+                yield state != null && !state.memoryOptimizations();
+            }
+            default -> false;
+        };
     }
 
     private Row focusedSearchRow() {
