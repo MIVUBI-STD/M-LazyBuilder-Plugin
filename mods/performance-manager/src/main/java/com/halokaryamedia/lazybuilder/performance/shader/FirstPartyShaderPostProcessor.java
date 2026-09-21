@@ -45,13 +45,13 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         if (!hasComposite) scratch.release();
 
         boolean shadowReady = shadow != null && shadow.ready() && shadow.textureId() > 0;
-        int highestTextureUnit = shadowReady
-                ? 4
-                : gbufferTexture2 > 0
-                ? 3
-                : gbufferTexture1 > 0
-                ? 2
-                : sourceDepthTexture > 0 ? 1 : 0;
+        int highestTextureUnit = highestUsedTextureUnit(
+                pipeline,
+                sourceDepthTexture,
+                gbufferTexture1,
+                gbufferTexture2,
+                shadowReady
+        );
 
         GlState state = GlState.capture(highestTextureUnit);
         try {
@@ -187,6 +187,37 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         GL11C.glDrawArrays(GL11C.GL_TRIANGLES, 0, 3);
     }
 
+    private static int highestUsedTextureUnit(
+            FirstPartyShaderPipeline pipeline,
+            int sourceDepthTexture,
+            int gbufferTexture1,
+            int gbufferTexture2,
+            boolean shadowReady
+    ) {
+        int highest = 0;
+        for (String name : new String[]{"composite", "final"}) {
+            FirstPartyShaderProgram program = pipeline.program(name);
+            if (program == null) continue;
+            if (sourceDepthTexture > 0
+                    && program.uniformLocation("LazyBuilderDepthTexture") >= 0) {
+                highest = Math.max(highest, 1);
+            }
+            if (gbufferTexture1 > 0
+                    && program.uniformLocation("LazyBuilderGBuffer1") >= 0) {
+                highest = Math.max(highest, 2);
+            }
+            if (gbufferTexture2 > 0
+                    && program.uniformLocation("LazyBuilderGBuffer2") >= 0) {
+                highest = Math.max(highest, 3);
+            }
+            if (shadowReady
+                    && program.uniformLocation("LazyBuilderShadowTexture") >= 0) {
+                highest = Math.max(highest, 4);
+            }
+        }
+        return highest;
+    }
+
     private static void uploadMatrix(
             FirstPartyShaderProgram program,
             String uniform,
@@ -208,10 +239,11 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             int unit,
             int texture
     ) {
+        int location = program.uniformLocation(uniform);
+        if (location < 0) return;
         GL13C.glActiveTexture(GL13C.GL_TEXTURE0 + unit);
         GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture);
-        int location = program.uniformLocation(uniform);
-        if (location >= 0) GL20C.glUniform1i(location, unit);
+        GL20C.glUniform1i(location, unit);
     }
 
     private static void copyColor(
