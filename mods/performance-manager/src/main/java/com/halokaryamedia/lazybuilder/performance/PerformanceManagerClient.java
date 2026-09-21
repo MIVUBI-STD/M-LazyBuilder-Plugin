@@ -241,6 +241,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     }
 
     private static void beginFirstPartyShaderFrame() {
+        GpuStageTimer.recoverStaleQuery();
         FirstPartyShaderRuntime shaders = shaderRuntime;
         if (!firstPartyShaderOwnershipAllowed() || shaders == null) return;
 
