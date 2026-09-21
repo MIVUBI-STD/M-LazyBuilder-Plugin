@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.performance.shader;
 import com.mojang.blaze3d.systems.RenderSystem;
 import org.lwjgl.opengl.GL11C;
 import org.lwjgl.opengl.GL12C;
+import org.lwjgl.opengl.GL14C;
 import org.lwjgl.opengl.GL30C;
 
 /** Render-thread-owned color+depth framebuffer for first-party shader passes. */
@@ -40,7 +41,7 @@ public final class FirstPartyShaderFramebuffer implements AutoCloseable {
                 safeHeight,
                 0,
                 GL11C.GL_RGBA,
-                GL11C.GL_HALF_FLOAT,
+                GL30C.GL_HALF_FLOAT,
                 0L
         );
         GL30C.glFramebufferTexture2D(
@@ -60,7 +61,7 @@ public final class FirstPartyShaderFramebuffer implements AutoCloseable {
         GL11C.glTexImage2D(
                 GL11C.GL_TEXTURE_2D,
                 0,
-                GL30C.GL_DEPTH_COMPONENT24,
+                GL14C.GL_DEPTH_COMPONENT24,
                 safeWidth,
                 safeHeight,
                 0,
