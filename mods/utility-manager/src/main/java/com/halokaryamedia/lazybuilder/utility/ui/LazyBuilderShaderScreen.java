@@ -88,11 +88,9 @@ public final class LazyBuilderShaderScreen extends Screen {
                     y,
                     rowWidth,
                     22,
-                    Text.literal("Shader Settings"),
-                    shadersEnabled(),
-                    shadersEnabled()
-                            ? LazyBuilderSettingsControlWidget.Kind.ACTION
-                            : LazyBuilderSettingsControlWidget.Kind.STATUS,
+                    Text.literal("Open Iris Settings"),
+                    true,
+                    LazyBuilderSettingsControlWidget.Kind.ACTION,
                     this::openIrisManager
             ));
 
@@ -186,7 +184,7 @@ public final class LazyBuilderShaderScreen extends Screen {
         textY += 24;
         String description = !isIrisAvailable()
                 ? "Install Iris to use shader packs. LazyBuilder does not provide its own shader renderer."
-                : "Iris owns shader packs and shader-specific options. LazyBuilder provides the common controls here.";
+                : "Iris owns shader packs and shader-specific options. Use Manage Shader Packs for selection or Open Iris Settings for advanced options.";
         for (var line : textRenderer.wrapLines(Text.literal(description), Math.max(100, shell - 230))) {
             context.drawTextWithShadow(
                     textRenderer,
