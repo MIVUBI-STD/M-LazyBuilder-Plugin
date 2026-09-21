@@ -43,7 +43,16 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         boolean hasFinal = pipeline.has("final");
         if (!hasComposite && !hasFinal) return false;
 
-        GlState state = GlState.capture();
+        boolean shadowReady = shadow != null && shadow.ready() && shadow.textureId() > 0;
+        int highestTextureUnit = shadowReady
+                ? 4
+                : gbufferTexture2 > 0
+                ? 3
+                : gbufferTexture1 > 0
+                ? 2
+                : sourceDepthTexture > 0 ? 1 : 0;
+
+        GlState state = GlState.capture(highestTextureUnit);
         try {
             scene.ensureSize(width, height);
             if (hasComposite) scratch.ensureSize(width, height);
@@ -260,7 +269,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
             int viewportWidth,
             int viewportHeight
     ) {
-        static GlState capture() {
+        static GlState capture(int highestTextureUnit) {
             int viewportX;
             int viewportY;
             int viewportWidth;
@@ -276,16 +285,31 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
 
             int activeTexture = GL11C.glGetInteger(GL13C.GL_ACTIVE_TEXTURE);
 
+            int boundedHighest = Math.max(0, Math.min(4, highestTextureUnit));
+
             GL13C.glActiveTexture(GL13C.GL_TEXTURE0);
             int texture0 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE1);
-            int texture1 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE2);
-            int texture2 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE3);
-            int texture3 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE4);
-            int texture4 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+
+            int texture1 = -1;
+            int texture2 = -1;
+            int texture3 = -1;
+            int texture4 = -1;
+            if (boundedHighest >= 1) {
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE1);
+                texture1 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+            }
+            if (boundedHighest >= 2) {
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE2);
+                texture2 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+            }
+            if (boundedHighest >= 3) {
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE3);
+                texture3 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+            }
+            if (boundedHighest >= 4) {
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE4);
+                texture4 = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
+            }
             GL13C.glActiveTexture(activeTexture);
 
             return new GlState(
@@ -319,14 +343,22 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
 
             GL13C.glActiveTexture(GL13C.GL_TEXTURE0);
             GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture0);
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE1);
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture1);
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE2);
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture2);
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE3);
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture3);
-            GL13C.glActiveTexture(GL13C.GL_TEXTURE4);
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture4);
+            if (texture1 >= 0) {
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE1);
+                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture1);
+            }
+            if (texture2 >= 0) {
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE2);
+                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture2);
+            }
+            if (texture3 >= 0) {
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE3);
+                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture3);
+            }
+            if (texture4 >= 0) {
+                GL13C.glActiveTexture(GL13C.GL_TEXTURE4);
+                GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, texture4);
+            }
             GL13C.glActiveTexture(activeTexture);
 
             set(GL11C.GL_DEPTH_TEST, depthTest);
