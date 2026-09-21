@@ -159,9 +159,10 @@ public final class ShaderPackCatalog {
     }
 
     private static String pathFingerprint(Path path) {
-        String normalized = path.toAbsolutePath().normalize().toString();
+        Path fileName = path == null ? null : path.getFileName();
+        String stableName = fileName == null ? String.valueOf(path) : fileName.toString();
         String uuid = UUID.nameUUIDFromBytes(
-                normalized.getBytes(StandardCharsets.UTF_8)
+                stableName.getBytes(StandardCharsets.UTF_8)
         ).toString();
         return uuid.substring(0, 8);
     }
