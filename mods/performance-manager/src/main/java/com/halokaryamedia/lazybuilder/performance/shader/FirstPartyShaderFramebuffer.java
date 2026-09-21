@@ -26,51 +26,55 @@ public final class FirstPartyShaderFramebuffer implements AutoCloseable {
         this.width = safeWidth;
         this.height = safeHeight;
 
-        framebufferId = GL30C.glGenFramebuffers();
-        if (framebufferId == 0) {
-            deleteNow();
-            throw new IllegalStateException("OpenGL could not allocate shader framebuffer.");
-        }
-        GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebufferId);
+        try {
+            framebufferId = GL30C.glGenFramebuffers();
+            if (framebufferId == 0) {
+                throw new IllegalStateException("OpenGL could not allocate shader framebuffer.");
+            }
+            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebufferId);
 
-        colorTextureId = GL11C.glGenTextures();
-        if (colorTextureId == 0) {
-            deleteNow();
-            throw new IllegalStateException("OpenGL could not allocate shader color texture.");
-        }
-        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, colorTextureId);
-        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
-        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
-        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_S, GL12C.GL_CLAMP_TO_EDGE);
-        GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_T, GL12C.GL_CLAMP_TO_EDGE);
-        GL11C.glTexImage2D(
-                GL11C.GL_TEXTURE_2D,
-                0,
-                GL30C.GL_RGBA16F,
-                safeWidth,
-                safeHeight,
-                0,
-                GL11C.GL_RGBA,
-                GL30C.GL_HALF_FLOAT,
-                0L
-        );
-        GL30C.glFramebufferTexture2D(
-                GL30C.GL_FRAMEBUFFER,
-                GL30C.GL_COLOR_ATTACHMENT0,
-                GL11C.GL_TEXTURE_2D,
-                colorTextureId,
-                0
-        );
+            colorTextureId = GL11C.glGenTextures();
+            if (colorTextureId == 0) {
+                throw new IllegalStateException("OpenGL could not allocate shader color texture.");
+            }
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, colorTextureId);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_S, GL12C.GL_CLAMP_TO_EDGE);
+            GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_T, GL12C.GL_CLAMP_TO_EDGE);
+            GL11C.glTexImage2D(
+                    GL11C.GL_TEXTURE_2D,
+                    0,
+                    GL30C.GL_RGBA16F,
+                    safeWidth,
+                    safeHeight,
+                    0,
+                    GL11C.GL_RGBA,
+                    GL30C.GL_HALF_FLOAT,
+                    0L
+            );
+            GL30C.glFramebufferTexture2D(
+                    GL30C.GL_FRAMEBUFFER,
+                    GL30C.GL_COLOR_ATTACHMENT0,
+                    GL11C.GL_TEXTURE_2D,
+                    colorTextureId,
+                    0
+            );
 
-        int status = GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER);
-        GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
-        GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, previousReadFramebuffer);
-        GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, previousDrawFramebuffer);
-
-        if (status != GL30C.GL_FRAMEBUFFER_COMPLETE) {
+            int status = GL30C.glCheckFramebufferStatus(GL30C.GL_FRAMEBUFFER);
+            if (status != GL30C.GL_FRAMEBUFFER_COMPLETE) {
+                throw new IllegalStateException(
+                        "First-party shader framebuffer incomplete: 0x"
+                                + Integer.toHexString(status)
+                );
+            }
+        } catch (RuntimeException error) {
             deleteNow();
-            throw new IllegalStateException("First-party shader framebuffer incomplete: 0x"
-                    + Integer.toHexString(status));
+            throw error;
+        } finally {
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, previousTexture);
+            GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, previousReadFramebuffer);
+            GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, previousDrawFramebuffer);
         }
     }
 
