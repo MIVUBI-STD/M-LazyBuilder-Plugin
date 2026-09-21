@@ -484,6 +484,10 @@ public final class FirstPartyShaderRuntime {
     }
 
     public boolean updateOption(String optionId, String rawValue) {
+        return updateOption(optionId, rawValue, true);
+    }
+
+    public boolean updateOption(String optionId, String rawValue, boolean allowRecompile) {
         boolean recompile;
         synchronized (this) {
             ShaderPackDescriptor selected = selectedPack();
@@ -509,7 +513,9 @@ public final class FirstPartyShaderRuntime {
             persisted = persisted.withOption(selected.id(), option.id(), sanitized);
             configStore.save(persisted);
             lastError = "";
-            recompile = persisted.enabled() && selected.id().equals(activePackId);
+            recompile = allowRecompile
+                    && persisted.enabled()
+                    && selected.id().equals(activePackId);
             stage = recompile ? "option-recompile-queued" : "selected";
             revision++;
         }
