@@ -29,7 +29,7 @@ public final class OptimizationCompatibility {
         }
 
         if (immediatelyFastPresent) {
-            decisions.put(OptimizationDomain.IMMEDIATE_RENDERING, Decision.external("immediatelyfast"));
+            decisions.put(OptimizationDomain.DYNAMIC_BUFFER_GROWTH, Decision.external("immediatelyfast"));
             decisions.put(OptimizationDomain.TEXT_RENDERING, Decision.external("immediatelyfast"));
             decisions.put(OptimizationDomain.TERRAIN_UPLOAD, Decision.external("immediatelyfast"));
         }
@@ -48,9 +48,9 @@ public final class OptimizationCompatibility {
             decisions.put(OptimizationDomain.TERRAIN_SUBMISSION, Decision.external(safeRenderer.ownerSummary()));
         }
 
-        // MODEL_MEMORY is first-party owned. FerriteCore may coexist, but its
-        // presence is not an ownership reason because LazyBuilder already canonicalizes
-        // vanilla baked-quad vertex storage independently.
+        // BAKED_QUAD_MEMORY is first-party owned. This deliberately does not claim
+        // full FerriteCore parity; it describes only the canonical baked-quad storage
+        // optimization LazyBuilder actually implements.
         return new Policy(Map.copyOf(decisions));
     }
 
@@ -58,10 +58,10 @@ public final class OptimizationCompatibility {
         TERRAIN_BUILD,
         TERRAIN_UPLOAD,
         TERRAIN_SUBMISSION,
-        IMMEDIATE_RENDERING,
+        DYNAMIC_BUFFER_GROWTH,
         TEXT_RENDERING,
         ENTITY_CULLING,
-        MODEL_MEMORY
+        BAKED_QUAD_MEMORY
     }
 
     public record Decision(boolean lazyBuilderOwned, String owner, String reason) {
