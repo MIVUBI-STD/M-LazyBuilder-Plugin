@@ -23,9 +23,17 @@ public final class FirstPartyShaderFramebuffer implements AutoCloseable {
         this.height = safeHeight;
 
         framebufferId = GL30C.glGenFramebuffers();
+        if (framebufferId == 0) {
+            deleteNow();
+            throw new IllegalStateException("OpenGL could not allocate shader framebuffer.");
+        }
         GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebufferId);
 
         colorTextureId = GL11C.glGenTextures();
+        if (colorTextureId == 0) {
+            deleteNow();
+            throw new IllegalStateException("OpenGL could not allocate shader color texture.");
+        }
         GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, colorTextureId);
         GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
         GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
