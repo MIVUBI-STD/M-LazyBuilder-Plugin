@@ -18,7 +18,7 @@ final class OptimizationCompatibilityTest {
     @Test
     void vanillaIndigoKeepsFirstPartyOwnership() {
         var renderer = new RendererCompatibility.Snapshot(false, false, List.of());
-        var policy = OptimizationCompatibility.evaluate(renderer, false, false, false);
+        var policy = OptimizationCompatibility.evaluate(renderer, false, false);
 
         for (var domain : OptimizationCompatibility.OptimizationDomain.values()) {
             assertTrue(policy.owns(domain), domain + " should remain first-party");
@@ -28,7 +28,7 @@ final class OptimizationCompatibilityTest {
     @Test
     void externalOwnersDoNotStealFirstPartyModelMemory() {
         var renderer = new RendererCompatibility.Snapshot(true, false, List.of("sodium"));
-        var policy = OptimizationCompatibility.evaluate(renderer, true, true, true);
+        var policy = OptimizationCompatibility.evaluate(renderer, true, true);
 
         assertFalse(policy.owns(IMMEDIATE_RENDERING));
         assertFalse(policy.owns(TEXT_RENDERING));
@@ -42,7 +42,7 @@ final class OptimizationCompatibilityTest {
     @Test
     void irisOnlyBlocksShaderSensitiveTerrainSubmission() {
         var renderer = new RendererCompatibility.Snapshot(true, false, List.of());
-        var policy = OptimizationCompatibility.evaluate(renderer, false, false, false);
+        var policy = OptimizationCompatibility.evaluate(renderer, false, false);
 
         assertTrue(policy.owns(TERRAIN_BUILD));
         assertTrue(policy.owns(TERRAIN_UPLOAD));
@@ -56,7 +56,7 @@ final class OptimizationCompatibilityTest {
     @Test
     void compatibilityUncertaintyFailsClosedOnlyForTerrainOwnership() {
         var renderer = new RendererCompatibility.Snapshot(false, true, List.of());
-        var policy = OptimizationCompatibility.evaluate(renderer, false, false, false);
+        var policy = OptimizationCompatibility.evaluate(renderer, false, false);
 
         assertFalse(policy.owns(TERRAIN_BUILD));
         assertFalse(policy.owns(TERRAIN_UPLOAD));
@@ -71,7 +71,7 @@ final class OptimizationCompatibilityTest {
     @Test
     void immediatelyFastDoesNotTakeTerrainBuildOwnershipByItself() {
         var renderer = new RendererCompatibility.Snapshot(false, false, List.of());
-        var policy = OptimizationCompatibility.evaluate(renderer, true, false, false);
+        var policy = OptimizationCompatibility.evaluate(renderer, true, false);
 
         assertFalse(policy.owns(IMMEDIATE_RENDERING));
         assertFalse(policy.owns(TEXT_RENDERING));
@@ -85,7 +85,7 @@ final class OptimizationCompatibilityTest {
     @Test
     void entityCullingOnlyOwnsEntityCullingDomain() {
         var renderer = new RendererCompatibility.Snapshot(false, false, List.of());
-        var policy = OptimizationCompatibility.evaluate(renderer, false, false, true);
+        var policy = OptimizationCompatibility.evaluate(renderer, false, true);
 
         assertFalse(policy.owns(ENTITY_CULLING));
         assertTrue(policy.owns(TERRAIN_BUILD));
