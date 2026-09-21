@@ -5,8 +5,8 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.ENTITY_CULLING;
-import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.IMMEDIATE_RENDERING;
-import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.MODEL_MEMORY;
+import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.DYNAMIC_BUFFER_GROWTH;
+import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.BAKED_QUAD_MEMORY;
 import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.TEXT_RENDERING;
 import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.TERRAIN_BUILD;
 import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.TERRAIN_SUBMISSION;
@@ -30,13 +30,13 @@ final class OptimizationCompatibilityTest {
         var renderer = new RendererCompatibility.Snapshot(true, false, List.of("sodium"));
         var policy = OptimizationCompatibility.evaluate(renderer, true, true);
 
-        assertFalse(policy.owns(IMMEDIATE_RENDERING));
+        assertFalse(policy.owns(DYNAMIC_BUFFER_GROWTH));
         assertFalse(policy.owns(TEXT_RENDERING));
         assertFalse(policy.owns(ENTITY_CULLING));
         assertFalse(policy.owns(TERRAIN_BUILD));
         assertFalse(policy.owns(TERRAIN_UPLOAD));
         assertFalse(policy.owns(TERRAIN_SUBMISSION));
-        assertTrue(policy.owns(MODEL_MEMORY));
+        assertTrue(policy.owns(BAKED_QUAD_MEMORY));
     }
 
     @Test
@@ -47,10 +47,10 @@ final class OptimizationCompatibilityTest {
         assertTrue(policy.owns(TERRAIN_BUILD));
         assertTrue(policy.owns(TERRAIN_UPLOAD));
         assertFalse(policy.owns(TERRAIN_SUBMISSION));
-        assertTrue(policy.owns(IMMEDIATE_RENDERING));
+        assertTrue(policy.owns(DYNAMIC_BUFFER_GROWTH));
         assertTrue(policy.owns(TEXT_RENDERING));
         assertTrue(policy.owns(ENTITY_CULLING));
-        assertTrue(policy.owns(MODEL_MEMORY));
+        assertTrue(policy.owns(BAKED_QUAD_MEMORY));
     }
 
     @Test
@@ -61,10 +61,10 @@ final class OptimizationCompatibilityTest {
         assertFalse(policy.owns(TERRAIN_BUILD));
         assertFalse(policy.owns(TERRAIN_UPLOAD));
         assertFalse(policy.owns(TERRAIN_SUBMISSION));
-        assertTrue(policy.owns(IMMEDIATE_RENDERING));
+        assertTrue(policy.owns(DYNAMIC_BUFFER_GROWTH));
         assertTrue(policy.owns(TEXT_RENDERING));
         assertTrue(policy.owns(ENTITY_CULLING));
-        assertTrue(policy.owns(MODEL_MEMORY));
+        assertTrue(policy.owns(BAKED_QUAD_MEMORY));
     }
 
 
@@ -73,13 +73,13 @@ final class OptimizationCompatibilityTest {
         var renderer = new RendererCompatibility.Snapshot(false, false, List.of());
         var policy = OptimizationCompatibility.evaluate(renderer, true, false);
 
-        assertFalse(policy.owns(IMMEDIATE_RENDERING));
+        assertFalse(policy.owns(DYNAMIC_BUFFER_GROWTH));
         assertFalse(policy.owns(TEXT_RENDERING));
         assertFalse(policy.owns(TERRAIN_UPLOAD));
         assertTrue(policy.owns(TERRAIN_BUILD));
         assertTrue(policy.owns(TERRAIN_SUBMISSION));
         assertTrue(policy.owns(ENTITY_CULLING));
-        assertTrue(policy.owns(MODEL_MEMORY));
+        assertTrue(policy.owns(BAKED_QUAD_MEMORY));
     }
 
     @Test
@@ -92,6 +92,6 @@ final class OptimizationCompatibilityTest {
         assertTrue(policy.owns(TERRAIN_UPLOAD));
         assertTrue(policy.owns(TERRAIN_SUBMISSION));
         assertTrue(policy.owns(TEXT_RENDERING));
-        assertTrue(policy.owns(MODEL_MEMORY));
+        assertTrue(policy.owns(BAKED_QUAD_MEMORY));
     }
 }
