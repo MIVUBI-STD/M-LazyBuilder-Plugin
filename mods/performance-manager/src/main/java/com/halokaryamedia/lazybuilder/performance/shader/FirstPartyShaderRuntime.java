@@ -61,7 +61,7 @@ public final class FirstPartyShaderRuntime {
             if (!selectedPackId.isBlank()
                     && packs.stream().noneMatch(pack -> pack.id().equals(selectedPackId))) {
                 selectedPackId = "";
-                persisted = ShaderRuntimePreferences.defaults();
+                persisted = persisted.withSelectedPack("");
                 configStore.save(persisted);
             }
             if (!activePackId.isBlank()
