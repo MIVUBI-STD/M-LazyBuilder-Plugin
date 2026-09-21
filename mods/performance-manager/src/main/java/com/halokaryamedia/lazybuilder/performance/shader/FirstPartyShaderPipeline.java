@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -26,7 +27,7 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
             int gbufferAttachments,
             String terrainSourceFingerprint
     ) {
-        this.programs = Map.copyOf(programs);
+        this.programs = Collections.unmodifiableMap(new LinkedHashMap<>(programs));
         this.gbufferAttachments = Math.max(0, Math.min(2, gbufferAttachments));
         this.terrainSourceFingerprint = terrainSourceFingerprint == null ? "" : terrainSourceFingerprint;
     }
@@ -114,7 +115,9 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
             String terrainSourceFingerprint
     ) {
         public Prepared {
-            programs = programs == null ? Map.of() : Map.copyOf(programs);
+            programs = programs == null
+                    ? Map.of()
+                    : Collections.unmodifiableMap(new LinkedHashMap<>(programs));
             terrainSourceFingerprint = terrainSourceFingerprint == null
                     ? ""
                     : terrainSourceFingerprint;
