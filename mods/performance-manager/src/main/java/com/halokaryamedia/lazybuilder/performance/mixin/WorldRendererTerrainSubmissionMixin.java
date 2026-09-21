@@ -2,6 +2,7 @@ package com.halokaryamedia.lazybuilder.performance.mixin;
 
 import com.halokaryamedia.lazybuilder.performance.PerformanceManagerClient;
 import com.halokaryamedia.lazybuilder.performance.StageTimingMetrics;
+import com.halokaryamedia.lazybuilder.performance.culling.SectionVisibilityHint;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawDiagnostics;
 import com.halokaryamedia.lazybuilder.performance.rendering.TerrainArenaDrawPlanner;
@@ -24,6 +25,7 @@ import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.WorldRenderer;
 import net.minecraft.client.render.chunk.ChunkBuilder;
 import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -33,6 +35,8 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.HashSet;
 
 
 /** Builds indexed terrain submission and guarded physical/multi-draw execution paths. */
@@ -294,6 +298,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
         RenderLayer cutout = RenderLayer.getCutout();
         RenderLayer translucent = RenderLayer.getTranslucent();
         RenderLayer tripwire = RenderLayer.getTripwire();
+        HashSet<Long> openSections = new HashSet<>();
 
         for (ChunkBuilder.BuiltChunk builtChunk : this.builtChunks) {
             ChunkBuilder.ChunkData data = builtChunk.getData();
@@ -302,6 +307,24 @@ abstract class WorldRendererTerrainSubmissionMixin {
             if (!data.isEmpty(cutout)) this.lazybuilder$cutout.add(builtChunk);
             if (!data.isEmpty(translucent)) this.lazybuilder$translucent.add(builtChunk);
             if (!data.isEmpty(tripwire)) this.lazybuilder$tripwire.add(builtChunk);
+
+            if (PerformanceManagerClient.preferences().hiddenObjectSkipping()
+                    && data.isVisibleThrough(Direction.WEST, Direction.EAST)
+                    && data.isVisibleThrough(Direction.NORTH, Direction.SOUTH)
+                    && data.isVisibleThrough(Direction.DOWN, Direction.UP)) {
+                BlockPos origin = builtChunk.getOrigin();
+                openSections.add(SectionVisibilityHint.key(
+                        Math.floorDiv(origin.getX(), 16),
+                        Math.floorDiv(origin.getY(), 16),
+                        Math.floorDiv(origin.getZ(), 16)
+                ));
+            }
+        }
+
+        if (PerformanceManagerClient.preferences().hiddenObjectSkipping()) {
+            SectionVisibilityHint.publish(openSections);
+        } else {
+            SectionVisibilityHint.clear();
         }
 
         int layerEntries = this.lazybuilder$solid.size()
