@@ -4,6 +4,7 @@ import com.halokaryamedia.lazybuilder.utility.mixin.FramebufferAccessor;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.minecraft.client.gl.Framebuffer;
 import org.lwjgl.opengl.GL11C;
+import org.lwjgl.opengl.GL12C;
 import org.lwjgl.opengl.GL15C;
 import org.lwjgl.opengl.GL21C;
 import org.lwjgl.opengl.GL30C;
@@ -60,7 +61,7 @@ final class FrameReadbackRing implements AutoCloseable {
             GL11C.glGetTexImage(
                     GL11C.GL_TEXTURE_2D,
                     0,
-                    GL11C.GL_BGRA,
+                    GL12C.GL_BGRA,
                     GL11C.GL_UNSIGNED_BYTE,
                     0L
             );
