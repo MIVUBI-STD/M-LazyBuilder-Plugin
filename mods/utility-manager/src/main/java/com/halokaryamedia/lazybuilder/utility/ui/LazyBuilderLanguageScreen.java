@@ -7,8 +7,10 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.resource.language.LanguageDefinition;
 import net.minecraft.client.resource.language.LanguageManager;
 import net.minecraft.text.Text;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -132,6 +134,7 @@ public final class LazyBuilderLanguageScreen extends Screen {
                 filtered.add(entry);
             }
         }
+        filtered.sort(Comparator.comparing(Entry::displayName, String.CASE_INSENSITIVE_ORDER));
     }
 
     private String currentLanguageCode() {
@@ -207,6 +210,19 @@ public final class LazyBuilderLanguageScreen extends Screen {
         }
 
         super.render(context, mouseX, mouseY, delta);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+            if (searchField != null && !searchField.getText().isBlank()) {
+                searchField.setText("");
+                return true;
+            }
+            close();
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
