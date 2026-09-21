@@ -1,7 +1,11 @@
 package com.halokaryamedia.lazybuilder.performance;
 
+import com.halokaryamedia.lazybuilder.performance.compatibility.FirstPartyRendererReadiness;
+import com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility;
+import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import com.halokaryamedia.lazybuilder.performance.memory.MemoryDeduplicator;
 import com.halokaryamedia.lazybuilder.performance.rendering.PerformanceShaderReloadInvalidator;
+import com.halokaryamedia.lazybuilder.performance.shader.FirstPartyShaderRuntime;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
@@ -15,17 +19,21 @@ import net.minecraft.entity.Entity;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 
 /** Fabric client entrypoint for LazyBuilder Performance Manager. */
 public final class PerformanceManagerClient implements ClientModInitializer {
     private static PerformanceRuntime runtime;
+    private static FirstPartyShaderRuntime shaderRuntime;
 
     @Override
     public void onInitializeClient() {
-        runtime = new PerformanceRuntime(FabricLoader.getInstance().getConfigDir());
-        var share = FabricLoader.getInstance().getObjectShare();
+        FabricLoader loader = FabricLoader.getInstance();
+        runtime = new PerformanceRuntime(loader.getConfigDir());
+        shaderRuntime = new FirstPartyShaderRuntime(loader.getGameDir().resolve("shaderpacks"));
+        var share = loader.getObjectShare();
         share.put(
                 "lazybuilder-performance-manager:settings-snapshot",
                 (Supplier<Map<String, Object>>) PerformanceManagerClient::settingsSnapshot
@@ -38,6 +46,26 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                 "lazybuilder-performance-manager:settings-status",
                 (Supplier<String>) PerformanceManagerClient::lastPreferenceUpdateStatus
         );
+        share.put(
+                "lazybuilder-performance-manager:renderer-readiness",
+                (Supplier<Map<String, Object>>) PerformanceManagerClient::rendererReadinessSnapshot
+        );
+        share.put(
+                "lazybuilder-performance-manager:shader-snapshot",
+                (Supplier<Map<String, Object>>) PerformanceManagerClient::shaderSnapshot
+        );
+        share.put(
+                "lazybuilder-performance-manager:shader-refresh",
+                (Runnable) PerformanceManagerClient::refreshShaderPacks
+        );
+        share.put(
+                "lazybuilder-performance-manager:shader-select",
+                (Consumer<String>) PerformanceManagerClient::selectShaderPack
+        );
+        share.put(
+                "lazybuilder-performance-manager:shader-preprocess",
+                (Function<String, Map<String, Object>>) PerformanceManagerClient::preprocessShaderSource
+        );
         MemoryDeduplicator.register();
         ResourceManagerHelper.get(ResourceType.CLIENT_RESOURCES)
                 .registerReloadListener(new PerformanceShaderReloadInvalidator());
@@ -47,6 +75,61 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         );
 
         ClientTickEvents.END_CLIENT_TICK.register(runtime::tick);
+    }
+
+    private static Map<String, Object> rendererReadinessSnapshot() {
+        FabricLoader loader = FabricLoader.getInstance();
+        RendererCompatibility.Snapshot renderer = RendererCompatibility.detect();
+        OptimizationCompatibility.Policy policy = OptimizationCompatibility.evaluate(
+                renderer,
+                loader.isModLoaded("immediatelyfast"),
+                loader.isModLoaded("ferritecore"),
+                loader.isModLoaded("entityculling")
+        );
+        FirstPartyRendererReadiness.Snapshot readiness =
+                FirstPartyRendererReadiness.evaluate(renderer, policy);
+
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("ready", readiness.ready());
+        values.put("status", readiness.status());
+        values.put("blockers", readiness.blockers());
+        values.put("rendererOwner", renderer.ownerSummary());
+        return Map.copyOf(values);
+    }
+
+    private static Map<String, Object> shaderSnapshot() {
+        return shaderRuntime == null ? Map.of(
+                "owner", "lazybuilder",
+                "stage", "runtime-unavailable",
+                "renderingReady", false
+        ) : shaderRuntime.snapshotMap();
+    }
+
+    private static void refreshShaderPacks() {
+        if (shaderRuntime != null) shaderRuntime.refresh();
+    }
+
+    private static void selectShaderPack(String packId) {
+        if (shaderRuntime != null) shaderRuntime.select(packId);
+    }
+
+    private static Map<String, Object> preprocessShaderSource(String path) {
+        if (shaderRuntime == null) {
+            return Map.of(
+                    "ready", false,
+                    "source", "",
+                    "dependencies", java.util.List.of(),
+                    "error", "Shader runtime unavailable."
+            );
+        }
+
+        FirstPartyShaderRuntime.SourcePreview result = shaderRuntime.preprocess(path);
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("ready", result.ready());
+        values.put("source", result.source());
+        values.put("dependencies", result.dependencies());
+        values.put("error", result.error());
+        return Map.copyOf(values);
     }
 
     private static Map<String, Object> settingsSnapshot() {
