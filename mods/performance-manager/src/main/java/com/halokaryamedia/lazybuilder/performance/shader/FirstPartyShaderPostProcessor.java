@@ -45,7 +45,7 @@ public final class FirstPartyShaderPostProcessor implements AutoCloseable {
         GlState state = GlState.capture();
         try {
             scene.ensureSize(width, height);
-            scratch.ensureSize(width, height);
+            if (hasComposite) scratch.ensureSize(width, height);
             ensureVao();
 
             copyColor(targetFramebuffer, scene.framebufferId(), width, height);
