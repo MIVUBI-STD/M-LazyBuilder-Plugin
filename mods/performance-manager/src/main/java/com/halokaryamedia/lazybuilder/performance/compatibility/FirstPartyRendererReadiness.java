@@ -31,6 +31,7 @@ public final class FirstPartyRendererReadiness {
                     OptimizationDomain.TERRAIN_SUBMISSION,
                     OptimizationDomain.IMMEDIATE_RENDERING,
                     OptimizationDomain.TEXT_RENDERING,
+                    OptimizationDomain.ENTITY_CULLING,
                     OptimizationDomain.MODEL_MEMORY
             )) {
                 if (!policy.owns(domain)) {
