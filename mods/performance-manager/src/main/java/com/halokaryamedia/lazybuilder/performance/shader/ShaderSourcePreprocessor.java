@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashSet;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -20,11 +22,19 @@ public final class ShaderSourcePreprocessor {
     }
 
     public static Result preprocess(ShaderPackSource source, String entryPath) throws IOException {
+        return preprocess(source, entryPath, Map.of());
+    }
+
+    public static Result preprocess(
+            ShaderPackSource source,
+            String entryPath,
+            Map<String, String> defines
+    ) throws IOException {
         Deque<String> stack = new ArrayDeque<>();
         Set<String> visited = new HashSet<>();
         StringBuilder output = new StringBuilder();
         expand(source, ShaderPackSource.normalizeRelativePath(entryPath), stack, visited, output, 0);
-        return new Result(output.toString(), Set.copyOf(visited));
+        return new Result(injectDefines(output.toString(), defines), Set.copyOf(visited));
     }
 
     private static void expand(
@@ -69,6 +79,34 @@ public final class ShaderSourcePreprocessor {
         }
 
         stack.removeLast();
+    }
+
+    private static String injectDefines(String source, Map<String, String> defines) {
+        if (source == null || source.isEmpty() || defines == null || defines.isEmpty()) return source;
+
+        int lineEnd = source.indexOf('\n');
+        if (lineEnd < 0 || !source.substring(0, lineEnd).trim().startsWith("#version")) {
+            return source;
+        }
+
+        TreeMap<String, String> ordered = new TreeMap<>(defines);
+        StringBuilder preamble = new StringBuilder();
+        for (Map.Entry<String, String> define : ordered.entrySet()) {
+            String key = define.getKey();
+            String value = define.getValue();
+            if (key == null || !key.matches("[A-Z_][A-Z0-9_]*")) continue;
+            if (value == null || value.isBlank()) continue;
+            preamble.append("#define ")
+                    .append(key)
+                    .append(' ')
+                    .append(value.trim())
+                    .append('\n');
+        }
+        if (preamble.isEmpty()) return source;
+
+        return source.substring(0, lineEnd + 1)
+                + preamble
+                + source.substring(lineEnd + 1);
     }
 
     private static String parent(String path) {
