@@ -508,6 +508,26 @@ public final class FirstPartyShaderRuntime {
                     || (!current.has("composite") && !current.has("final"))) {
                 return false;
             }
+
+            ShaderMemoryBudget.Estimate budget = ShaderMemoryBudget.estimate(
+                    width,
+                    height,
+                    current.gbufferAttachments(),
+                    current.has("composite"),
+                    current.has("composite") || current.has("final"),
+                    current.has("shadow"),
+                    2048
+            );
+            if (!budget.allowed()) {
+                gbufferError = budget.status()
+                        + ":" + budget.estimatedBytes()
+                        + "/" + budget.limitBytes();
+                lastError = primaryError();
+                stage = "memory-budget";
+                revision++;
+                return false;
+            }
+
             if (gbuffer == null) gbuffer = new FirstPartyShaderGBuffer();
         }
 
@@ -576,6 +596,26 @@ public final class FirstPartyShaderRuntime {
             current = pipeline;
             if (current == null) {
                 lastFrameApplied = false;
+                return false;
+            }
+
+            ShaderMemoryBudget.Estimate budget = ShaderMemoryBudget.estimate(
+                    width,
+                    height,
+                    current.gbufferAttachments(),
+                    current.has("composite"),
+                    current.has("composite") || current.has("final"),
+                    current.has("shadow"),
+                    2048
+            );
+            if (!budget.allowed()) {
+                lastFrameApplied = false;
+                postProcessError = budget.status()
+                        + ":" + budget.estimatedBytes()
+                        + "/" + budget.limitBytes();
+                lastError = primaryError();
+                stage = "memory-budget";
+                revision++;
                 return false;
             }
         }
