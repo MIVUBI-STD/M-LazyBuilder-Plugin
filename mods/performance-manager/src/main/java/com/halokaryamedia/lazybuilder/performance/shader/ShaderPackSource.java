@@ -8,7 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.util.zip.ZipFile;
 
 /** Read-only normalized source access for folder and ZIP shader packs. */
 public interface ShaderPackSource {
@@ -92,21 +92,22 @@ public interface ShaderPackSource {
 
         private byte[] read(String relativePath, boolean capture) throws IOException {
             String target = normalizeRelativePath(relativePath);
-            try (InputStream raw = Files.newInputStream(zip);
-                 ZipInputStream input = new ZipInputStream(raw)) {
-                ZipEntry entry;
-                while ((entry = input.getNextEntry()) != null) {
-                    if (entry.isDirectory()) continue;
-                    String name;
-                    try {
-                        name = normalizeRelativePath(entry.getName());
-                    } catch (IllegalArgumentException ignored) {
-                        continue;
-                    }
-                    if (!target.equals(name)) continue;
-                    if (!capture) return new byte[0];
+            try (ZipFile file = new ZipFile(zip.toFile())) {
+                ZipEntry entry = file.getEntry(target);
+                if (entry == null || entry.isDirectory()) return null;
+                if (!capture) return new byte[0];
 
-                    ByteArrayOutputStream output = new ByteArrayOutputStream();
+                long declaredSize = entry.getSize();
+                if (declaredSize > MAX_ENTRY_BYTES) {
+                    throw new IOException("Shader source exceeds size limit: " + target);
+                }
+
+                try (InputStream input = file.getInputStream(entry)) {
+                    ByteArrayOutputStream output = new ByteArrayOutputStream(
+                            declaredSize > 0 && declaredSize <= Integer.MAX_VALUE
+                                    ? (int) declaredSize
+                                    : 8192
+                    );
                     byte[] buffer = new byte[8192];
                     int total = 0;
                     int read;
@@ -120,7 +121,6 @@ public interface ShaderPackSource {
                     return output.toByteArray();
                 }
             }
-            return null;
         }
     }
 }
