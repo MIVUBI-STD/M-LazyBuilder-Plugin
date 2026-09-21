@@ -23,6 +23,9 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
     private int height;
     private int activeFramebuffer;
     private int activeCount;
+    private final int[] previousDrawBuffers = new int[3];
+    private int previousDrawBufferCount;
+    private long staleFrameRecoveries;
     private String status = "inactive";
 
     public boolean begin(
@@ -32,6 +35,9 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
             int requestedAttachments
     ) {
         RenderSystem.assertOnRenderThread();
+        if (activeFramebuffer != 0 && activeCount > 0) {
+            recoverStaleFrame();
+        }
         int count = Math.max(0, Math.min(2, requestedAttachments));
         if (framebuffer <= 0 || count <= 0 || width <= 0 || height <= 0) {
             status = "not-requested";
@@ -49,7 +55,8 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
         GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, framebuffer);
 
         try {
-            int draw0 = GL11C.glGetInteger(GL20C.GL_DRAW_BUFFER0);
+            captureDrawBuffers(count + 1);
+            int draw0 = previousDrawBuffers[0];
             if (draw0 != GL30C.GL_COLOR_ATTACHMENT0) {
                 status = "foreign-draw-buffer-layout";
                 return false;
@@ -82,7 +89,8 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
             setDrawBuffers(count);
             int framebufferStatus = GL30C.glCheckFramebufferStatus(GL30C.GL_DRAW_FRAMEBUFFER);
             if (framebufferStatus != GL30C.GL_FRAMEBUFFER_COMPLETE) {
-                detachInternal(framebuffer, count);
+                detachOwnedAttachments(framebuffer, count);
+                restoreDrawBuffers();
                 status = "framebuffer-incomplete:0x" + Integer.toHexString(framebufferStatus);
                 return false;
             }
@@ -100,7 +108,7 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
     public Snapshot end(int framebuffer) {
         RenderSystem.assertOnRenderThread();
         if (activeFramebuffer == 0 || activeCount <= 0) {
-            return new Snapshot(false, status, 0, 0, 0);
+            return new Snapshot(false, status, 0, 0, 0, staleFrameRecoveries);
         }
 
         int source = activeFramebuffer;
@@ -110,7 +118,8 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
 
         int previousDrawFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
         try {
-            detachInternal(source, count);
+            detachOwnedAttachments(source, count);
+            restoreDrawBuffers();
         } finally {
             GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, previousDrawFramebuffer);
             activeFramebuffer = 0;
@@ -118,7 +127,7 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
             status = framebuffer == source ? "ready" : "target-changed";
         }
 
-        return new Snapshot(true, status, count, texture1, texture2);
+        return new Snapshot(true, status, count, texture1, texture2, staleFrameRecoveries);
     }
 
     public Snapshot snapshot() {
@@ -127,7 +136,8 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
                 status,
                 activeCount,
                 activeCount >= 1 ? textures[0] : 0,
-                activeCount >= 2 ? textures[1] : 0
+                activeCount >= 2 ? textures[1] : 0,
+                staleFrameRecoveries
         );
     }
 
@@ -190,9 +200,32 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
         }
     }
 
-    private static void detachInternal(int framebuffer, int count) {
+    private void captureDrawBuffers(int count) {
+        previousDrawBufferCount = Math.max(1, Math.min(previousDrawBuffers.length, count));
+        for (int index = 0; index < previousDrawBufferCount; index++) {
+            previousDrawBuffers[index] = GL11C.glGetInteger(GL20C.GL_DRAW_BUFFER0 + index);
+        }
+    }
+
+    private void restoreDrawBuffers() {
+        int count = previousDrawBufferCount;
+        if (count <= 0) {
+            setDrawBuffers(0);
+            return;
+        }
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            IntBuffer buffers = stack.mallocInt(count);
+            for (int index = 0; index < count; index++) {
+                buffers.put(previousDrawBuffers[index]);
+            }
+            buffers.flip();
+            GL20C.glDrawBuffers(buffers);
+        }
+        previousDrawBufferCount = 0;
+    }
+
+    private static void detachOwnedAttachments(int framebuffer, int count) {
         GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, framebuffer);
-        setDrawBuffers(0);
         for (int index = 0; index < count; index++) {
             GL30C.glFramebufferTexture2D(
                     GL30C.GL_DRAW_FRAMEBUFFER,
@@ -204,30 +237,34 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
         }
     }
 
+    private void recoverStaleFrame() {
+        int previousFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
+        try {
+            detachOwnedAttachments(activeFramebuffer, activeCount);
+            restoreDrawBuffers();
+            staleFrameRecoveries++;
+            status = "stale-frame-recovered";
+        } finally {
+            GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, previousFramebuffer);
+            activeFramebuffer = 0;
+            activeCount = 0;
+        }
+    }
+
     @Override
     public void close() {
         if (!RenderSystem.isOnRenderThread()) {
-            int first = textures[0];
-            int second = textures[1];
-            textures[0] = 0;
-            textures[1] = 0;
-            width = 0;
-            height = 0;
-            activeFramebuffer = 0;
-            activeCount = 0;
-            RenderSystem.recordRenderCall(() -> {
-                if (first != 0) GL11C.glDeleteTextures(first);
-                if (second != 0) GL11C.glDeleteTextures(second);
-            });
+            RenderSystem.recordRenderCall(this::close);
             return;
         }
 
         if (activeFramebuffer != 0 && activeCount > 0) {
-            detachInternal(activeFramebuffer, activeCount);
+            recoverStaleFrame();
         }
         deleteTextures();
         activeFramebuffer = 0;
         activeCount = 0;
+        previousDrawBufferCount = 0;
         width = 0;
         height = 0;
         status = "closed";
@@ -247,7 +284,8 @@ public final class FirstPartyShaderGBuffer implements AutoCloseable {
             String status,
             int attachmentCount,
             int texture1,
-            int texture2
+            int texture2,
+            long staleFrameRecoveries
     ) {
         public Snapshot {
             status = status == null ? "" : status;
