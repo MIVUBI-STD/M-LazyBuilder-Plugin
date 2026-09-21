@@ -102,6 +102,19 @@ public final class GpuStageTimer {
         for (State state : STATES.values()) state.resetCounters();
     }
 
+    /**
+     * Releases GL query objects owned by this instrumentation lane.
+     * Must run on the render thread; otherwise the driver-owned context remains authoritative
+     * and process shutdown will reclaim the objects.
+     */
+    public static void shutdown() {
+        if (!RenderSystem.isOnRenderThread()) return;
+        recoverStaleQuery();
+        for (State state : STATES.values()) state.deleteQueries();
+        activeStage = null;
+        activeQuery = 0;
+    }
+
     static void resetForTest() {
         activeStage = null;
         activeQuery = 0;
@@ -163,6 +176,20 @@ public final class GpuStageTimer {
             totalNanos = 0L;
             maxNanos = 0L;
             lastNanos = 0L;
+        }
+
+        void deleteQueries() {
+            for (int slot = 0; slot < RING_SIZE; slot++) {
+                int query = queries[slot];
+                if (query != 0) {
+                    GL15C.glDeleteQueries(query);
+                    queries[slot] = 0;
+                }
+                pending[slot] = false;
+                pendingGeneration[slot] = 0L;
+            }
+            cursor = 0;
+            resetCounters();
         }
     }
 
