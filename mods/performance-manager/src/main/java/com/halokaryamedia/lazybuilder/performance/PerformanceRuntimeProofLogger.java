@@ -4,6 +4,8 @@ import com.halokaryamedia.lazybuilder.performance.compatibility.FirstPartyRender
 import com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility;
 import com.halokaryamedia.lazybuilder.performance.compatibility.RendererCompatibility;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
+import com.halokaryamedia.lazybuilder.performance.rendering.GpuCapabilityProfile;
+import com.halokaryamedia.lazybuilder.performance.rendering.GpuStageTimer;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
 import org.slf4j.Logger;
@@ -59,6 +61,10 @@ final class PerformanceRuntimeProofLogger {
         StageTimingMetrics.Snapshot blockEntityCullTiming =
                 StageTimingMetrics.snapshot(StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING);
         PerformanceGovernor.Profile governor = PerformanceManagerClient.governorProfile();
+        GpuCapabilityProfile.Snapshot gpu = GpuCapabilityProfile.current();
+        GpuStageTimer.Snapshot terrainGpu = GpuStageTimer.snapshot(GpuStageTimer.Stage.TERRAIN);
+        GpuStageTimer.Snapshot shadowGpu = GpuStageTimer.snapshot(GpuStageTimer.Stage.SHADOW);
+        GpuStageTimer.Snapshot postGpu = GpuStageTimer.snapshot(GpuStageTimer.Stage.POST_PROCESS);
         String shaderStage = shader.get("stage") instanceof String value ? value : "unknown";
         boolean shaderReady = shader.get("renderingReady") instanceof Boolean value && value;
         boolean terrainIntegrated = shader.get("terrainIntegrated") instanceof Boolean value && value;
@@ -100,7 +106,11 @@ final class PerformanceRuntimeProofLogger {
                         + "entity_cull_cpu_avg_ms={} entity_cull_cpu_max_ms={} "
                         + "block_entity_cull_cpu_avg_ms={} block_entity_cull_cpu_max_ms={} "
                         + "governor_mode={} governor_upload_budget={} governor_rebuild_budget={} "
-                        + "governor_culling_budget={} governor_shadow_reuse={}",
+                        + "governor_culling_budget={} governor_shadow_reuse={} "
+                        + "gpu_tier={} gpu_timer_queries={} gpu_draw_id={} gpu_vram_bytes={} "
+                        + "gpu_terrain_avg_ms={} gpu_terrain_max_ms={} "
+                        + "gpu_shadow_avg_ms={} gpu_shadow_max_ms={} "
+                        + "gpu_post_avg_ms={} gpu_post_max_ms={}",
                 sample,
                 snapshot.fps(),
                 snapshot.averageFrameTimeMs(),
@@ -160,7 +170,17 @@ final class PerformanceRuntimeProofLogger {
                 governor.chunkUploadBudget(),
                 governor.rebuildReleaseBudget(),
                 governor.cullingBudgetPercent(),
-                governor.shadowReuseMultiplier()
+                governor.shadowReuseMultiplier(),
+                gpu.tier(),
+                gpu.timerQueries(),
+                gpu.drawId(),
+                gpu.reportedVramBytes(),
+                terrainGpu.averageMs(),
+                terrainGpu.maxMs(),
+                shadowGpu.averageMs(),
+                shadowGpu.maxMs(),
+                postGpu.averageMs(),
+                postGpu.maxMs()
         );
     }
 
