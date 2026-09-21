@@ -76,7 +76,7 @@ public final class TerrainPerDrawShaderBackend {
         activeDrawBaseLocation = -1;
         activeDrawEnabledLocation = -1;
 
-        if (packet == null || packet.commands().isEmpty()) {
+        if (packet == null || packet.commandCount() == 0) {
             status = "empty-command-stream";
             return false;
         }
