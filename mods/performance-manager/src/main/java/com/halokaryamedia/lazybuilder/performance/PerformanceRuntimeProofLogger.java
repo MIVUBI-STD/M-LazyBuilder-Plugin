@@ -58,6 +58,7 @@ final class PerformanceRuntimeProofLogger {
                 StageTimingMetrics.snapshot(StageTimingMetrics.Stage.ENTITY_CULLING);
         StageTimingMetrics.Snapshot blockEntityCullTiming =
                 StageTimingMetrics.snapshot(StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING);
+        PerformanceGovernor.Profile governor = PerformanceManagerClient.governorProfile();
         String shaderStage = shader.get("stage") instanceof String value ? value : "unknown";
         boolean shaderReady = shader.get("renderingReady") instanceof Boolean value && value;
         boolean terrainIntegrated = shader.get("terrainIntegrated") instanceof Boolean value && value;
@@ -97,7 +98,9 @@ final class PerformanceRuntimeProofLogger {
                         + "frame_p50_ms={} frame_p95_ms={} frame_p99_ms={} frame_p999_ms={} "
                         + "stutter_16ms={} stutter_25ms={} stutter_33ms={} stutter_50ms={} "
                         + "entity_cull_cpu_avg_ms={} entity_cull_cpu_max_ms={} "
-                        + "block_entity_cull_cpu_avg_ms={} block_entity_cull_cpu_max_ms={}",
+                        + "block_entity_cull_cpu_avg_ms={} block_entity_cull_cpu_max_ms={} "
+                        + "governor_mode={} governor_upload_budget={} governor_rebuild_budget={} "
+                        + "governor_culling_budget={} governor_optional_gpu={}",
                 sample,
                 snapshot.fps(),
                 snapshot.averageFrameTimeMs(),
@@ -152,7 +155,12 @@ final class PerformanceRuntimeProofLogger {
                 entityCullTiming.averageMs(),
                 entityCullTiming.maxMs(),
                 blockEntityCullTiming.averageMs(),
-                blockEntityCullTiming.maxMs()
+                blockEntityCullTiming.maxMs(),
+                governor.mode(),
+                governor.chunkUploadBudget(),
+                governor.rebuildReleaseBudget(),
+                governor.cullingBudgetPercent(),
+                governor.optionalGpuWorkAllowed()
         );
     }
 
