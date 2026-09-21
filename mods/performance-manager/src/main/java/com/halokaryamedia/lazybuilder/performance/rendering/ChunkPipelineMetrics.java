@@ -5,8 +5,8 @@ import java.util.concurrent.atomic.LongAdder;
 /**
  * Low-overhead counters for first-party chunk-pipeline decisions and pressure signals.
  *
- * Counters are disabled until diagnostics or proof mode explicitly requests them, avoiding
- * permanent observer cost on chunk-meshing and render hot paths.
+ * Counters are disabled unless proof/metrics mode is explicitly enabled at process start,
+ * avoiding permanent observer cost on chunk-meshing and render hot paths.
  */
 public final class ChunkPipelineMetrics {
     private static final LongAdder COALESCED_REBUILD_REQUESTS = new LongAdder();
@@ -107,18 +107,5 @@ public final class ChunkPipelineMetrics {
     static void resetForTest() {
         detailedMetricsEnabled = true;
         resetSession();
-        BUFFER_ACQUIRE_MISSES.reset();
-        AVOIDED_UPLOAD_BUFFER_BINDS.reset();
-        STORAGE_SECTIONS_REMAPPED.reset();
-        SECTION_VISIBILITY_CACHE_HITS.reset();
-        AVOIDED_TRANSLUCENT_SORT_TASKS.reset();
-        AVOIDED_TERRAIN_SECTION_VISITS.reset();
-        SECTION_BUILDER_BUFFER_LOOKUP_HITS.reset();
-        TERRAIN_BUFFER_LOOKUP_HITS.reset();
-        UPLOAD_BUDGET_STOPS.reset();
-        REBUILD_BACKPRESSURE_DEFERRALS.reset();
-        REBUILD_BACKPRESSURE_RELEASES.reset();
-        TERRAIN_GPU_RECLAIMED_BYTES.reset();
-        TERRAIN_GPU_RECLAIMED_BUFFERS.reset();
     }
 }
