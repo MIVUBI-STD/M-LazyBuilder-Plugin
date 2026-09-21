@@ -43,9 +43,10 @@ public final class LazyBuilderShaderScreen extends Screen {
         int shell = Math.min(720, Math.max(280, width - 24));
         int left = (width - shell) / 2;
         int right = left + shell;
-        int rowWidth = Math.min(190, Math.max(120, shell / 3));
-        int actionX = right - rowWidth;
-        int y = 82;
+        boolean compact = shell < 500;
+        int rowWidth = compact ? shell - 28 : Math.min(190, Math.max(120, shell / 3));
+        int actionX = compact ? left + 14 : right - rowWidth;
+        int y = compact ? 154 : 82;
 
         if (!isIrisAvailable()) {
             addDrawableChild(new LazyBuilderSettingsControlWidget(
@@ -70,7 +71,7 @@ public final class LazyBuilderShaderScreen extends Screen {
                     this::toggleShaders
             ));
 
-            y += 42;
+            y += compact ? 30 : 42;
             addDrawableChild(new LazyBuilderSettingsControlWidget(
                     actionX,
                     y,
@@ -82,7 +83,7 @@ public final class LazyBuilderShaderScreen extends Screen {
                     this::openIrisManager
             ));
 
-            y += 34;
+            y += compact ? 28 : 34;
             addDrawableChild(new LazyBuilderSettingsControlWidget(
                     actionX,
                     y,
@@ -94,7 +95,7 @@ public final class LazyBuilderShaderScreen extends Screen {
                     this::openIrisManager
             ));
 
-            y += 34;
+            y += compact ? 28 : 34;
             addDrawableChild(new LazyBuilderSettingsControlWidget(
                     actionX,
                     y,
@@ -107,7 +108,7 @@ public final class LazyBuilderShaderScreen extends Screen {
             ));
 
             if (failure != null) {
-                y += 46;
+                y += compact ? 32 : 46;
                 addDrawableChild(new LazyBuilderSettingsControlWidget(
                         actionX,
                         y,
@@ -154,8 +155,10 @@ public final class LazyBuilderShaderScreen extends Screen {
                 LazyBuilderSettingsScreen.TEXT_PRIMARY
         );
 
+        boolean compact = shell < 500;
         int panelTop = 64;
-        int panelBottom = Math.min(height - FOOTER_HEIGHT - 12, 284);
+        int desiredBottom = compact ? 330 : 284;
+        int panelBottom = Math.max(panelTop + 110, Math.min(height - FOOTER_HEIGHT - 12, desiredBottom));
         context.fill(left, panelTop, right, panelBottom, DIVIDER);
         context.fill(left + 1, panelTop + 1, right - 1, panelBottom - 1, PANEL);
 
@@ -185,7 +188,8 @@ public final class LazyBuilderShaderScreen extends Screen {
         String description = !isIrisAvailable()
                 ? "Install Iris to use shader packs. LazyBuilder does not provide its own shader renderer."
                 : "Iris owns shader packs and shader-specific options. Use Manage Shader Packs for selection or Open Iris Settings for advanced options.";
-        for (var line : textRenderer.wrapLines(Text.literal(description), Math.max(100, shell - 230))) {
+        int descriptionWidth = compact ? Math.max(100, shell - 28) : Math.max(100, shell - 230);
+        for (var line : textRenderer.wrapLines(Text.literal(description), descriptionWidth)) {
             context.drawTextWithShadow(
                     textRenderer,
                     line,
@@ -207,7 +211,7 @@ public final class LazyBuilderShaderScreen extends Screen {
             );
             context.drawTextWithShadow(
                     textRenderer,
-                    Text.literal(textRenderer.trimToWidth(failure, Math.max(100, shell - 230))),
+                    Text.literal(textRenderer.trimToWidth(failure, descriptionWidth)),
                     textX,
                     errorY + 13,
                     LazyBuilderSettingsScreen.TEXT_MUTED
