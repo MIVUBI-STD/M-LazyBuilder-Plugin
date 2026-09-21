@@ -123,4 +123,31 @@ final class ShaderPackManifestTest {
                 )
         );
     }
+    @Test
+    void rejectsOptionIdsThatCollapseToTheSameDefine() throws Exception {
+        Files.createDirectories(temp.resolve("shaders"));
+        Files.writeString(temp.resolve("shaders/terrain.vsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(temp.resolve("shaders/terrain.fsh"), "#version 150\nvoid main(){}\n");
+        Files.writeString(temp.resolve("shader.properties"), """
+                option.soft-shadow.type=boolean
+                option.soft-shadow.default=true
+                option.soft_shadow.type=boolean
+                option.soft_shadow.default=false
+                """);
+
+        ShaderPackDescriptor descriptor = new ShaderPackDescriptor(
+                "collision-pack",
+                "Collision Pack",
+                temp,
+                ShaderPackDescriptor.Kind.DIRECTORY
+        );
+
+        assertThrows(
+                java.io.IOException.class,
+                () -> ShaderPackManifest.load(
+                        ShaderPackSource.open(descriptor),
+                        "Collision Pack"
+                )
+        );
+    }
 }
