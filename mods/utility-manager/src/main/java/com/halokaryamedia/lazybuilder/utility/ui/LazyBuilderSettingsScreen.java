@@ -1967,6 +1967,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
     private boolean isAuthoritativelyModified(Row row) {
         UtilityPreferences current = UtilityManagerClient.preferences();
         UtilityPreferences defaults = UtilityPreferences.defaults();
+        CapturePreferences captureCurrent = CaptureManager.preferences();
+        CapturePreferences captureDefaults = CapturePreferences.defaults();
 
         if (client != null) {
             switch (row.title) {
@@ -2028,8 +2030,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
             case "Show Report Button" ->
                     current.hideChatReportButton() != defaults.hideChatReportButton();
             case "Compact Debug HUD" -> current.compactDebugHud() != defaults.compactDebugHud();
-            case "Contextual Screenshot Names" ->
+            case "Contextual Names" ->
                     current.contextualScreenshotNames() != defaults.contextualScreenshotNames();
+            case "Screenshot Quality" ->
+                    captureCurrent.screenshotQuality() != captureDefaults.screenshotQuality();
+            case "Video Quality" ->
+                    captureCurrent.videoQuality() != captureDefaults.videoQuality();
+            case "Frame Rate" ->
+                    captureCurrent.videoFrameRate() != captureDefaults.videoFrameRate();
+            case "Encoder" ->
+                    captureCurrent.videoEncoderMode() != captureDefaults.videoEncoderMode();
             case "Quick Creative Search" ->
                     current.instantCreativeSearch() != defaults.instantCreativeSearch();
             case "Reconnect Button" -> current.reconnectButton() != defaults.reconnectButton();
