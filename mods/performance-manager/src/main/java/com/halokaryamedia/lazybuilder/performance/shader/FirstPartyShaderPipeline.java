@@ -73,7 +73,7 @@ public final class FirstPartyShaderPipeline implements AutoCloseable {
         if (terrain == null) throw new IOException("Prepared terrain shader is unavailable.");
 
         return new Prepared(
-                Map.copyOf(programs),
+                programs,
                 TerrainShaderContract.gbufferAttachmentCount(terrain.fragmentSource()),
                 fingerprint(terrain.vertexSource(), terrain.fragmentSource())
         );
