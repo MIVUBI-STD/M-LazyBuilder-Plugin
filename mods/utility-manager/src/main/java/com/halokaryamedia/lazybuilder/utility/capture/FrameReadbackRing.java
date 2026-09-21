@@ -53,11 +53,11 @@ final class FrameReadbackRing implements AutoCloseable {
         }
         int required = (int) requiredLong;
 
+        int previousPackBuffer = GL11C.glGetInteger(GL21C.GL_PIXEL_PACK_BUFFER_BINDING);
         slot.ensureCapacity(required);
         GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, slot.pbo);
         try {
             framebuffer.beginRead();
-            GL11C.glPixelStorei(GL11C.GL_PACK_ALIGNMENT, 1);
             GL11C.glGetTexImage(
                     GL11C.GL_TEXTURE_2D,
                     0,
@@ -72,7 +72,7 @@ final class FrameReadbackRing implements AutoCloseable {
             slot.height = height;
             slot.repeatCount = Math.max(1, repeatCount);
         } finally {
-            GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, 0);
+            GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, previousPackBuffer);
         }
 
         cursor = (cursor + 1) % SLOT_COUNT;
@@ -82,7 +82,9 @@ final class FrameReadbackRing implements AutoCloseable {
     void drainReady(VideoCaptureSession session) {
         if (!RenderSystem.isOnRenderThread() || session == null) return;
 
-        for (Slot slot : slots) {
+        int previousPackBuffer = GL11C.glGetInteger(GL21C.GL_PIXEL_PACK_BUFFER_BINDING);
+        try {
+            for (Slot slot : slots) {
             if (!slot.pending()) continue;
             int wait = GL32C.glClientWaitSync(slot.fence, 0, 0L);
             if (wait != GL32C.GL_ALREADY_SIGNALED && wait != GL32C.GL_CONDITION_SATISFIED) {
@@ -119,9 +121,11 @@ final class FrameReadbackRing implements AutoCloseable {
                 session.submitFramePacket(packet);
             } finally {
                 if (mapped != null) GL15C.glUnmapBuffer(GL21C.GL_PIXEL_PACK_BUFFER);
-                GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, 0);
                 slot.releaseFence();
             }
+            }
+        } finally {
+            GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, previousPackBuffer);
         }
     }
 
