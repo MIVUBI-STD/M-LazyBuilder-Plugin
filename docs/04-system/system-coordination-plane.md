@@ -32,7 +32,8 @@ System coordination plane
 ├── SystemSnapshot
 ├── capability projection
 ├── readiness projection
-└── later: typed invalidation / cross-runtime activity projection
+├── activity projection
+└── later: typed invalidation
         │
         ▼
 Launcher UI / diagnostics / workflow routing
@@ -61,11 +62,12 @@ The snapshot currently composes:
 - server readiness;
 - live/detached server runtime summaries;
 - active Launcher operations;
-- Paper World Manager task activity when the active runtime bridge is available;
 - projected capabilities;
 - projection warnings.
 
-This is an on-demand projection. Callers must not persist it as a second authority.
+`SystemActivitySnapshot` separately composes Launcher operation history with Paper World Manager task activity when the active runtime bridge is available.
+
+Both are on-demand/read-only projections. Callers must not persist them as a second authority.
 
 ## Capability rules
 
@@ -134,6 +136,6 @@ BUSY represents a transition or conflicting active operation. DEGRADED means the
 6. Typed invalidation signals refresh only affected projections — next.
 7. Runtime proof verifies degraded/recovery transitions on a real Windows/Minecraft environment — acceptance layer.
 
-Frontend activity observation also has one shared feed (`app/operations/activityFeed.ts`) so the Activity page and navigation badge do not create duplicate polling loops.
+Frontend activity observation has one shared feed (`app/operations/activityFeed.ts`) so the Activity page and navigation badge do not create duplicate polling loops.
 
 Do not jump directly to a generic event bus, distributed state store, or universal scheduler.
