@@ -236,7 +236,7 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
         values.add(e("Memory Optimization", "ram memory performance", LazyBuilderSettingsScreen.Category.VIDEO, LazyBuilderSettingsScreen.VideoPage.PERFORMANCE));
 
         values.add(e("Resource Packs", "textures models visual", LazyBuilderSettingsScreen.Category.VIDEO, LazyBuilderSettingsScreen.VideoPage.VISUAL));
-        values.add(e("Shaders", "lighting shadows visual iris", LazyBuilderSettingsScreen.Category.VIDEO, LazyBuilderSettingsScreen.VideoPage.VISUAL));
+        values.add(e("Shaders", "lighting shadows shaderpacks visual", LazyBuilderSettingsScreen.Category.VIDEO, LazyBuilderSettingsScreen.VideoPage.VISUAL));
 
         for (String audio : List.of("Master Volume","Music","Jukebox & Note Blocks","Weather","Blocks","Hostile Creatures","Friendly Creatures","Players","Ambient","Voice / Speech")) {
             values.add(e(audio, "sound volume audio", LazyBuilderSettingsScreen.Category.AUDIO, LazyBuilderSettingsScreen.VideoPage.QUALITY));
