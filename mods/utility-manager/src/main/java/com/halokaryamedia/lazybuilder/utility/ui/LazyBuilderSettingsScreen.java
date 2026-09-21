@@ -539,9 +539,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         Object shared = FabricLoader.getInstance().getObjectShare()
                 .get("lazybuilder-performance-manager:shader-snapshot");
         if (!(shared instanceof Supplier<?> supplier)) {
-            return FabricLoader.getInstance().isModLoaded("iris")
-                    ? "Iris Compatibility"
-                    : "Unavailable";
+            return "Unavailable";
         }
 
         Object value = supplier.get();
