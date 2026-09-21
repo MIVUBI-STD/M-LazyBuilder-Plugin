@@ -713,8 +713,11 @@ public final class FirstPartyShaderRuntime {
             );
             if (begun) {
                 synchronized (this) {
+                    boolean hadError = !gbufferError.isEmpty();
+                    String previousError = lastError;
                     gbufferError = "";
                     lastError = primaryError();
+                    if (hadError || !lastError.equals(previousError)) revision++;
                 }
             }
             return begun;
