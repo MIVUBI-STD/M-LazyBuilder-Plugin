@@ -93,6 +93,57 @@ Performance Manager now owns a first-party shader runtime in addition to the gua
 
 Diagnostics report packed command/transform bytes, capability reason, prepare attempts, eligible prepared runs, submitted multi-draw batches/commands, actual draw-call reductions, and submission failures.
 
+## First-party shader pack format
+
+LazyBuilder shader packs live in the normal `shaderpacks/` directory and may be either folders or ZIP files. The first-party runtime does not require Iris. A pack must provide the terrain pair and may add shadow/composite/final programs:
+
+```text
+shaderpacks/MyPack/
+├── shader.properties            optional metadata/options
+└── shaders/
+    ├── terrain.vsh              required
+    ├── terrain.fsh              required
+    ├── shadow.vsh               optional pair
+    ├── shadow.fsh
+    ├── composite.vsh            optional pair
+    ├── composite.fsh
+    ├── final.vsh                optional pair
+    ├── final.fsh
+    └── lib/*.glsl               optional #include sources
+```
+
+`#include "relative/path.glsl"` and root-relative includes are expanded by the bounded first-party preprocessor. Include cycles, path traversal, and excessive include depth fail the candidate compile without replacing the last known-good pipeline.
+
+Optional `shader.properties` metadata uses a deliberately small typed option model:
+
+```properties
+name=Studio Shader
+author=MIVUBI
+description=Example first-party shader
+
+option.shadows.type=boolean
+option.shadows.label=Shadows
+option.shadows.default=true
+
+option.exposure.type=float
+option.exposure.label=Exposure
+option.exposure.default=1.0
+option.exposure.min=0.5
+option.exposure.max=2.0
+option.exposure.step=0.25
+
+option.steps.type=int
+option.steps.label=Sample Steps
+option.steps.default=4
+option.steps.min=1
+option.steps.max=8
+option.steps.step=1
+```
+
+Options are validated, quantized, persisted per pack, and injected after the GLSL `#version` line as deterministic defines such as `LB_OPT_SHADOWS`, `LB_OPT_EXPOSURE`, and `LB_OPT_STEPS`. Utility Manager stages edits locally and applies them in one recompilation instead of recompiling continuously while a slider is dragged.
+
+The first-party runtime uses atomic candidate publication: every declared program must compile/link before the new pipeline replaces the previous one. Terrain stage substitution also retains the exact original Minecraft source for compile/link fallback.
+
 ## FRAPI and shader compatibility boundary
 
 Fabric Renderer API 5.x lets renderer replacements declare ownership with:
