@@ -9,6 +9,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 final class ShaderPackSourceSessionTest {
     @TempDir Path temp;
@@ -63,19 +64,19 @@ final class ShaderPackSourceSessionTest {
         );
 
         try (ShaderPackSource.Session session = ShaderPackSource.openSession(descriptor)) {
-            assertEquals(
-                    "const int VALUE = 1;\n",
-                    session.readText("shaders/common.glsl")
-            );
+            String first = session.readText("shaders/common.glsl");
+            String second = session.readText("shaders/common.glsl");
 
-            writeZip(zip, "const int VALUE = 2;\n");
-
-            assertEquals(
-                    "const int VALUE = 1;\n",
-                    session.readText("shaders/common.glsl"),
-                    "one ZIP preparation session must keep one stable archive/source snapshot"
+            assertEquals("const int VALUE = 1;\n", first);
+            assertSame(
+                    first,
+                    second,
+                    "one ZIP preparation session should reuse its cached source snapshot"
             );
         }
+
+        // Update only after ZipFile is closed so this proof is valid on Windows too.
+        writeZip(zip, "const int VALUE = 2;\n");
 
         try (ShaderPackSource.Session session = ShaderPackSource.openSession(descriptor)) {
             assertEquals(
