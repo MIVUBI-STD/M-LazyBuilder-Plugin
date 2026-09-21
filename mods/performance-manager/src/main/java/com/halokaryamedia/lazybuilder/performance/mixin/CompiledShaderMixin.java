@@ -19,6 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
 abstract class CompiledShaderMixin {
     private static final Map<Integer, OriginalSource> lazybuilder$originalSources =
             new ConcurrentHashMap<>();
+    private static final Map<CompiledShader.Type, RestorableStage> lazybuilder$successfulFirstPartyStages =
+            new ConcurrentHashMap<>();
 
     @Redirect(
             method = "compile",
@@ -69,6 +71,10 @@ abstract class CompiledShaderMixin {
         boolean success = GlStateManager.glGetShaderi(shaderHandle, 35713) != 0;
         if (success) {
             if (original.firstParty()) {
+                lazybuilder$successfulFirstPartyStages.put(
+                        original.type(),
+                        new RestorableStage(shaderHandle, original.source(), original.type())
+                );
                 TerrainShaderSourceTransformer.recordCompileSuccess(original.type());
             }
             return;
@@ -77,6 +83,34 @@ abstract class CompiledShaderMixin {
         TerrainShaderSourceTransformer.recordCompileFallback(original.type());
         GlStateManager.glShaderSource(shaderHandle, original.source());
         GlStateManager.glCompileShader(shaderHandle);
+        lazybuilder$restoreOtherFirstPartyStages(original.type());
+    }
+
+    static void lazybuilder$resetTerrainFallbackState() {
+        lazybuilder$originalSources.clear();
+        lazybuilder$successfulFirstPartyStages.clear();
+    }
+
+    static void lazybuilder$clearTerrainFallbackStateAfterLink() {
+        lazybuilder$successfulFirstPartyStages.clear();
+    }
+
+    private static void lazybuilder$restoreOtherFirstPartyStages(CompiledShader.Type failedType) {
+        for (RestorableStage stage : lazybuilder$successfulFirstPartyStages.values()) {
+            if (stage.type() == failedType) continue;
+
+            GlStateManager.glShaderSource(stage.shaderHandle(), stage.originalSource());
+            GlStateManager.glCompileShader(stage.shaderHandle());
+            TerrainShaderSourceTransformer.recordCompileFallback(stage.type());
+        }
+        lazybuilder$successfulFirstPartyStages.clear();
+    }
+
+    private record RestorableStage(
+            int shaderHandle,
+            String originalSource,
+            CompiledShader.Type type
+    ) {
     }
 
     private record OriginalSource(
