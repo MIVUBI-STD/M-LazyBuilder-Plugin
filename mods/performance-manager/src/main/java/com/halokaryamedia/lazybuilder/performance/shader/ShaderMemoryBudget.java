@@ -9,7 +9,6 @@ package com.halokaryamedia.lazybuilder.performance.shader;
  */
 public final class ShaderMemoryBudget {
     private static final long MIB = 1024L * 1024L;
-    private static final long DEFAULT_MAX_AUXILIARY_BYTES = 512L * MIB;
     private static final long MAX_AUXILIARY_BYTES = configuredLimitBytes();
     private static final long RGBA16F_BYTES_PER_PIXEL = 8L;
     private static final long DEPTH32F_BYTES_PER_PIXEL = 4L;
