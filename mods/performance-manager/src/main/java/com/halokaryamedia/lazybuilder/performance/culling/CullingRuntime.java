@@ -69,6 +69,9 @@ public final class CullingRuntime {
     private long entityOccludedDecisions;
     private long blockEntityOccludedDecisions;
     private FramePressure lastPressure = FramePressure.NORMAL;
+    private long timingSampleCursor;
+    private long sampledEvaluationCount;
+    private long sampledEvaluationNanos;
 
     public boolean shouldRender(
             Entity entity,
@@ -211,6 +214,8 @@ public final class CullingRuntime {
                 blockEntityEvaluations,
                 entityOccludedDecisions,
                 blockEntityOccludedDecisions,
+                sampledAverageEvaluationMs(),
+                sampledEvaluationCount,
                 entityQueueDrops,
                 blockEntityQueueDrops
         );
@@ -234,6 +239,9 @@ public final class CullingRuntime {
         blockEntityQueueDrops = 0L;
         entityOccludedDecisions = 0L;
         blockEntityOccludedDecisions = 0L;
+        timingSampleCursor = 0L;
+        sampledEvaluationCount = 0L;
+        sampledEvaluationNanos = 0L;
         lastPressure = FramePressure.NORMAL;
     }
 
@@ -275,35 +283,59 @@ public final class CullingRuntime {
     }
 
     private void evaluateEntityTimed(MinecraftClient client, Entity entity) {
-        if (!StageTimingMetrics.enabled()) {
+        boolean detailed = StageTimingMetrics.enabled();
+        boolean sampled = detailed || shouldSampleRuntimeCost();
+        if (!sampled) {
             evaluateEntity(client, entity);
             return;
         }
+
         long started = System.nanoTime();
         try {
             evaluateEntity(client, entity);
         } finally {
-            StageTimingMetrics.record(
-                    StageTimingMetrics.Stage.ENTITY_CULLING,
-                    System.nanoTime() - started
-            );
+            long elapsed = System.nanoTime() - started;
+            recordSampledRuntimeCost(elapsed);
+            if (detailed) {
+                StageTimingMetrics.record(StageTimingMetrics.Stage.ENTITY_CULLING, elapsed);
+            }
         }
     }
 
     private void evaluateBlockEntityTimed(MinecraftClient client, BlockEntity blockEntity) {
-        if (!StageTimingMetrics.enabled()) {
+        boolean detailed = StageTimingMetrics.enabled();
+        boolean sampled = detailed || shouldSampleRuntimeCost();
+        if (!sampled) {
             evaluateBlockEntity(client, blockEntity);
             return;
         }
+
         long started = System.nanoTime();
         try {
             evaluateBlockEntity(client, blockEntity);
         } finally {
-            StageTimingMetrics.record(
-                    StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING,
-                    System.nanoTime() - started
-            );
+            long elapsed = System.nanoTime() - started;
+            recordSampledRuntimeCost(elapsed);
+            if (detailed) {
+                StageTimingMetrics.record(StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING, elapsed);
+            }
         }
+    }
+
+    private boolean shouldSampleRuntimeCost() {
+        return (timingSampleCursor++ & 31L) == 0L;
+    }
+
+    private void recordSampledRuntimeCost(long elapsedNanos) {
+        if (elapsedNanos <= 0L) return;
+        sampledEvaluationCount++;
+        sampledEvaluationNanos += elapsedNanos;
+    }
+
+    private double sampledAverageEvaluationMs() {
+        return sampledEvaluationCount <= 0L
+                ? 0.0D
+                : (sampledEvaluationNanos / (double) sampledEvaluationCount) / 1_000_000.0D;
     }
 
     private void evaluateEntity(MinecraftClient client, Entity entity) {
@@ -518,6 +550,8 @@ public final class CullingRuntime {
             long blockEntityEvaluations,
             long entityOccludedDecisions,
             long blockEntityOccludedDecisions,
+            double sampledAverageEvaluationMs,
+            long sampledEvaluationCount,
             long entityQueueDrops,
             long blockEntityQueueDrops
     ) {}
