@@ -39,6 +39,9 @@ public final class PerformanceManagerClient implements ClientModInitializer {
 
     private static PerformanceRuntime runtime;
     private static FirstPartyShaderRuntime shaderRuntime;
+    private static volatile long shaderOnlyReloadRequests;
+    private static volatile long shaderOnlyReloadSuccesses;
+    private static volatile long shaderOnlyReloadFailures;
     private static volatile boolean shaderTerrainReloadInFlight;
 
     @Override
@@ -135,12 +138,15 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                     && !shaderTerrainReloadInFlight
                     && shaders.consumeTerrainReloadRequest()) {
                 shaderTerrainReloadInFlight = true;
+                shaderOnlyReloadRequests++;
                 reloadMinecraftShaders(client).whenComplete((ignored, error) ->
                         client.execute(() -> {
                             shaderTerrainReloadInFlight = false;
                             FirstPartyShaderRuntime current = shaderRuntime;
                             if (current == null) return;
                             Throwable cause = unwrap(error);
+                            if (cause == null) shaderOnlyReloadSuccesses++;
+                            else shaderOnlyReloadFailures++;
                             current.recordTerrainReloadCompletion(
                                     cause == null,
                                     cause == null ? "" : safeThrowableMessage(cause),
@@ -320,6 +326,18 @@ public final class PerformanceManagerClient implements ClientModInitializer {
 
     public static Map<String, Object> currentShaderSnapshot() {
         return shaderSnapshot();
+    }
+
+    public static Map<String, Object> currentShaderDiagnostics() {
+        Map<String, Object> values = new LinkedHashMap<>();
+        FirstPartyShaderRuntime shaders = shaderRuntime;
+        if (shaders != null) values.putAll(shaders.diagnosticsMap());
+        values.put("reloadMode", "shader-only");
+        values.put("shaderReloadRequests", shaderOnlyReloadRequests);
+        values.put("shaderReloadSuccesses", shaderOnlyReloadSuccesses);
+        values.put("shaderReloadFailures", shaderOnlyReloadFailures);
+        values.put("shaderReloadInFlight", shaderTerrainReloadInFlight);
+        return Map.copyOf(values);
     }
 
     private static Map<String, Object> shaderSnapshot() {
