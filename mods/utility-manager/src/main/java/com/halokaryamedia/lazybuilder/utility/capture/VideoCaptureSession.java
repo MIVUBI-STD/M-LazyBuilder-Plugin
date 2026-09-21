@@ -414,9 +414,20 @@ final class VideoCaptureSession {
                 "-video_size", width + "x" + height,
                 "-framerate", Integer.toString(fps),
                 "-i", "-",
-                "-an",
-                "-vf", "vflip"
+                "-an"
         ));
+
+        int[] outputSize = preferences.videoResolution().resolve(width, height);
+        int outputWidth = outputSize[0];
+        int outputHeight = outputSize[1];
+
+        if (outputWidth == width && outputHeight == height) {
+            command.addAll(List.of("-vf", "vflip"));
+        } else {
+            command.addAll(List.of(
+                    "-vf", "vflip,scale=" + outputWidth + ":" + outputHeight + ":flags=lanczos"
+            ));
+        }
 
         int q = quality.qualityValue();
         switch (capabilities.encoder()) {
