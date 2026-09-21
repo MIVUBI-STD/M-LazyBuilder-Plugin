@@ -32,6 +32,7 @@ public final class FirstPartyShaderRuntime {
     private FirstPartyShaderPipeline pipeline;
     private FirstPartyShaderPostProcessor postProcessor;
     private FirstPartyShaderGBuffer gbuffer;
+    private FirstPartyShadowRenderer shadowRenderer;
 
     public FirstPartyShaderRuntime(Path shaderpacksDirectory, Path configDirectory) {
         this.catalog = new ShaderPackCatalog(shaderpacksDirectory);
@@ -288,6 +289,55 @@ public final class FirstPartyShaderRuntime {
         revision++;
     }
 
+    public FirstPartyShadowRenderer.Snapshot renderShadow(
+            double cameraX,
+            double cameraY,
+            double cameraZ,
+            long timeOfDay
+    ) {
+        FirstPartyShaderPipeline current;
+        synchronized (this) {
+            current = pipeline;
+            if (current == null || !current.has("shadow")) {
+                return FirstPartyShadowRenderer.emptySnapshot();
+            }
+            if (shadowRenderer == null) shadowRenderer = new FirstPartyShadowRenderer();
+        }
+
+        FirstPartyShadowRenderer.Snapshot result = shadowRenderer.render(
+                current,
+                cameraX,
+                cameraY,
+                cameraZ,
+                timeOfDay
+        );
+
+        synchronized (this) {
+            if (!result.ready() && !"no-visible-terrain".equals(result.status())) {
+                lastError = result.status();
+                stage = "shadow-error";
+                revision++;
+            } else if (result.ready() && "shadow-error".equals(stage)) {
+                lastError = "";
+                stage = terrainIntegrated
+                        ? (lastFrameApplied ? "terrain+postprocess-active" : "terrain-active")
+                        : (lastFrameApplied ? "postprocess-active" : "compiled");
+                revision++;
+            }
+        }
+        return result;
+    }
+
+    public FirstPartyShadowRenderer.Snapshot shadowSnapshot() {
+        FirstPartyShadowRenderer current;
+        synchronized (this) {
+            current = shadowRenderer;
+        }
+        return current == null
+                ? FirstPartyShadowRenderer.emptySnapshot()
+                : current.snapshot();
+    }
+
     public boolean beginGBufferFrame(
             int targetFramebuffer,
             int width,
@@ -445,6 +495,7 @@ public final class FirstPartyShaderRuntime {
     public synchronized Snapshot snapshot() {
         ShaderPackDescriptor selected = selectedPack();
         ShaderPackDescriptor active = packById(activePackId);
+        FirstPartyShadowRenderer.Snapshot shadow = shadowSnapshot();
         return new Snapshot(
                 revision,
                 "lazybuilder",
@@ -453,6 +504,10 @@ public final class FirstPartyShaderRuntime {
                 pipeline != null,
                 pipeline != null && (pipeline.has("composite") || pipeline.has("final")),
                 pipeline == null ? 0 : pipeline.gbufferAttachments(),
+                shadow.ready(),
+                shadow.status(),
+                shadow.resolution(),
+                shadow.drawnBuffers(),
                 lastFrameApplied || terrainIntegrated,
                 terrainIntegrated,
                 selected == null ? "" : selected.id(),
@@ -476,6 +531,10 @@ public final class FirstPartyShaderRuntime {
         values.put("compiledReady", snapshot.compiledReady());
         values.put("postProcessReady", snapshot.postProcessReady());
         values.put("gbufferAttachments", snapshot.gbufferAttachments());
+        values.put("shadowReady", snapshot.shadowReady());
+        values.put("shadowStatus", snapshot.shadowStatus());
+        values.put("shadowResolution", snapshot.shadowResolution());
+        values.put("shadowDrawnBuffers", snapshot.shadowDrawnBuffers());
         values.put("renderingReady", snapshot.renderingReady());
         values.put("terrainIntegrated", snapshot.terrainIntegrated());
         values.put("configuredEnabled", persisted.enabled());
@@ -514,6 +573,10 @@ public final class FirstPartyShaderRuntime {
         FirstPartyShaderGBuffer frameGBuffer = gbuffer;
         gbuffer = null;
         if (frameGBuffer != null) frameGBuffer.close();
+
+        FirstPartyShadowRenderer shadows = shadowRenderer;
+        shadowRenderer = null;
+        if (shadows != null) shadows.close();
     }
 
     private static String safeMessage(Throwable error) {
@@ -530,6 +593,10 @@ public final class FirstPartyShaderRuntime {
             boolean compiledReady,
             boolean postProcessReady,
             int gbufferAttachments,
+            boolean shadowReady,
+            String shadowStatus,
+            int shadowResolution,
+            int shadowDrawnBuffers,
             boolean renderingReady,
             boolean terrainIntegrated,
             String selectedPackId,
@@ -550,6 +617,7 @@ public final class FirstPartyShaderRuntime {
             activePackName = activePackName == null ? "" : activePackName;
             packIds = packIds == null ? List.of() : List.copyOf(packIds);
             packNames = packNames == null ? List.of() : List.copyOf(packNames);
+            shadowStatus = shadowStatus == null ? "" : shadowStatus;
             lastError = lastError == null ? "" : lastError;
         }
     }
