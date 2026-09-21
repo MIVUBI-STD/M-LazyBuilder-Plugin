@@ -25,21 +25,20 @@ public final class FirstPartyShadowMap implements AutoCloseable {
         int previousDrawFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
         int previousTexture = GL11C.glGetInteger(GL11C.GL_TEXTURE_BINDING_2D);
 
-        deleteNow();
-        size = safeSize;
-
+        int candidateFramebuffer = 0;
+        int candidateDepth = 0;
         try {
-            framebufferId = GL30C.glGenFramebuffers();
-            if (framebufferId == 0) {
+            candidateFramebuffer = GL30C.glGenFramebuffers();
+            if (candidateFramebuffer == 0) {
                 throw new IllegalStateException("OpenGL could not allocate shadow framebuffer.");
             }
-            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, framebufferId);
+            GL30C.glBindFramebuffer(GL30C.GL_FRAMEBUFFER, candidateFramebuffer);
 
-            depthTextureId = GL11C.glGenTextures();
-            if (depthTextureId == 0) {
+            candidateDepth = GL11C.glGenTextures();
+            if (candidateDepth == 0) {
                 throw new IllegalStateException("OpenGL could not allocate shadow depth texture.");
             }
-            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, depthTextureId);
+            GL11C.glBindTexture(GL11C.GL_TEXTURE_2D, candidateDepth);
             GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MIN_FILTER, GL11C.GL_LINEAR);
             GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_MAG_FILTER, GL11C.GL_LINEAR);
             GL11C.glTexParameteri(GL11C.GL_TEXTURE_2D, GL11C.GL_TEXTURE_WRAP_S, GL13C.GL_CLAMP_TO_BORDER);
@@ -64,7 +63,7 @@ public final class FirstPartyShadowMap implements AutoCloseable {
                     GL30C.GL_FRAMEBUFFER,
                     GL30C.GL_DEPTH_ATTACHMENT,
                     GL11C.GL_TEXTURE_2D,
-                    depthTextureId,
+                    candidateDepth,
                     0
             );
             GL11C.glDrawBuffer(GL11C.GL_NONE);
@@ -77,8 +76,16 @@ public final class FirstPartyShadowMap implements AutoCloseable {
                                 + Integer.toHexString(status)
                 );
             }
+
+            framebufferId = candidateFramebuffer;
+            depthTextureId = candidateDepth;
+            size = safeSize;
+            candidateFramebuffer = 0;
+            candidateDepth = 0;
+
+            delete(oldFramebuffer, oldDepthTexture);
         } catch (RuntimeException error) {
-            deleteNow();
+            delete(candidateFramebuffer, candidateDepth);
             throw error;
         } finally {
             int restoreTexture = previousTexture == oldDepthTexture ? 0 : previousTexture;
