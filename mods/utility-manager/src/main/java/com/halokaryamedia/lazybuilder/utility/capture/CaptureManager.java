@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.utility.capture;
 
 import com.halokaryamedia.lazybuilder.utility.UtilityManagerClient;
+import com.halokaryamedia.lazybuilder.utility.mixin.FramebufferAccessor;
 import com.mojang.blaze3d.systems.RenderSystem;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.MinecraftClient;
@@ -82,8 +83,8 @@ public final class CaptureManager {
                 preferences,
                 UtilityManagerClient.preferences().contextualScreenshotNames(),
                 text -> notify(client, text),
-                framebuffer.textureWidth,
-                framebuffer.textureHeight
+                ((FramebufferAccessor) (Object) framebuffer).lazybuilder$getTextureWidth(),
+                ((FramebufferAccessor) (Object) framebuffer).lazybuilder$getTextureHeight()
         );
         if (!started) notify(client, Text.literal(VIDEO.status()));
     }
