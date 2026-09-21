@@ -51,7 +51,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
     @Unique private VertexBuffer lazybuilder$physicalPreparedBuffer;
     @Unique private VertexBuffer lazybuilder$blockedVanillaFallbackBuffer;
     @Unique private TerrainDrawTransformStream.Builder[] lazybuilder$transformBuilders;
-    @Unique private long lazybuilder$visibleSnapshotRevision;
+    @Unique private TerrainVisibleDrawSnapshot.Builder lazybuilder$visibleSnapshotBuilder;
 
     @Inject(method = "applyFrustum", at = @At("TAIL"))
     private void lazybuilder$invalidateAfterFrustum(Frustum frustum, CallbackInfo ci) {
@@ -258,6 +258,9 @@ abstract class WorldRendererTerrainSubmissionMixin {
         if (this.lazybuilder$transformBuilders == null) {
             this.lazybuilder$transformBuilders = lazybuilder$newTransformBuilders();
         }
+        if (this.lazybuilder$visibleSnapshotBuilder == null) {
+            this.lazybuilder$visibleSnapshotBuilder = new TerrainVisibleDrawSnapshot.Builder();
+        }
     }
 
     @Unique
@@ -309,8 +312,7 @@ abstract class WorldRendererTerrainSubmissionMixin {
                 + this.lazybuilder$tripwire.size();
 
         TerrainVisibleDrawSnapshot.Builder builder =
-                TerrainVisibleDrawSnapshot.builder(expected)
-                        .revision(++this.lazybuilder$visibleSnapshotRevision);
+                this.lazybuilder$visibleSnapshotBuilder.reset(expected);
 
         this.lazybuilder$appendVisibleSnapshotLayer(builder, this.lazybuilder$solid, RenderLayer.getSolid(), 0);
         this.lazybuilder$appendVisibleSnapshotLayer(builder, this.lazybuilder$cutoutMipped, RenderLayer.getCutoutMipped(), 1);
