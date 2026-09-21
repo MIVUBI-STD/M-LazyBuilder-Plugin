@@ -41,6 +41,9 @@ public final class TerrainMultiDrawSubmissionBackend {
     private static volatile long submittedCommands;
     private static volatile long reducedDrawCalls;
     private static volatile long submissionFailures;
+    private static long prepareCostSampleCursor;
+    private static long prepareCostSamples;
+    private static double prepareCostEmaMs;
 
     private TerrainMultiDrawSubmissionBackend() {
     }
@@ -48,6 +51,8 @@ public final class TerrainMultiDrawSubmissionBackend {
     public static boolean prepare(ShaderProgram program, TerrainMultiDrawCommandStream.LayerPacket packet) {
         prepareAttempts++;
         clearSession();
+        boolean samplePrepareCost = (prepareCostSampleCursor++ & 31L) == 0L;
+        long prepareStartedNanos = samplePrepareCost ? System.nanoTime() : 0L;
 
         if (!FAILURE_BREAKER.allow()) {
             status = "circuit-open-after-failures";
@@ -78,12 +83,26 @@ public final class TerrainMultiDrawSubmissionBackend {
             }
         }
 
+        if (samplePrepareCost) {
+            recordPrepareCost(System.nanoTime() - prepareStartedNanos);
+        }
+
         if (usableRuns == 0) {
             PROFITABILITY.record(false, 0L);
             status = "no-multi-draw-runs";
             return false;
         }
-        PROFITABILITY.record(true, potentialSavings);
+
+        // Draw-call savings remain the primary profitability signal. Measured preparation cost is
+        // only allowed to veto obviously poor cases; it never disables a useful high-savings run.
+        boolean costEffective = prepareCostSamples == 0L
+                || prepareCostEmaMs < 0.25D
+                || potentialSavings >= Math.max(4L, usableRuns * 2L);
+        PROFITABILITY.record(costEffective, potentialSavings);
+        if (!costEffective) {
+            status = "preparation-cost-not-profitable";
+            return false;
+        }
 
         activeProgram = program;
         activePacket = packet;
@@ -359,6 +378,8 @@ public final class TerrainMultiDrawSubmissionBackend {
                 submittedCommands,
                 reducedDrawCalls,
                 submissionFailures,
+                prepareCostSamples,
+                prepareCostEmaMs,
                 FAILURE_BREAKER.open(),
                 PROFITABILITY.snapshot()
         );
@@ -384,6 +405,9 @@ public final class TerrainMultiDrawSubmissionBackend {
         submittedCommands = 0L;
         reducedDrawCalls = 0L;
         submissionFailures = 0L;
+        prepareCostSampleCursor = 0L;
+        prepareCostSamples = 0L;
+        prepareCostEmaMs = 0.0D;
         PROFITABILITY.reset();
     }
 
@@ -395,6 +419,15 @@ public final class TerrainMultiDrawSubmissionBackend {
         clearSession();
         FAILURE_BREAKER.reset();
         status = "shader-reload";
+    }
+
+    private static void recordPrepareCost(long elapsedNanos) {
+        if (elapsedNanos <= 0L) return;
+        double elapsedMs = elapsedNanos / 1_000_000.0D;
+        prepareCostSamples++;
+        prepareCostEmaMs = prepareCostSamples == 1L
+                ? elapsedMs
+                : prepareCostEmaMs + 0.125D * (elapsedMs - prepareCostEmaMs);
     }
 
     private static void clearSession() {
@@ -476,6 +509,8 @@ public final class TerrainMultiDrawSubmissionBackend {
             long submittedCommands,
             long reducedDrawCalls,
             long submissionFailures,
+            long prepareCostSamples,
+            double prepareCostEmaMs,
             boolean sessionDisabled,
             OptimizationProfitabilityWindow.Snapshot profitability
     ) {
