@@ -30,6 +30,9 @@ import java.util.function.Supplier;
 
 /** Fabric client entrypoint for LazyBuilder Performance Manager. */
 public final class PerformanceManagerClient implements ClientModInitializer {
+    private static final Matrix4f VIEW_PROJECTION_SCRATCH = new Matrix4f();
+    private static final Matrix4f INVERSE_VIEW_PROJECTION_SCRATCH = new Matrix4f();
+
     private static PerformanceRuntime runtime;
     private static FirstPartyShaderRuntime shaderRuntime;
 
@@ -201,9 +204,11 @@ public final class PerformanceManagerClient implements ClientModInitializer {
         if (context != null
                 && context.projectionMatrix() != null
                 && context.positionMatrix() != null) {
-            Matrix4f viewProjection = new Matrix4f(context.projectionMatrix())
+            VIEW_PROJECTION_SCRATCH
+                    .set(context.projectionMatrix())
                     .mul(context.positionMatrix());
-            inverseViewProjection = viewProjection.invert(new Matrix4f());
+            VIEW_PROJECTION_SCRATCH.invert(INVERSE_VIEW_PROJECTION_SCRATCH);
+            inverseViewProjection = INVERSE_VIEW_PROJECTION_SCRATCH;
         }
 
         float timeSeconds = (float) ((nowNanos / 1_000_000L) % 3_600_000L) / 1000.0F;
