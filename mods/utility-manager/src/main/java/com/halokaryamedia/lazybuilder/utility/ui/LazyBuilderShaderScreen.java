@@ -541,7 +541,7 @@ public final class LazyBuilderShaderScreen extends Screen {
             return new ShaderState(
                     false, 0L, "runtime-unavailable",
                     false, false, false, "", 0, false, false, false,
-                    "", "", "", "", "", "", 0, 0, false, "", List.of()
+                    "", "", "", "", "", "", 0, 0, false, "", List.of(), List.of()
             );
         }
     }
