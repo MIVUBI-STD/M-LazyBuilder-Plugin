@@ -5,11 +5,18 @@ import net.minecraft.client.gl.VertexBuffer;
 import net.minecraft.client.render.BuiltBuffer;
 import net.minecraft.util.math.ChunkSectionPos;
 
+import java.util.IdentityHashMap;
+
 /** Runtime bridge from Minecraft terrain buffers into residency, arena, and draw-state ownership. */
 public final class TerrainGpuResidencyTracker {
     private static final TerrainGpuResidencyLedger<VertexBuffer> LEDGER = new TerrainGpuResidencyLedger<>();
     private static final TerrainRegionAllocationRegistry<VertexBuffer> ARENAS = new TerrainRegionAllocationRegistry<>();
     private static final TerrainArenaDrawStateRegistry DRAW_STATES = new TerrainArenaDrawStateRegistry();
+    // GPU residency and draw-state mutation both occur on the render/upload owner.
+    // Cache immutable command projections so visible-section traversal does not
+    // allocate one command record per section per frame.
+    private static final IdentityHashMap<VertexBuffer, TerrainArenaDrawPlanner.Command> DRAW_COMMANDS =
+            new IdentityHashMap<>();
     private static volatile Object sessionOwner;
     private static volatile long sessionGeneration;
     private static volatile String sessionStatus = "unowned";
@@ -103,6 +110,7 @@ public final class TerrainGpuResidencyTracker {
         }
         LEDGER.associate(buffer, sectionX, sectionY, sectionZ, layerSlot);
         ARENAS.associate(buffer, sectionX, sectionY, sectionZ, layerSlot);
+        invalidateDrawCommand(buffer);
 
         long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
         if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
@@ -125,6 +133,7 @@ public final class TerrainGpuResidencyTracker {
     ) {
         if (buffer == null || buffer.isClosed()) return;
         DRAW_STATES.recordVertexUpload(buffer, parameters, vertexPayloadBytes, indexPayloadBytes);
+        invalidateDrawCommand(buffer);
     }
 
     public static void recordPayload(VertexBuffer buffer, int vertexPayloadBytes, int indexPayloadBytes) {
@@ -133,11 +142,13 @@ public final class TerrainGpuResidencyTracker {
         long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
         if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
         ARENAS.recordPayload(buffer, arenaPayload);
+        invalidateDrawCommand(buffer);
     }
 
     public static void recordIndexDrawState(VertexBuffer buffer, int indexPayloadBytes) {
         if (buffer == null || buffer.isClosed()) return;
         DRAW_STATES.recordIndexUpload(buffer, indexPayloadBytes);
+        invalidateDrawCommand(buffer);
     }
 
     public static void recordIndexPayload(VertexBuffer buffer, int indexPayloadBytes) {
@@ -146,6 +157,7 @@ public final class TerrainGpuResidencyTracker {
         long arenaPayload = DRAW_STATES.requiredAllocationBytes(buffer);
         if (arenaPayload <= 0L) arenaPayload = LEDGER.payloadBytes(buffer);
         ARENAS.recordPayload(buffer, arenaPayload);
+        invalidateDrawCommand(buffer);
     }
 
     public static long capacityBytes(VertexBuffer buffer) {
@@ -162,11 +174,21 @@ public final class TerrainGpuResidencyTracker {
 
     public static TerrainArenaDrawPlanner.Command drawCommand(VertexBuffer buffer) {
         if (buffer == null) return null;
-        return new TerrainArenaDrawPlanner.Command(ARENAS.handle(buffer), DRAW_STATES.state(buffer));
+        TerrainArenaDrawPlanner.Command cached = DRAW_COMMANDS.get(buffer);
+        if (cached != null) return cached;
+
+        TerrainRegionAllocationRegistry.Handle handle = ARENAS.handle(buffer);
+        TerrainArenaDrawStateRegistry.DrawState state = DRAW_STATES.state(buffer);
+        if (handle == null && state == null) return null;
+
+        TerrainArenaDrawPlanner.Command command = new TerrainArenaDrawPlanner.Command(handle, state);
+        DRAW_COMMANDS.put(buffer, command);
+        return command;
     }
 
     public static void release(VertexBuffer buffer) {
         if (buffer == null) return;
+        DRAW_COMMANDS.remove(buffer);
         TerrainPhysicalArenaManager.release(buffer);
         LEDGER.release(buffer);
         ARENAS.release(buffer);
@@ -194,10 +216,15 @@ public final class TerrainGpuResidencyTracker {
         }
         TerrainDrawTransformStream.clear();
         TerrainArenaDrawDiagnostics.clear();
+        DRAW_COMMANDS.clear();
         LEDGER.clear();
         ARENAS.clear();
         DRAW_STATES.clear();
         return true;
+    }
+
+    private static void invalidateDrawCommand(VertexBuffer buffer) {
+        if (buffer != null) DRAW_COMMANDS.remove(buffer);
     }
 
     public static TerrainGpuResidencyLedger.Snapshot snapshot() {
