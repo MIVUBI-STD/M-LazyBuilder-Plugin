@@ -947,6 +947,11 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 this::openScreenshotQualityChoice
         ));
         screenshot.rows.add(Row.status(
+                "Quick / Clean",
+                "F2 keeps the normal frame. F10 captures one clean frame without HUD, hand, or block outline; both keys remain remappable.",
+                "F2 · F10"
+        ));
+        screenshot.rows.add(Row.status(
                 "Approx. Size",
                 "Estimated file size for the current game resolution. Actual size depends on scene detail.",
                 CaptureManager.estimatedScreenshotSizeLabel()
@@ -993,6 +998,16 @@ public final class LazyBuilderSettingsScreen extends Screen {
                 "Approx. Size",
                 "Rough 10-minute storage estimate. Quality-based recording is variable, so actual size may differ.",
                 CaptureManager.estimatedVideoSizeLabel()
+        ));
+        video.rows.add(Row.status(
+                "Audio",
+                "Current first-party recorder is video-only. Game-only mixed audio is not claimed until a verified output-capture backend exists.",
+                "Video only"
+        ));
+        video.rows.add(Row.status(
+                "Recovery",
+                "Interrupted MKV sessions are checked once on startup and recovered or preserved without overwriting files.",
+                CaptureManager.recoveryStatus()
         ));
         video.rows.add(Row.status(
                 "Output",
