@@ -46,6 +46,7 @@ public final class FirstPartyShaderRuntime {
     private volatile boolean terrainFragmentCompiled;
     private volatile boolean terrainIntegrated;
     private volatile boolean terrainReloadPending;
+    private volatile long terrainGeneration;
     private FirstPartyShaderPipeline pipeline;
     private FirstPartyShaderPostProcessor postProcessor;
     private FirstPartyShaderGBuffer gbuffer;
@@ -180,6 +181,7 @@ public final class FirstPartyShaderRuntime {
                 terrainVertexCompiled = false;
                 terrainFragmentCompiled = false;
                 terrainIntegrated = false;
+                terrainGeneration++;
                 terrainReloadPending = true;
             }
 
@@ -402,6 +404,7 @@ public final class FirstPartyShaderRuntime {
                     terrainVertexCompiled = false;
                     terrainFragmentCompiled = false;
                     terrainIntegrated = false;
+                    terrainGeneration++;
                     terrainReloadPending = true;
                     stage = "compiled";
                 } else {
@@ -473,6 +476,7 @@ public final class FirstPartyShaderRuntime {
         terrainVertexCompiled = false;
         terrainFragmentCompiled = false;
         terrainIntegrated = false;
+        if (restoreMinecraftTerrain) terrainGeneration++;
         terrainReloadPending = restoreMinecraftTerrain;
         stage = "disabled";
         catalogError = "";
@@ -501,17 +505,26 @@ public final class FirstPartyShaderRuntime {
         revision++;
     }
 
-    public synchronized boolean consumeTerrainReloadRequest() {
-        if (!terrainReloadPending) return false;
+    public synchronized long consumeTerrainReloadGeneration() {
+        if (!terrainReloadPending) return -1L;
         terrainReloadPending = false;
-        return true;
+        return terrainGeneration;
+    }
+
+    /** Compatibility helper for focused tests/older callers. */
+    public synchronized boolean consumeTerrainReloadRequest() {
+        return consumeTerrainReloadGeneration() >= 0L;
+    }
+
+    public synchronized long currentTerrainGeneration() {
+        return terrainGeneration;
     }
 
     public synchronized void recordTerrainReloadCompletion(
             boolean success,
             String error
     ) {
-        recordTerrainReloadCompletion(success, error, "");
+        recordTerrainReloadCompletion(terrainGeneration, success, error, "");
     }
 
     public synchronized void recordTerrainReloadCompletion(
@@ -519,9 +532,20 @@ public final class FirstPartyShaderRuntime {
             String error,
             String sourceStatus
     ) {
+        recordTerrainReloadCompletion(terrainGeneration, success, error, sourceStatus);
+    }
+
+    public synchronized void recordTerrainReloadCompletion(
+            long generation,
+            boolean success,
+            String error,
+            String sourceStatus
+    ) {
+        if (generation != terrainGeneration) return;
+
         if (!success) {
             terrainError = error == null || error.isBlank()
-                    ? "Minecraft resource reload failed while applying the terrain shader."
+                    ? "Minecraft shader reload failed while applying the terrain shader."
                     : error;
             lastError = primaryError();
             stage = "terrain-reload-error";
@@ -540,7 +564,7 @@ public final class FirstPartyShaderRuntime {
                 case "compile-fallback", "first-party-compile-fallback" ->
                         "First-party terrain source fell back to Minecraft after compilation failed.";
                 default ->
-                        "Resource reload completed without first-party terrain integration.";
+                        "Minecraft shader reload completed without first-party terrain integration.";
             };
             lastError = primaryError();
             stage = "terrain-reload-incomplete";
@@ -549,6 +573,14 @@ public final class FirstPartyShaderRuntime {
     }
 
     public synchronized TerrainSource terrainSource(boolean vertex) {
+        return terrainSource(vertex, terrainGeneration);
+    }
+
+    public synchronized TerrainSource terrainSource(boolean vertex, long expectedGeneration) {
+        if (expectedGeneration >= 0L && expectedGeneration != terrainGeneration) {
+            return TerrainSource.NONE;
+        }
+
         FirstPartyShaderPipeline current = pipeline;
         if (current == null || activePackId.isBlank()) return TerrainSource.NONE;
 
@@ -566,6 +598,16 @@ public final class FirstPartyShaderRuntime {
     }
 
     public synchronized void recordTerrainCompile(boolean vertex, boolean success, String error) {
+        recordTerrainCompile(terrainGeneration, vertex, success, error);
+    }
+
+    public synchronized void recordTerrainCompile(
+            long generation,
+            boolean vertex,
+            boolean success,
+            String error
+    ) {
+        if (generation != terrainGeneration) return;
         if (success) {
             if (vertex) terrainVertexCompiled = true;
             else terrainFragmentCompiled = true;
@@ -588,6 +630,11 @@ public final class FirstPartyShaderRuntime {
     }
 
     public synchronized void recordTerrainProgramLinked() {
+        recordTerrainProgramLinked(terrainGeneration);
+    }
+
+    public synchronized void recordTerrainProgramLinked(long generation) {
+        if (generation != terrainGeneration) return;
         if (pipeline == null
                 || !terrainVertexCompiled
                 || !terrainFragmentCompiled
@@ -1134,6 +1181,7 @@ public final class FirstPartyShaderRuntime {
         values.put("gbufferStaleFrameRecoveries", gbufferSnapshot.staleFrameRecoveries());
         values.put("compileGeneration", compileRequestGeneration);
         values.put("terrainReloadPending", terrainReloadPending);
+        values.put("terrainGeneration", terrainGeneration);
         values.put("invalidPackCount", catalog.invalidEntries().size());
         values.put("catalogHealthy", catalogError.isBlank());
         return Map.copyOf(values);
@@ -1297,6 +1345,7 @@ public final class FirstPartyShaderRuntime {
         }
         stagedOptionsRequireCompile = false;
         terrainReloadPending = false;
+        terrainGeneration++;
         closePipelineLocked();
 
         activePackId = "";
