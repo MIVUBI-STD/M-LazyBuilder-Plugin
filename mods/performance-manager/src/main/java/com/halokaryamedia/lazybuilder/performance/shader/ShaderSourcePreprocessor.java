@@ -96,6 +96,7 @@ public final class ShaderSourcePreprocessor {
             String value = define.getValue();
             if (key == null || !key.matches("[A-Z_][A-Z0-9_]*")) continue;
             if (value == null || value.isBlank()) continue;
+            if (!containsToken(source, key)) continue;
             preamble.append("#define ")
                     .append(key)
                     .append(' ')
@@ -107,6 +108,22 @@ public final class ShaderSourcePreprocessor {
         return source.substring(0, lineEnd + 1)
                 + preamble
                 + source.substring(lineEnd + 1);
+    }
+
+    private static boolean containsToken(String source, String token) {
+        int index = source.indexOf(token);
+        while (index >= 0) {
+            boolean left = index == 0
+                    || !(Character.isLetterOrDigit(source.charAt(index - 1))
+                    || source.charAt(index - 1) == '_');
+            int end = index + token.length();
+            boolean right = end >= source.length()
+                    || !(Character.isLetterOrDigit(source.charAt(end))
+                    || source.charAt(end) == '_');
+            if (left && right) return true;
+            index = source.indexOf(token, index + 1);
+        }
+        return false;
     }
 
     private static String parent(String path) {
