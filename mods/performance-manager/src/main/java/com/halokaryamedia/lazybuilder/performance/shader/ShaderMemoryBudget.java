@@ -1,5 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance.shader;
 
+import com.halokaryamedia.lazybuilder.performance.rendering.GpuCapabilityProfile;
+
 /**
  * Conservative internal budget for LazyBuilder-owned shader render targets.
  *
@@ -109,7 +111,15 @@ public final class ShaderMemoryBudget {
     }
 
     static long limitBytes() {
-        return MAX_AUXILIARY_BYTES;
+        return adaptiveLimitBytes(GpuCapabilityProfile.current().reportedVramBytes());
+    }
+
+    static long adaptiveLimitBytes(long reportedVramBytes) {
+        if (reportedVramBytes <= 0L) return MAX_AUXILIARY_BYTES;
+
+        long floor = 128L * MIB;
+        long gpuShare = Math.max(floor, reportedVramBytes / 8L);
+        return Math.min(MAX_AUXILIARY_BYTES, gpuShare);
     }
 
     private static long configuredLimitBytes() {
