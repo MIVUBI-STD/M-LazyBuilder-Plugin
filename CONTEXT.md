@@ -111,11 +111,12 @@ Later Local PC handoff: `docs/05-operations/local-pc-validation-plan.md`.
 Runtime/process invariants include:
 
 ```text
-PID + process-start-time identity
-one managed Paper process
+PID + process-start-time identity per workspace
+at most 3 concurrent active registered Paper workspaces (workspace-keyed runtime registry)
+verified detached Paper processes consume concurrency capacity
 safe detached-process validation before termination
 safe Stopping/Detached stop-restart recovery
-one server-start coordination lock
+one global server lifecycle lease across Start/Stop/Restart/recovery
 LazyBuilder-owned process-local TEMP/TMP policy
 ```
 

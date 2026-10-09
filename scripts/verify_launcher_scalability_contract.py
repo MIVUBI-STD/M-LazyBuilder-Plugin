@@ -85,6 +85,12 @@ def main() -> int:
     app_css = read(LAUNCHER / "src/styles/app.css")
 
     expected_servers = contract["maxConcurrentServers"]
+    stable_context = read(ROOT / "CONTEXT.md")
+    expected_context = f"at most {expected_servers} concurrent active registered Paper workspaces"
+    if expected_context not in stable_context:
+        errors.append(f"CONTEXT.md must match source-defined concurrent-server ceiling: {expected_context}")
+    if "one managed Paper process" in stable_context:
+        errors.append("CONTEXT.md contains retired single-server runtime authority")
     actual_servers = rust_int(process_guard, "MAX_CONCURRENT_SERVERS", "usize")
     if actual_servers != expected_servers:
         errors.append(f"concurrent server limit: expected {expected_servers}, found {actual_servers}")
