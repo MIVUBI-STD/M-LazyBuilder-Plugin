@@ -1,14 +1,6 @@
 name: Builder Verify
 
 on:
-  pull_request:
-    branches: [Local, main]
-    paths:
-      - 'mods/builder-utilities/**'
-      - 'gradlew.bat'
-      - 'tooling/windows-toolchain/scripts/wrappers/**'
-      - 'tooling/windows-toolchain/scripts/verify/verify-client-artifacts.ps1'
-      - '.github/workflows/builder-verify.yml'
   workflow_dispatch:
 
 permissions:

@@ -182,18 +182,18 @@ Rules:
 
 The full `Verify` workflow is an **independent final verification layer**, not the inner development loop.
 
-Canonical triggers:
+Canonical trigger for **every verification, preview, benchmark, package-smoke, and runtime-proof workflow**:
 
 ```text
-push to Local       → no automatic full CI
-workflow_dispatch   → full CI on demand
-pull request        → full CI except supporting evidence/history-only changes
-push to main        → full CI except supporting evidence/history-only changes
+workflow_dispatch → explicit on-demand verification only
+push / pull_request / schedule / workflow_run / release / tag → no automatic verification
 ```
 
-Path scoping may exclude only supporting evidence/history documents that cannot affect source, runtime, build, packaging, canonical policy, or Skills. Source, tooling, canonical docs, versioning, workflows, and Skills must not be broadly excluded from final verification.
+Keep existing source tests, dependency checks, security checks, package evidence and runtime-proof jobs; changing triggers must not reduce coverage. Run focused source checks first, then use integrated exact-commit Verify only if its additional evidence is required. Do not create temporary workflows or proof-only commits as workarounds.
 
-Dedicated Launcher/Paper/visual workflows may exist for manual or pull-request evidence, but they must not become parallel repository-readiness authorities.
+GitHub's default branch must register workflow definitions for manual *Run workflow* dispatch on `Local`. If it does not, report a blocked dispatch prerequisite; do not silently promote `Local`, copy workflows to `main`, or change repository settings without explicit permission.
+
+Dedicated Launcher/Paper/visual workflows remain optional manual evidence and must not become parallel repository-readiness authorities.
 
 CI must build from repository source/lockfiles and must not trust developer-machine outputs.
 

@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "purpose": "Tool-independent action preflight. User scope and GitHub authorization are always session-specific.",
+  "modes": {
+    "INSPECT": [
+      "read"
+    ],
+    "PLAN": [
+      "read",
+      "plan"
+    ],
+    "DIAGNOSE": [
+      "read",
+      "plan",
+      "diagnose"
+    ],
+    "DEVELOP": [
+      "read",
+      "plan",
+      "diagnose",
+      "write",
+      "verify"
+    ],
+    "REPAIR": [
+      "read",
+      "plan",
+      "diagnose",
+      "write",
+      "verify"
+    ],
+    "VALIDATE": [
+      "read",
+      "verify",
+      "dispatch_ci"
+    ],
+    "RELEASE": [
+      "read",
+      "verify",
+      "dispatch_ci",
+      "release"
+    ]
+  },
+  "required_gates": {
+    "write": [
+      "scope_approved",
+      "owner_matches",
+      "branch_local"
+    ],
+    "dispatch_ci": [
+      "ci_approved",
+      "branch_local"
+    ],
+    "release": [
+      "release_approved"
+    ]
+  },
+  "invariant": {
+    "no_implicit_lane_switch": true,
+    "manual_ci_only": true,
+    "read_only_modes": [
+      "INSPECT",
+      "PLAN",
+      "DIAGNOSE"
+    ]
+  }
+}

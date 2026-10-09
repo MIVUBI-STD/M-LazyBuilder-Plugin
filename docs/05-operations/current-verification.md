@@ -45,9 +45,9 @@ Dedicated workflows
 → not parallel readiness authorities
 ```
 
-Normal pushes to `Local` intentionally do not run full CI. Full `Verify` runs on explicit `workflow_dispatch`, pull requests to `Local`/`main`, and pushes to `main`, except when the change set contains only supporting evidence/history documents explicitly excluded by the workflow's narrow `paths-ignore` list.
+All normal verification, source/build proof, preview and benchmark workflows are **manual-only** via `workflow_dispatch`. `push`, `pull_request`, `schedule`, `workflow_run`, release and tag events do not trigger these checks. Focused runs are optional; integrated exact-SHA `Verify` remains the single repository/package readiness gate when explicitly requested.
 
-Evidence-only scoping never applies to source, Skills, canonical owner docs, current remediation/verification authority, toolchain/version policy, scripts, workflows, packaging, or runtime configuration. `workflow_dispatch` always remains available for a full exact-revision checkpoint regardless of changed paths.
+GitHub must first register workflow definitions on its default branch before manual *Run workflow* dispatch can operate on `Local`. Workflow source on `Local` alone does not satisfy this dependency. Changes to default branch, branch protection or promotion require separate authorization. Missing verification for a new SHA is **not** PASS and older run results cannot be reused as proof for the changed SHA.
 
 ## Required `Verify` gate
 
@@ -62,7 +62,7 @@ launcher-check       Svelte typecheck/build + Rust check/test on Windows
 tauri-desktop        package exact tested core/client artifacts into Windows NSIS build
 ```
 
-A later Local PC candidate must use an artifact produced from a successful manually/automatically triggered `Verify` run for the exact revision being tested. An evidence-only PR that legitimately skipped `Verify` is not a release/readiness candidate until an exact-revision full `Verify` is run.
+A later Local PC candidate must use an artifact produced from a successful manually triggered `Verify` run for the exact revision being tested. An evidence-only PR that legitimately skipped `Verify` is not a release/readiness candidate until an exact-revision full `Verify` is run.
 
 ## Client-suite state
 
@@ -96,10 +96,10 @@ Launcher Verify
 → manual focused Launcher source/contract evidence
 
 Launcher UI Preview
-→ manual or pull-request visual evidence
+→ manual visual evidence
 
 Minecraft UI Preview
-→ manual or pull-request real-renderer visual evidence
+→ manual real-renderer visual evidence
 
 Builder Benchmark
 → manual synthetic dispatcher throughput/yield baseline

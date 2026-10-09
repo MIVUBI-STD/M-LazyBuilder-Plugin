@@ -153,6 +153,32 @@ lazybuilder-plugin-management
 lazybuilder-world-management
 lazybuilder-ui
 lazybuilder-protocol
+lazybuilder-paper-plugin-development
+lazybuilder-fabric-mod-development
 ```
 
 The canonical jobdesk map is [`04-system/skill-routing.md`](04-system/skill-routing.md). Do not add a Skill for an implementation language/tool alone, or for one-off planning/ambiguity.
+
+## Knowledge identity, graph, and retrieval
+
+Stable document identity is its canonical repository-relative path. Keep one owner for each fact; do not mirror these documents into a second database, cache, index authority, or invented knowledge graph. Read only the path needed for the decision.
+
+```text
+Task → AGENTS.md (root router) → docs/README.md (catalog)
+     → docs/04-system/skill-routing.md (semantic owner)
+     → relevant domain contract and current implementation (bounded retrieval)
+     → affected producer/consumer → scoped decision + proof
+
+Launcher/Desktop source → apps/launcher/
+Paper code → plugins/
+Fabric code → mods/
+Neutral Paper↔Fabric producer/consumer DTOs → shared/protocol/
+```
+
+- REQUIRED: selected canonical owner, its current source and only the directly relevant specialist procedure.
+- CONDITIONAL: a directly affected producer/consumer contract, history, native proof, or supporting evidence required to separate competing explanations.
+- EXCLUDED: unrelated domains, retired aliases, broad audit archives, and whole-repository scanning used solely for reassurance.
+- CANONICAL: current source/domain meaning; REFERENCE: outside evidence; HISTORICAL: superseded design rationale; DERIVED: search result, summary, graph edge or generated proof. None of the last three overrides verified canonical source.
+- Reuse loaded context only while the branch/ref and relevant owner revision remain valid. Change canonical definitions and their directly affected consumers together; do not duplicate derived state.
+
+See `04-system/module-boundaries.md` for dependency direction and `04-system/development-discipline.md` for evidence and impact-scoped verification. The graph above is a description of existing supported relationships, not a new executable graph engine.

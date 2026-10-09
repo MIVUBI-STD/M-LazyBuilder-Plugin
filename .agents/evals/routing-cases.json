@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "positive-desktop",
+      "kind": "positive",
+      "primary": "lazybuilder-desktop-runtime",
+      "cue": "workspace"
+    },
+    {
+      "id": "positive-plugin",
+      "kind": "positive",
+      "primary": "lazybuilder-plugin-management",
+      "cue": "third-party plugin"
+    },
+    {
+      "id": "positive-world",
+      "kind": "positive",
+      "primary": "lazybuilder-world-management",
+      "cue": "world load"
+    },
+    {
+      "id": "positive-ui",
+      "kind": "positive",
+      "primary": "lazybuilder-ui",
+      "cue": "focus"
+    },
+    {
+      "id": "positive-protocol",
+      "kind": "positive",
+      "primary": "lazybuilder-protocol",
+      "cue": "payload"
+    },
+    {
+      "id": "positive-paper",
+      "kind": "positive",
+      "primary": "lazybuilder-paper-plugin-development",
+      "cue": "listener"
+    },
+    {
+      "id": "positive-fabric",
+      "kind": "positive",
+      "primary": "lazybuilder-fabric-mod-development",
+      "cue": "initializer"
+    },
+    {
+      "id": "negative-third-party",
+      "kind": "negative",
+      "primary": "lazybuilder-plugin-management",
+      "cue": "third-party plugin",
+      "forbidden": "lazybuilder-paper-plugin-development",
+      "reject_cue": "third-party plugin lifecycle"
+    },
+    {
+      "id": "ambiguous-http",
+      "kind": "ambiguous",
+      "primary": "lazybuilder-desktop-runtime",
+      "cue": "desktop HTTP",
+      "forbidden": "lazybuilder-protocol",
+      "reject_cue": "desktop HTTP"
+    },
+    {
+      "id": "cross-world-paper",
+      "kind": "cross_domain",
+      "primary": "lazybuilder-world-management",
+      "cue": "world load",
+      "handoff_to": "lazybuilder-paper-plugin-development"
+    },
+    {
+      "id": "cross-ui-fabric",
+      "kind": "cross_domain",
+      "primary": "lazybuilder-ui",
+      "cue": "layout",
+      "handoff_to": "lazybuilder-fabric-mod-development"
+    },
+    {
+      "id": "cross-protocol-fabric",
+      "kind": "cross_domain",
+      "primary": "lazybuilder-protocol",
+      "cue": "payload",
+      "handoff_to": "lazybuilder-fabric-mod-development"
+    }
+  ]
+}

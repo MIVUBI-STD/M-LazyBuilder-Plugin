@@ -11,6 +11,8 @@ from pathlib import Path
 import re
 import sys
 
+from verify_agent_governance import verify_agent_governance
+
 ROOT = Path(__file__).resolve().parents[1]
 
 REQUIRED_FILES = [
@@ -55,6 +57,8 @@ EXPECTED_SKILLS = {
     "lazybuilder-world-management",
     "lazybuilder-ui",
     "lazybuilder-protocol",
+    "lazybuilder-paper-plugin-development",
+    "lazybuilder-fabric-mod-development",
 }
 
 FORBIDDEN_STANDALONE_SKILLS = {
@@ -79,6 +83,7 @@ REQUIRED_AGENT_PHRASES = [
     "Failure classification",
     "Evidence Opt-In Rule",
     "Historical/supporting documents are **not default context**",
+    "Work-Lane Permission Preflight",
 ]
 
 REQUIRED_GITHUB_RULE_PHRASES = [
@@ -87,6 +92,7 @@ REQUIRED_GITHUB_RULE_PHRASES = [
     "persist-credentials: false",
     "timeout-minutes",
     "contents: read",
+    "manual-only",
 ]
 
 REQUIRED_DOC_ENTRY_PHRASES = [
@@ -150,28 +156,6 @@ FORBIDDEN_DEV_VERIFY_MARKERS = [
     "verify-all",
 ]
 
-REQUIRED_VERIFY_IGNORE_PATTERNS = [
-    "docs/04-system/*-audit.md",
-    "docs/04-system/*-lock.md",
-    "docs/04-system/*-status.md",
-    "docs/05-operations/*-testing-notes.md",
-    "docs/05-operations/*-handoff.md",
-    "docs/05-operations/remote-github-complete.md",
-]
-
-FORBIDDEN_BROAD_VERIFY_IGNORES = [
-    "apps/**",
-    "plugins/**",
-    "mods/**",
-    "shared/**",
-    "tooling/**",
-    "scripts/**",
-    ".agents/**",
-    "docs/**",
-    "*.yml",
-    "*.yaml",
-]
-
 ACTION_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -203,6 +187,22 @@ def skill_name(skill_file: Path) -> str | None:
 def verify_workflow_security(workflow: Path, errors: list[str]) -> None:
     text = workflow.read_text(encoding="utf-8")
     relative = workflow.relative_to(ROOT)
+
+    header = re.search(r"(?m)^on:\s*$", text)
+    if not header:
+        fail(errors, f"workflow must declare block-form manual trigger: {relative}")
+    else:
+        block = text[header.end():].splitlines()
+        events = []
+        for line in block:
+            if line and not line[0].isspace() and not line.lstrip().startswith("#"):
+                break
+            match = re.match(r"^  ([a-z_][a-z_0-9-]*):", line)
+            if match:
+                events.append(match.group(1))
+        if events != ["workflow_dispatch"]:
+            fail(errors, f"workflow must be workflow_dispatch-only: {relative}: {events}")
+
 
     if not re.search(r"(?m)^permissions:\s*\n\s{2}contents:\s*read\s*$", text):
         fail(errors, f"workflow must declare least-privilege contents: read: {relative}")
@@ -493,18 +493,11 @@ def main() -> int:
     if "not Minecraft runtime proof" not in builder_benchmark_workflow:
         fail(errors, "Builder Benchmark workflow must preserve the synthetic-proof boundary")
 
-    if "evidence-only" not in verification_doc.lower() or "workflow_dispatch" not in verification_doc:
+    if "manual-only" not in verification_doc.lower() or "workflow_dispatch" not in verification_doc:
         fail(errors, "current verification authority must document evidence-only scoping and manual full Verify")
 
-    for pattern in REQUIRED_VERIFY_IGNORE_PATTERNS:
-        if verify_workflow.count(pattern) < 2:
-            fail(errors, f"Verify workflow must scope evidence-only path ignore for push and PR: {pattern}")
-
-    for pattern in FORBIDDEN_BROAD_VERIFY_IGNORES:
-        quoted_single = f"'{pattern}'"
-        quoted_double = f'"{pattern}"'
-        if quoted_single in verify_workflow or quoted_double in verify_workflow:
-            fail(errors, f"Verify workflow must not broadly ignore source/canonical paths: {pattern}")
+    if "paths-ignore:" in verify_workflow:
+        fail(errors, "manual Verify must not retain dead automatic-event path filters")
 
     if "verify-fabric.ps1 -RepoRoot" not in verify_workflow:
         fail(errors, "Verify workflow must reuse the canonical Fabric verification lane")
@@ -757,6 +750,8 @@ def main() -> int:
     if "Do not create additional Skills merely for Java, Rust, TypeScript, Maven, Gradle, Tauri, Svelte, testing, CI" not in routing:
         fail(errors, "skill-routing.md must preserve the no-redundant-mechanic-skill rule")
 
+    verify_agent_governance(ROOT, errors)
+
     if errors:
         print("Repository contract verification FAILED:", file=sys.stderr)
         for error in errors:
@@ -767,8 +762,9 @@ def main() -> int:
     print("Canonical skills:", ", ".join(sorted(EXPECTED_SKILLS)))
     print("Supporting evidence context: opt-in only")
     print("Targeted verify scopes: paper, fabric, launcher")
-    print("GitHub Actions: full-SHA pins + read-only token + bounded job timeouts")
-    print("Full Verify scoping: evidence-only exclusions, source/canonical paths protected")
+    print("GitHub Actions: workflow_dispatch-only + full-SHA pins + least privilege")
+    print("Agent routing/permission fixtures: static contract evaluation")
+    print("Full Verify: manually dispatched, no automatic path scoping")
     print("Developer failures: operation + exit code + evidence + recovery")
     print("Developer command surface: DEV.cmd -> tooling/windows-toolchain/dev.ps1")
     print("Local distribution owner: tooling/windows-toolchain/scripts/distribution/package-local.ps1")

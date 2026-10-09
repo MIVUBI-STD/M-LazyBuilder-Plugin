@@ -96,7 +96,7 @@ Do not create checkpoint/retry commits or temporary files solely to transfer wor
 - Workflow token permissions stay explicit and least-privilege. Current verification/preview workflows require only `contents: read` unless a new capability proves otherwise.
 - Read-only checkouts use `persist-credentials: false`; workflow steps must not inherit repository write credentials unnecessarily.
 - Every job has an explicit `timeout-minutes` appropriate to its proof boundary; do not rely on GitHub's multi-hour default.
-- Normal `Local` pushes do not trigger full or visual CI merely for reassurance. Manual/review checkpoints own those costs.
+- All verification workflows are manual-only (`workflow_dispatch`): no `push`, `pull_request`, `schedule`, `workflow_run`, release or tag triggers. The user chooses when to run a checkpoint.
 - Caches accelerate deterministic builds; they are never authority for source, artifacts, or verification state.
 - Adding OIDC, artifact attestations, signing, deployment credentials, or write permissions belongs to an explicit release/deployment requirement, not ordinary verification hardening.
 
@@ -115,13 +115,14 @@ server lifecycle       -> LIVE_SERVER smoke/runtime test
 Repository-wide final verification is intentionally outside the inner `Local` commit loop:
 
 ```text
-ordinary push to Local -> no automatic full Verify
-workflow_dispatch      -> integrated final Verify on demand
-pull request checkpoint-> integrated Verify
-push to main           -> integrated Verify
+ordinary push to Local -> no automatic verification workflow
+pull request / push to main -> no automatic verification workflow
+workflow_dispatch      -> integrated final Verify on explicit request
 ```
 
 The durable developer/CI/promotion contract is `docs/04-system/development-operations.md`.
+
+GitHub registers `workflow_dispatch` from the repository's default branch. A workflow present only on `Local` does not make the manual *Run workflow* action available. If the default branch lacks the workflow definitions, report this prerequisite and seek explicit approval before any branch/default-branch administration or promotion. Release/update-channel workflows also require separate user authorization.
 
 A green unrelated workflow is not proof. A skipped required check is not PASS. Focused Launcher, Paper, or visual workflows are supplementary evidence and do not become parallel repository-readiness authorities.
 

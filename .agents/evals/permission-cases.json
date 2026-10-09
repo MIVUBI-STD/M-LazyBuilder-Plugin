@@ -1,0 +1,211 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "inspect-read",
+      "mode": "INSPECT",
+      "action": "read",
+      "gates": {},
+      "allow": true
+    },
+    {
+      "id": "inspect-deny-write",
+      "mode": "INSPECT",
+      "action": "write",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "plan-deny-ci",
+      "mode": "PLAN",
+      "action": "dispatch_ci",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "diagnose-deny-write",
+      "mode": "DIAGNOSE",
+      "action": "write",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "develop-owner-write",
+      "mode": "DEVELOP",
+      "action": "write",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": true
+    },
+    {
+      "id": "develop-wrong-owner",
+      "mode": "DEVELOP",
+      "action": "write",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": false,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "develop-no-scope",
+      "mode": "DEVELOP",
+      "action": "write",
+      "gates": {
+        "scope_approved": false,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "develop-no-local",
+      "mode": "DEVELOP",
+      "action": "write",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": false,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "repair-owner-write",
+      "mode": "REPAIR",
+      "action": "write",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": true
+    },
+    {
+      "id": "validate-deny-write",
+      "mode": "VALIDATE",
+      "action": "write",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "validate-ci-without-user",
+      "mode": "VALIDATE",
+      "action": "dispatch_ci",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": false,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "validate-ci-requested",
+      "mode": "VALIDATE",
+      "action": "dispatch_ci",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": true
+    },
+    {
+      "id": "release-not-authorized",
+      "mode": "RELEASE",
+      "action": "release",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": false
+      },
+      "allow": false
+    },
+    {
+      "id": "release-explicit",
+      "mode": "RELEASE",
+      "action": "release",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": true
+    },
+    {
+      "id": "implicit-lane-switch",
+      "mode": "REPAIR",
+      "action": "write",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "mode_changed": true,
+      "mode_change_approved": false,
+      "allow": false
+    },
+    {
+      "id": "authorized-lane-switch",
+      "mode": "REPAIR",
+      "action": "write",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "mode_changed": true,
+      "mode_change_approved": true,
+      "allow": true
+    }
+  ]
+}
