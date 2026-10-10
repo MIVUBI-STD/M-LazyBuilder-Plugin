@@ -199,9 +199,17 @@ public final class WorldHeavyOperationOrchestrator {
             String artifactName, String destinationFolder, String displayName,
             java.util.UUID requestId, Progress progress
     ) throws Exception {
+        return importWorld(artifactName, destinationFolder, displayName, requestId, null, progress);
+    }
+
+    /** Carry the verified Desktop archive identity through the existing import service. */
+    public WorldRecord importWorld(
+            String artifactName, String destinationFolder, String displayName,
+            java.util.UUID requestId, String artifactSha256, Progress progress
+    ) throws Exception {
         Progress reporter = progressOrNone(progress);
         reporter.update(10, "Preparing import.");
-        WorldImportService.ImportTask task = importService.prepare(artifactName, destinationFolder, displayName, requestId);
+        WorldImportService.ImportTask task = importService.prepare(artifactName, destinationFolder, displayName, requestId, artifactSha256);
         Exception failure = null;
         WorldRecord imported = null;
         try {

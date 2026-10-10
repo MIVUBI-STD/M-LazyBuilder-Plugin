@@ -269,7 +269,7 @@ public final class TransferSessionService {
     }
 
     /** Fail before parsing an accepted upload if its durable byte identity changed. */
-    public void verifyClaimedImport(UUID ownerId, String fileName, UUID requestId) throws IOException {
+    public String verifyClaimedImport(UUID ownerId, String fileName, UUID requestId) throws IOException {
         Objects.requireNonNull(ownerId, "ownerId");
         Objects.requireNonNull(requestId, "requestId");
         String safeName = validateImportFileName(fileName);
@@ -283,6 +283,8 @@ public final class TransferSessionService {
             if (!sha256(requireRegularImportArtifact(safeName)).equals(claim.sha256())) {
                 throw new IllegalStateException("Import artifact bytes changed after request admission");
             }
+            // Identity of the uploaded archive, not of extracted/converted world contents.
+            return claim.sha256();
         }
     }
 

@@ -304,11 +304,11 @@ class TransferSessionServiceTest {
         initial.acceptUploadChunk(owner, upload.sessionId(), 0, original);
         initial.finishUpload(owner, upload.sessionId());
         assertTrue(initial.claimCompletedUploadForImport(owner, "pinned.zip", requestId, "Pin", "Pinned"));
-        initial.verifyClaimedImport(owner, "pinned.zip", requestId);
+        assertEquals(sha256(original), initial.verifyClaimedImport(owner, "pinned.zip", requestId));
 
         TransferSessionService recovered = new TransferSessionService(imports, exports, transfer, policy);
         assertTrue(recovered.claimCompletedUploadForImport(owner, "pinned.zip", requestId, "Pin", "Pinned"));
-        recovered.verifyClaimedImport(owner, "pinned.zip", requestId);
+        assertEquals(sha256(original), recovered.verifyClaimedImport(owner, "pinned.zip", requestId));
         Files.write(imports.resolve("pinned.zip"), new byte[]{4, 3, 2, 1});
         assertThrows(IllegalStateException.class,
                 () -> recovered.verifyClaimedImport(owner, "pinned.zip", requestId));

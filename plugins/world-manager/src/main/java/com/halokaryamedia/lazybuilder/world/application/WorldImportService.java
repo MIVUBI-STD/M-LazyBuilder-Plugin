@@ -100,6 +100,16 @@ public final class WorldImportService {
     }
 
     public ImportTask prepare(String artifactName, String destinationFolder, String displayName, UUID requestId) {
+        return prepare(artifactName, destinationFolder, displayName, requestId, null);
+    }
+
+    /** The digest is verified by the existing Desktop transfer owner before this call. */
+    public ImportTask prepare(
+            String artifactName, String destinationFolder, String displayName, UUID requestId, String artifactSha256
+    ) {
+        if (requestId == null && artifactSha256 != null) {
+            throw new IllegalArgumentException("Import source checksum requires an authoritative request ID");
+        }
         UUID operationId = UUID.randomUUID();
         reserveArtifact(artifactName, operationId);
         try {
@@ -120,7 +130,8 @@ public final class WorldImportService {
             WorldRecord destination = new WorldRecord(
                     WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
                     WorldLifecycle.ACTIVE, WorldRecord.DEFAULT_GAME_MODE,
-                    requestId == null ? null : new WorldRecord.ImportProvenance(requestId, artifactName, displayName)
+                    requestId == null ? null : new WorldRecord.ImportProvenance(
+                            requestId, artifactName, displayName, artifactSha256)
             );
             WorldRegistry.FolderReservation destinationReservation =
                     registry.reserveFolder(destination.folderName());

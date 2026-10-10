@@ -53,12 +53,16 @@ class WorldImportServiceTest {
                 new ConversionJobCoordinator());
         UUID requestId = UUID.randomUUID();
         WorldImportService.ImportTask task = service.prepare(
-                "Owned.zip", "ImportedOwned", "Imported Owned", requestId);
+                "Owned.zip", "ImportedOwned", "Imported Owned", requestId, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
         WorldRecord world = service.executeFilePhase(task);
         service.finish(task);
         assertEquals(world.id(), registry.findByImportRequestId(requestId).orElseThrow().id());
         assertEquals(requestId, persistence.saved.getFirst().importProvenance().requestId());
         assertEquals("Owned.zip", world.importProvenance().artifactName());
+        assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", world.importProvenance().artifactSha256());
+        assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", persistence.saved.getFirst().importProvenance().artifactSha256());
+        assertThrows(IllegalArgumentException.class, () ->
+                service.prepare("Owned.zip", "NoRequest", "No Request", null, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         assertThrows(IllegalArgumentException.class, () ->
                 registry.register(new WorldRecord(WorldId.create(), "Another", "Another", WorldKind.IMPORTED,
                         WorldLifecycle.ACTIVE, WorldRecord.DEFAULT_GAME_MODE, world.importProvenance())));

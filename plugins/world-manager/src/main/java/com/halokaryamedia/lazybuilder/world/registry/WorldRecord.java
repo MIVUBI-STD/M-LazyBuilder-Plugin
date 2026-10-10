@@ -72,7 +72,14 @@ public record WorldRecord(
     }
 
     /** Immutable request-to-world evidence committed together with the world registry. */
-    public record ImportProvenance(UUID requestId, String artifactName, String requestedDisplayName) {
+    public record ImportProvenance(
+            UUID requestId, String artifactName, String requestedDisplayName, String artifactSha256
+    ) {
+        /** Older registry entries remain valid without inventing their source digest. */
+        public ImportProvenance(UUID requestId, String artifactName, String requestedDisplayName) {
+            this(requestId, artifactName, requestedDisplayName, null);
+        }
+
         public ImportProvenance {
             Objects.requireNonNull(requestId, "requestId");
             Objects.requireNonNull(artifactName, "artifactName");
@@ -83,6 +90,9 @@ public record WorldRecord(
                 throw new IllegalArgumentException("Invalid import provenance artifact name");
             }
             requestedDisplayName = validateDisplayName(requestedDisplayName);
+            if (artifactSha256 != null && !artifactSha256.matches("[0-9a-f]{64}")) {
+                throw new IllegalArgumentException("Invalid import provenance SHA-256");
+            }
         }
     }
 

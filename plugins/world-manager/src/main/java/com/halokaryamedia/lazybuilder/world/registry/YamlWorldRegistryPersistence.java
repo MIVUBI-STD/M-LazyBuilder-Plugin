@@ -81,12 +81,15 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
             try {
                 boolean hasImportIdentity = section.contains("import-request-id")
                         || section.contains("import-artifact")
-                        || section.contains("import-display-name");
+                        || section.contains("import-display-name")
+                        || section.contains("import-artifact-sha256");
                 WorldRecord.ImportProvenance importProvenance = hasImportIdentity
                         ? new WorldRecord.ImportProvenance(
                                 java.util.UUID.fromString(requiredString(section, "import-request-id")),
                                 requiredString(section, "import-artifact"),
-                                requiredString(section, "import-display-name"))
+                                requiredString(section, "import-display-name"),
+                                section.contains("import-artifact-sha256")
+                                        ? requiredString(section, "import-artifact-sha256") : null)
                         : null;
                 WorldRecord record = new WorldRecord(
                         WorldId.parse(idText),
@@ -145,6 +148,9 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
                 yaml.set(base + ".import-request-id", world.importProvenance().requestId().toString());
                 yaml.set(base + ".import-artifact", world.importProvenance().artifactName());
                 yaml.set(base + ".import-display-name", world.importProvenance().requestedDisplayName());
+                if (world.importProvenance().artifactSha256() != null) {
+                    yaml.set(base + ".import-artifact-sha256", world.importProvenance().artifactSha256());
+                }
             }
         }
 

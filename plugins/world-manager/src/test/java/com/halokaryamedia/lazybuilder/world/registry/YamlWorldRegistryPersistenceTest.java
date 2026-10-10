@@ -59,14 +59,46 @@ class YamlWorldRegistryPersistenceTest {
         WorldRecord imported = new WorldRecord(
                 WorldId.create(), "ImportedWorld", "Requested Display", WorldKind.IMPORTED,
                 WorldLifecycle.ACTIVE, WorldRecord.DEFAULT_GAME_MODE,
-                new WorldRecord.ImportProvenance(requestId, "upload.mcworld", "Requested Display"));
+                new WorldRecord.ImportProvenance(requestId, "upload.mcworld", "Requested Display", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         persistence.save(List.of(imported));
         WorldRecord recovered = persistence.load().getFirst();
         assertEquals(imported, recovered);
         assertEquals(requestId, recovered.importProvenance().requestId());
+        assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", recovered.importProvenance().artifactSha256());
+        assertTrue(Files.readString(file).contains("import-artifact-sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
         assertEquals(imported.importProvenance(), recovered.withDisplayName("Renamed World").importProvenance());
         assertEquals(imported.importProvenance(), recovered.withLifecycle(WorldLifecycle.ARCHIVED).importProvenance());
         assertEquals(imported.importProvenance(), recovered.withDefaultGameMode("SURVIVAL").importProvenance());
+    }
+
+    @Test
+    void legacyImportProvenanceWithoutDigestRemainsReadable() throws Exception {
+        Path file = tempDir.resolve("legacy-import-registry.yml");
+        var persistence = new YamlWorldRegistryPersistence(file);
+        var legacy = new WorldRecord(
+                WorldId.create(), "LegacyImported", "Legacy Imported", WorldKind.IMPORTED,
+                WorldLifecycle.ACTIVE, WorldRecord.DEFAULT_GAME_MODE,
+                new WorldRecord.ImportProvenance(java.util.UUID.randomUUID(), "legacy.zip", "Legacy Imported"));
+        persistence.save(List.of(legacy));
+        assertFalse(Files.readString(file).contains("import-artifact-sha256"));
+        WorldRecord recovered = persistence.load().getFirst();
+        assertEquals(legacy, recovered);
+        assertEquals(null, recovered.importProvenance().artifactSha256());
+    }
+
+    @Test
+    void malformedImportDigestFailsClosed() throws Exception {
+        Path file = tempDir.resolve("invalid-digest-import-registry.yml");
+        var persistence = new YamlWorldRegistryPersistence(file);
+        var record = new WorldRecord(
+                WorldId.create(), "Imported", "Imported", WorldKind.IMPORTED,
+                WorldLifecycle.ACTIVE, WorldRecord.DEFAULT_GAME_MODE,
+                new WorldRecord.ImportProvenance(java.util.UUID.randomUUID(), "archive.zip", "Imported"));
+        persistence.save(List.of(record));
+        Files.writeString(file, Files.readString(file).replace(
+                "import-artifact: archive.zip",
+                "import-artifact: archive.zip\n    import-artifact-sha256: invalid"));
+        assertThrows(IOException.class, persistence::load);
     }
 
     @Test
