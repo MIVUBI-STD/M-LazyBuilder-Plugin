@@ -174,8 +174,11 @@ public final class WorldImportService {
 
             try {
                 files.markPublishedWorldCommitted(task.destination.folderName());
-            } catch (IOException cleanupFailure) {
-                task.publicationMarkerCleanupFailure = cleanupFailure;
+            } catch (IOException | RuntimeException cleanupFailure) {
+                // The registry has already committed. Even an unchecked cleanup
+                // failure cannot turn this successful import into a failed task.
+                task.publicationMarkerCleanupFailure = cleanupFailure instanceof IOException io
+                        ? io : new IOException("Could not finalize committed world publication marker", cleanupFailure);
             }
 
             pendingCommittedArtifactCleanup.add(task.artifactName);
@@ -220,7 +223,8 @@ public final class WorldImportService {
                     try {
                         files.markPublishedWorldCommitted(task.destination.folderName());
                         task.publicationMarkerCleanupFailure = null;
-                    } catch (IOException ignored) {
+                    } catch (IOException | RuntimeException ignored) {
+                        // A retry fault cannot invalidate the durable registry commit.
                         // Startup publication reconciliation uses persisted registry truth.
                     }
                 }

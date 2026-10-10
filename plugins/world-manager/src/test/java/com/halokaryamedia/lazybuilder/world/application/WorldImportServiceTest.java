@@ -453,6 +453,35 @@ class WorldImportServiceTest {
     }
 
     @Test
+    void uncheckedPublicationMarkerFailuresDoNotDowngradeCommittedImport() throws Exception {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        FakeFiles files = new FakeFiles(tempDir);
+        files.publicationMarkerRuntimeFailuresRemaining = 2;
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        FakeStore runtimeStore = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> { throw new AssertionError("native import must not convert"); };
+        WorldImportService service = new WorldImportService(
+                registry, persistence, files, imports,
+                runtimeStore, updates(runtimeStore, converter), converter, new ConversionJobCoordinator());
+
+        WorldImportService.ImportTask task = service.prepare(
+                "Built.zip", "CommittedWorld", "Committed World", UUID.randomUUID());
+        WorldRecord committed = service.executeFilePhase(task);
+        assertTrue(task.completed());
+        assertTrue(task.publicationMarkerCleanupFailure() != null,
+                "an unchecked post-commit failure should remain visible as a warning");
+
+        // The second injected exception occurs during the finish retry.
+        service.finish(task);
+        assertTrue(task.publicationMarkerCleanupFailure() != null);
+        assertEquals(committed, registry.find(committed.id()).orElseThrow());
+        assertEquals(1, persistence.saved.size());
+        assertTrue(Files.exists(tempDir.resolve("CommittedWorld")));
+        assertEquals(List.of("Built.zip"), imports.deletedArtifacts);
+    }
+
+    @Test
     void persistenceFailureRollsBackPublishedWorldAndKeepsArtifactForRetry() throws Exception {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
@@ -511,7 +540,14 @@ class WorldImportServiceTest {
         private final Path root;
         private final List<Path> reserved = new ArrayList<>();
         boolean published;
+        int publicationMarkerRuntimeFailuresRemaining;
         FakeFiles(Path root) { this.root = root; }
+        @Override public void markPublishedWorldCommitted(String destinationFolder) {
+            if (publicationMarkerRuntimeFailuresRemaining > 0) {
+                publicationMarkerRuntimeFailuresRemaining--;
+                throw new IllegalStateException("injected publication marker cleanup failure");
+            }
+        }
         @Override public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) { throw new UnsupportedOperationException(); }
         @Override public Path stageDelete(WorldRecord world, UUID operationId) { throw new UnsupportedOperationException(); }
         @Override public Path reserveWorkspace(UUID operationId) {
