@@ -11,19 +11,19 @@ Locked v1 boundaries:
 - Minecraft: Java Edition 1.21.4
 - Server platform: Paper
 - Java runtime: managed Temurin Java 21
-- One active workspace per LazyBuilder application instance
+- One selected workspace at a time, with up to 3 independent running Paper server workspaces per Launcher instance; each runtime is keyed by immutable workspace identity
 - Core modules: World-Manager + Utilities-Manager bundled from the same source/release as the desktop app
 - Application updater: manual NSIS upgrade for v1; built-in auto updater is deferred
 
 ## Current deployment phase
 
-The current `Local` deployment phase is **installed Local PC validation**.
+The current `Local` phase is **source remediation and synchronization**, not installed Local PC acceptance. The native acceptance plan only reopens after its exact candidate passes the source/remote gates and has no unresolved P0/P1 source contradiction.
 
 Canonical execution plan:
 
 [`local-pc-validation-plan.md`](local-pc-validation-plan.md)
 
-Remote CI proves that the candidate can be built, packaged, smoke-installed, and that tested Paper lifecycle paths run successfully. It does not replace the final target-PC acceptance flow.
+A completed successful integrated `Verify` run for the exact candidate can prove the exercised build, package, installer-smoke and Paper lifecycle paths. No workflow result for a previous SHA proves the current candidate. CI does not replace target-PC acceptance.
 
 The required Local PC order begins at the installer and proceeds through the full product:
 
@@ -34,7 +34,7 @@ Installer
 → Plugin Manager
 → World Manager / Utilities Manager
 → Client Setup / Modrinth
-→ Map Manager / Utility Manager
+→ Map Manager / Utility Manager / Performance Manager
 → interoperability/restart/update
 → large-world/storage/conversion
 ```
@@ -218,9 +218,7 @@ The existing independently launched server must be stopped before adoption.
 
 ## Workspace switching
 
-Create/Open/Adopt/Switch is blocked unless the currently active managed server is `Offline` or `Crashed`.
-
-v1 intentionally does not manage multiple active Paper processes from one app instance.
+Workspace selection may change while another workspace's Paper process remains active. Live controllers are preserved per immutable workspace ID, not rebound to the selected UI. At most 3 Paper workspaces may run concurrently, and a fourth start fails closed. Lifecycle changes and selection share one serialization lease. Duplicate/remove/delete/relocate remain blocked for a workspace with active runtime ownership; adoption of an independently running Paper server is also blocked.
 
 ## Runtime update policy
 
@@ -255,11 +253,11 @@ Tauri bundles the Windows app through NSIS using current-user mode.
 
 The release build must:
 
-1. build Paper modules from the same commit
-2. stage World-Manager and Utilities-Manager JARs into Tauri resources
+1. build Paper modules and the required three Fabric Managers from the same commit
+2. stage World-Manager / Utilities-Manager and Map / Utility / Performance Manager JARs into Tauri resources
 3. typecheck/build Svelte
 4. check/build Rust/Tauri
-5. emit the NSIS installer
+5. verify resource identity/checksums and emit the NSIS installer
 
 The installer never creates a Minecraft server by itself. Server creation is always performed from LazyBuilder's launcher after installation.
 
@@ -275,7 +273,7 @@ Before promotion discussion, the installed Local candidate must complete the acc
 - representative Plugin Manager flow;
 - World Manager and Utilities Manager behavior;
 - real Modrinth Client Setup;
-- real Map Manager and Utility Manager behavior inside Minecraft;
+- real Map Manager, Utility Manager and Performance Manager behavior inside Minecraft;
 - reconnect/restart/full-PC reboot recovery;
 - representative large-world/storage/conversion testing.
 

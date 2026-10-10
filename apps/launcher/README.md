@@ -141,4 +141,4 @@ Remote build/package proof does not replace target-machine behavior such as inst
 
 ## Protocol boundary
 
-The Launcher expects desktop loopback protocol version `2`. This contract is separate from the Minecraft World Control V5 and Map Action V2 protocols.
+The Launcher expects desktop loopback protocol version `2`. This contract is separate from the Minecraft World Control V7 and Map Action V5 protocols, which are owned by `shared/protocol/` and validated by Paper.

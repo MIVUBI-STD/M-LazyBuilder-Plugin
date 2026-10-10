@@ -8,6 +8,7 @@ infer runtime correctness or replace domain tests.
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import re
 import sys
 
@@ -38,6 +39,10 @@ REQUIRED_FILES = [
     ".agents/evals/preflight-cases.json",
     "docs/05-operations/current-verification.md",
     "docs/05-operations/README.md",
+    "docs/05-operations/deployment-v1.md",
+    "docs/05-operations/client-implementation-proof-handoff.md",
+    "apps/launcher/README.md",
+    "plugins/world-manager/README.md",
     ".github/workflows/verify.yml",
     ".github/workflows/builder-verify.yml",
     ".github/workflows/builder-benchmark.yml",
@@ -277,6 +282,20 @@ def main() -> int:
     system_doc = read_text("docs/04-system/README.md", errors)
     verification_doc = read_text("docs/05-operations/current-verification.md", errors)
     operations_readme = read_text("docs/05-operations/README.md", errors)
+    deployment_guide = read_text("docs/05-operations/deployment-v1.md", errors)
+    client_proof_guide = read_text("docs/05-operations/client-implementation-proof-handoff.md", errors)
+    launcher_guide = read_text("apps/launcher/README.md", errors)
+    paper_world_guide = read_text("plugins/world-manager/README.md", errors)
+    conversion_update_policy = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/conversion/ConversionRuntimePolicy.java",
+        errors,
+    )
+    map_action_protocol = read_text(
+        "shared/protocol/src/main/java/com/halokaryamedia/lazybuilder/world/map/MapActionWireProtocol.java",
+        errors,
+    )
+    scalability_contract = read_text("docs/launcher-scalability-contract.json", errors)
+    mob_config = read_text("plugins/world-manager/src/main/resources/config.yml", errors)
     layout_doc = read_text("docs/04-system/repository-layout.md", errors)
     product_doc = read_text("docs/01-product/README.md", errors)
     module_boundaries = read_text("docs/04-system/module-boundaries.md", errors)
@@ -445,6 +464,60 @@ def main() -> int:
         fail(errors, "CONTEXT.md must not duplicate current operations/work-state authority")
     if "ChatGPT source-work boundary" not in verification_doc:
         fail(errors, "verification authority must distinguish remote source completion from native acceptance")
+
+    # Current guides are required to agree with their implementation owners.
+    # Historical snapshots are not rewritten and cannot override these contracts.
+    control_version = re.search(r"(?m)^\s*public static final int VERSION = (\d+);", world_control_protocol)
+    map_version = re.search(r"(?m)^\s*public static final int VERSION = (\d+);", map_action_protocol)
+    if not control_version or not map_version:
+        fail(errors, "Canonical Minecraft protocol versions are not readable from source")
+    else:
+        expected_pair = f"World Control V{control_version.group(1)} / Map Action V{map_version.group(1)}"
+        for relative, content in (
+            ("apps/launcher/README.md", launcher_guide),
+            ("docs/05-operations/client-implementation-proof-handoff.md", client_proof_guide),
+        ):
+            if "World Control V" not in content or "Map Action V" not in content:
+                fail(errors, f"Current guide must identify both canonical protocols: {relative}")
+            elif (f"World Control V{control_version.group(1)}" not in content
+                  or f"Map Action V{map_version.group(1)}" not in content):
+                fail(errors, f"Current guide disagrees with shared protocol source: {relative}")
+
+    default_conversion = re.search(
+        r"(?s)static ConversionRuntimePolicy defaults\(\).*?UpdateMode\.([A-Z_]+),",
+        conversion_update_policy,
+    )
+    if not default_conversion:
+        fail(errors, "Canonical conversion update default is not readable from source")
+    elif f"`{default_conversion.group(1)}`" not in paper_world_guide:
+        fail(errors, "World-Manager guide conversion default differs from current source")
+    if "enabled-worlds: []" not in mob_config or "enabled-worlds: []" not in paper_world_guide:
+        fail(errors, "Aggressive mob policy must remain visibly opt-in per managed world")
+
+    try:
+        maximum_servers = json.loads(scalability_contract)["maxConcurrentServers"]
+    except (ValueError, KeyError, TypeError) as exception:
+        fail(errors, f"Invalid canonical Launcher scalability contract: {exception}")
+    else:
+        if maximum_servers != 3 or f"up to {maximum_servers}" not in deployment_guide:
+            fail(errors, "Deployment guide must match canonical concurrent server capacity")
+    if "source remediation and synchronization" not in deployment_guide:
+        fail(errors, "Deployment guide must not claim target-machine acceptance is active")
+    for marker in (
+        "mods/performance-manager",
+        "Map Manager + Utility Manager + Performance Manager",
+        "three required JARs",
+    ):
+        if marker not in client_proof_guide:
+            fail(errors, f"Current client proof guide omits three-manager V1 contract: {marker}")
+    for obsolete in (
+        "only Map Manager + Utility Manager are required",
+        "two required JARs",
+        "two-component publish",
+        "only those two V1 components",
+    ):
+        if obsolete in client_proof_guide:
+            fail(errors, f"Current client proof guide contains retired two-manager instruction: {obsolete}")
 
     for marker in REQUIRED_DEV_FAILURE_MARKERS:
         if marker not in dev_orchestrator:

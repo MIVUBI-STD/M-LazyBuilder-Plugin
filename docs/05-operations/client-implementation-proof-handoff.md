@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This is the V1 execution handoff for the required LazyBuilder Fabric client components after architecture/scope simplification. The next phase is proof and bounded defect fixing, not feature expansion.
+This is the V1 execution handoff for all three required LazyBuilder Fabric client components after architecture/scope simplification. The next phase is proof and bounded defect fixing, not feature expansion. These are commands for an actually available, authorized executable environment; a user-PC checkout or running Gradle is not a prerequisite for ChatGPT-owned GitHub source work.
 
 `mods/performance-manager/` is a required V1 client component. It is built with the Fabric suite, bundled by the Launcher, installed/repaired by Client Setup, and participates in client readiness.
 
@@ -27,7 +27,7 @@ From repository root:
 
 ```powershell
 java -version
-gradle --version
+.\gradlew.bat --version
 python scripts/verify_versions.py
 ```
 
@@ -38,8 +38,9 @@ Acceptance: Java 21, Gradle 8.12, repository consistency green, and no source ed
 Run:
 
 ```powershell
-gradle -p mods/map-manager --no-daemon build
-gradle -p mods/utility-manager --no-daemon build
+.\gradlew.bat -p mods/map-manager --no-daemon build
+.\gradlew.bat -p mods/utility-manager --no-daemon build
+.\gradlew.bat -p mods/performance-manager --no-daemon build
 ```
 
 Expected artifacts:
@@ -47,6 +48,7 @@ Expected artifacts:
 ```text
 mods/map-manager/build/libs/lazybuilder-map-manager-0.1.0-SNAPSHOT.jar
 mods/utility-manager/build/libs/lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
+mods/performance-manager/build/libs/lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar
 ```
 
 Performance Manager is part of the V1 package/runtime gate. Performance-specific runtime effectiveness still requires representative workload evidence beyond source/build proof.
@@ -65,7 +67,7 @@ First wrong owner:
 Smallest proposed fix:
 ```
 
-Fix the smallest owning file/package, rerun the failing Manager first, then rerun both required V1 Managers.
+Fix the smallest owning file/package, rerun the failing Manager first, then rerun all three required V1 Managers.
 
 ## 4. Map Manager runtime matrix
 
@@ -77,7 +79,7 @@ Fix the smallest owning file/package, rerun the failing Manager first, then reru
 [ ] Copy Review Reference contains exact world name/id/location/dimension
 [ ] Teleport Here works
 [ ] Export Area selection works and clears on world change
-[ ] World Control V5 / Map Action V5 interoperate with Paper
+[ ] World Control V7 / Map Action V5 interoperate with Paper
 [ ] transfer shutdown/reconnect behavior is clean
 ```
 
@@ -105,16 +107,16 @@ Fix the smallest owning file/package, rerun the failing Manager first, then reru
 [ ] exact selected profile path persists
 [ ] Minecraft 1.21.4 + Fabric is verified from last launch
 [ ] <profile>\mods is derived automatically
-[ ] only Map Manager + Utility Manager are required
+[ ] Map Manager + Utility Manager + Performance Manager are required
 [ ] third-party mods are untouched
 [ ] duplicate LazyBuilder-owned V1 JARs are repaired
-[ ] failed two-component publish restores the previous LazyBuilder set
+[ ] failed three-component publish restores the previous LazyBuilder set
 [ ] Sync is blocked while Minecraft uses the selected profile
 ```
 
 ## 7. Combined V1 smoke test
 
-Install the two required JARs together and verify:
+Install the three required JARs together and verify:
 
 ```text
 [ ] no duplicate mod id / metadata issue
@@ -150,8 +152,8 @@ Stop and report instead of expanding scope when a proposed fix would require:
 
 ```text
 [ ] repository consistency passes
-[ ] Map Manager + Utility Manager build independently
-[ ] Client Setup installs/repairs only those two V1 components
+[ ] Map Manager + Utility Manager + Performance Manager build independently
+[ ] Client Setup installs/repairs only those three V1 components
 [ ] each required runtime matrix passes
 [ ] combined V1 smoke test passes
 [ ] defects are fixed at the smallest owner

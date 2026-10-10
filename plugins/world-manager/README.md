@@ -57,7 +57,7 @@ Permanent delete requires exact display-name confirmation and server-side protec
 
 Conversion is request-scoped and never runs as a daemon. The runtime is checksum-verified and compatibility-probed before promotion.
 
-The default update policy is `NOTIFY_ONLY`: a newer stable runtime may be detected, but it is not silently promoted merely because upstream published a new release. This keeps production behavior tied to a known-good runtime until validation is available.
+The default update policy is `AUTOMATIC_STABLE`: an explicit on-demand capability/update check can bootstrap or replace the verified stable Chunker runtime after its SHA-256 digest and compatible CLI behavior are checked. Staging, previous verified runtime retention, and rollback remain authoritative. There is no background polling daemon; this policy does not make conversion quality or native target-PC behavior automatically verified.
 
 ## Configuration
 
@@ -77,6 +77,8 @@ world-manager.import
 world-manager.conversion
 world-manager.transfer
 ```
+
+Mob behavior safety: `world-manager.build-performance.enabled-worlds: []` disables the aggressive mob AI/breeding profile by default. Operators must explicitly list exact managed world folder names; legacy `disable-*` flags alone cannot opt all worlds in. New LazyBuilder-owned AI changes have persistent leases that are released on entity unload and plugin shutdown. Preexisting NoAI mobs without such a lease are intentionally not modified. See `docs/02-world-management/README.md` for the policy and outstanding runtime proof.
 
 ## Build and verification
 
