@@ -13,6 +13,9 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.HexFormat;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -225,6 +228,66 @@ class TransferSessionServiceTest {
         TransferSessionService recovered = new TransferSessionService(imports, exports, transfers, policy);
         assertTrue(recovered.claimCompletedUploadForImport(owner, "rejected.zip",
                 UUID.randomUUID(), "WorldTwo", "World Two"));
+    }
+
+    @Test
+    void concurrentUploadsToTheSameFilenamePublishOneOwnerAndRecoverItsMarker() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        Path exports = tempDir.resolve("exports");
+        Path transfers = tempDir.resolve("transfer");
+        TransferPolicy policy = new TransferPolicy(4, 1024, 2, 1);
+        TransferSessionService service = new TransferSessionService(imports, exports, transfers, policy);
+        UUID firstOwner = UUID.randomUUID();
+        UUID secondOwner = UUID.randomUUID();
+        byte[] firstBody = {1, 2, 3, 4};
+        byte[] secondBody = {5, 6, 7, 8};
+
+        TransferDescriptor first = service.beginUpload(firstOwner, "contended.zip", 4, sha256(firstBody));
+        TransferDescriptor second = service.beginUpload(secondOwner, "contended.zip", 4, sha256(secondBody));
+        service.acceptUploadChunk(firstOwner, first.sessionId(), 0, firstBody);
+        service.acceptUploadChunk(secondOwner, second.sessionId(), 0, secondBody);
+
+        CountDownLatch start = new CountDownLatch(1);
+        UUID firstResult;
+        UUID secondResult;
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            var firstFinish = workers.submit(() -> {
+                start.await();
+                try {
+                    service.finishUpload(firstOwner, first.sessionId());
+                    return firstOwner;
+                } catch (java.io.IOException conflict) {
+                    return null;
+                }
+            });
+            var secondFinish = workers.submit(() -> {
+                start.await();
+                try {
+                    service.finishUpload(secondOwner, second.sessionId());
+                    return secondOwner;
+                } catch (java.io.IOException conflict) {
+                    return null;
+                }
+            });
+            start.countDown();
+            firstResult = firstFinish.get(10, TimeUnit.SECONDS);
+            secondResult = secondFinish.get(10, TimeUnit.SECONDS);
+        }
+
+        assertTrue((firstResult == null) != (secondResult == null),
+                "exactly one finished upload may own a published filename");
+        UUID winner = firstResult != null ? firstResult : secondResult;
+        UUID loser = firstResult != null ? secondOwner : firstOwner;
+        assertArrayEquals(winner.equals(firstOwner) ? firstBody : secondBody,
+                Files.readAllBytes(imports.resolve("contended.zip")));
+        assertEquals(0, service.activeUploads());
+        assertTrue(service.ownsCompletedUpload(winner, "contended.zip"));
+        assertFalse(service.ownsCompletedUpload(loser, "contended.zip"));
+
+        TransferSessionService recovered = new TransferSessionService(imports, exports, transfers, policy);
+        assertTrue(recovered.ownsCompletedUpload(winner, "contended.zip"));
+        assertFalse(recovered.ownsCompletedUpload(loser, "contended.zip"));
+        assertFalse(recovered.discardUnclaimedCompletedUpload(loser, "contended.zip"));
     }
 
     @Test

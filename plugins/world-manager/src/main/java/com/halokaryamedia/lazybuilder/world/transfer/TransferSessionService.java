@@ -147,7 +147,6 @@ public final class TransferSessionService {
         UploadSession session = requireUpload(ownerId, sessionId);
         synchronized (session) {
             requireUpload(ownerId, sessionId, session);
-            Path ownershipMarker = ownershipMarkerPath(session.fileName);
             try {
                 if (session.receivedBytes != session.totalBytes || session.nextChunkIndex != session.totalChunks) {
                     throw new IOException("Upload is incomplete");
@@ -156,21 +155,34 @@ public final class TransferSessionService {
                 session.channel.close();
                 String actual = HexFormat.of().formatHex(session.digest.digest());
                 if (!actual.equals(session.sha256)) throw new IOException("Upload checksum mismatch");
-                if (Files.exists(session.target)) throw new IOException("Import artifact already exists: " + session.fileName);
 
-                persistOwnershipMarker(session.fileName,
-                        new CompletedUploadOwnership(session.ownerId, false));
-                move(session.partial, session.target);
-                uploads.remove(sessionId, session);
+                // A filename is a single publication slot even when two owners have
+                // completed separate in-flight uploads. Claim/discard uses this monitor too.
                 synchronized (completedUploads) {
+                    if (completedUploads.containsKey(session.fileName) || Files.exists(session.target)) {
+                        throw new IOException("Import artifact already exists: " + session.fileName);
+                    }
+                    Path ownershipMarker = ownershipMarkerPath(session.fileName);
+                    boolean markerWritten = false;
+                    try {
+                        persistOwnershipMarker(session.fileName,
+                                new CompletedUploadOwnership(session.ownerId, false));
+                        markerWritten = true;
+                        move(session.partial, session.target);
+                    } catch (IOException | RuntimeException failure) {
+                        // Only undo a marker written by this attempt. Another upload
+                        // must never delete the winner's durable ownership marker.
+                        if (markerWritten) {
+                            try { Files.deleteIfExists(ownershipMarker); }
+                            catch (IOException cleanupFailure) { failure.addSuppressed(cleanupFailure); }
+                        }
+                        throw failure;
+                    }
+                    uploads.remove(sessionId, session);
                     completedUploads.put(session.fileName, new CompletedUploadOwnership(session.ownerId, false));
                 }
                 return session.target;
             } catch (IOException | RuntimeException failure) {
-                if (Files.notExists(session.target)) {
-                    try { Files.deleteIfExists(ownershipMarker); }
-                    catch (IOException cleanupFailure) { failure.addSuppressed(cleanupFailure); }
-                }
                 try { abortUploadInternal(sessionId, session); }
                 catch (IOException cleanupFailure) { failure.addSuppressed(cleanupFailure); }
                 throw failure;
@@ -696,8 +708,9 @@ public final class TransferSessionService {
     }
 
     private static void move(Path source, Path target) throws IOException {
-        try { Files.move(source, target, StandardCopyOption.ATOMIC_MOVE); }
-        catch (AtomicMoveNotSupportedException ignored) { Files.move(source, target); }
+        // ATOMIC_MOVE may replace an existing target depending on the filesystem.
+        // Import publication must fail rather than overwrite another upload.
+        Files.move(source, target);
     }
 
     private static IOException combine(IOException first, IOException next) {
