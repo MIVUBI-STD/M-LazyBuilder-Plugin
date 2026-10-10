@@ -1,5 +1,7 @@
 use crate::engine::persistence;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::sync::Mutex;
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -10,6 +12,25 @@ use sysinfo::System;
 
 pub const TARGET_MINECRAFT_VERSION: &str = "1.21.4";
 const MAX_LOG_SCAN_BYTES: u64 = 2 * 1024 * 1024;
+const CLIENT_SYNC_JOURNAL: &str = "sync-rollback.json";
+const CLIENT_SYNC_JOURNAL_LABEL: &str = "Client Setup sync rollback journal";
+static CLIENT_SYNC_GATE: Mutex<()> = Mutex::new(());
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ClientSyncFile {
+    name: String,
+    sha256: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+struct ClientSyncJournal {
+    version: u8,
+    committed: bool,
+    previous: Vec<ClientSyncFile>,
+    installed: Vec<ClientSyncFile>,
+}
 
 // V1 ships the three first-party LazyBuilder client managers as one coherent client suite.
 const MODS: [ClientModSpec; 3] = [
@@ -178,29 +199,205 @@ pub fn sync(resource_dir: Option<&Path>) -> Result<(), String> {
     transactional_sync(&mods_dir, &sources)
 }
 
-/// Fail closed on any interrupted sync, including a PID reused after a previous
-/// Launcher exit. These folders may contain the only copies of pre-sync JARs.
-fn ensure_no_interrupted_sync_backups(mods_dir: &Path) -> Result<(), String> {
-    for entry in fs::read_dir(mods_dir).map_err(|error| error.to_string())? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let name = entry.file_name();
-        if name.to_string_lossy().starts_with(".lazybuilder-sync-backup-") {
-            return Err(format!(
-                "Client Sync found preserved rollback data ({}) in the selected profile. Sync was blocked to prevent loss of the previous client components.",
-                name.to_string_lossy()
-            ));
+/// Per-profile rollback evidence is owned by the existing Client Setup transaction,
+/// not an external mod installer or a durable alternative Modrinth registry.
+fn sync_file_digest(path: &Path) -> Result<String, String> {
+    persistence::safe_path::ensure_regular_file(path, "Client Sync JAR")?;
+    let mut input = fs::File::open(path).map_err(|error| error.to_string())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let count = input.read(&mut buffer).map_err(|error| error.to_string())?;
+        if count == 0 { break; }
+        hasher.update(&buffer[..count]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn sync_file_record(path: &Path) -> Result<ClientSyncFile, String> {
+    let name = path.file_name().and_then(|value| value.to_str())
+        .ok_or_else(|| "Client Sync JAR filename is not portable.".to_string())?;
+    if !MODS.iter().any(|spec| {
+        name.to_ascii_lowercase().starts_with(spec.file_prefix)
+            && name.to_ascii_lowercase().ends_with(".jar")
+    }) {
+        return Err("Client Sync rollback entry is outside LazyBuilder-owned client prefixes.".into());
+    }
+    Ok(ClientSyncFile { name: name.into(), sha256: sync_file_digest(path)? })
+}
+
+fn require_valid_sync_journal(journal: &ClientSyncJournal) -> Result<(), String> {
+    if journal.version != 1 || journal.installed.len() != MODS.len()
+        || journal.previous.len() > 96 {
+        return Err("Client Sync rollback journal has unsupported or incomplete inventory.".into());
+    }
+    let mut names = HashSet::new();
+    for record in journal.previous.iter().chain(&journal.installed) {
+        let lower = record.name.to_ascii_lowercase();
+        if lower != record.name.to_lowercase()
+            || record.name.contains('/') || record.name.contains('\\')
+            || !MODS.iter().any(|spec| lower.starts_with(spec.file_prefix) && lower.ends_with(".jar"))
+            || record.sha256.len() != 64
+            || !record.sha256.bytes().all(|value| value.is_ascii_hexdigit() && !value.is_ascii_uppercase()) {
+            return Err("Client Sync rollback journal contains an unsafe filename or digest.".into());
+        }
+    }
+    for record in &journal.previous {
+        if !names.insert(record.name.to_ascii_lowercase()) {
+            return Err("Client Sync rollback journal contains duplicate previous files.".into());
+        }
+    }
+    for spec in MODS {
+        if journal.installed.iter().filter(|record| record.name == spec.file_name).count() != 1 {
+            return Err(format!("Client Sync rollback journal is missing target for {}.", spec.display_name));
         }
     }
     Ok(())
 }
 
+fn check_sync_backup_directory(path: &Path) -> Result<(), String> {
+    let meta = fs::symlink_metadata(path).map_err(|error| error.to_string())?;
+    if !meta.is_dir() || meta.file_type().is_symlink() {
+        return Err("Client Sync rollback area is not a safe directory.".into());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if meta.file_attributes() & 0x400 != 0 {
+            return Err("Client Sync rollback area is a Windows reparse point.".into());
+        }
+    }
+    Ok(())
+}
+
+fn client_sync_journal_path(backup_dir: &Path) -> PathBuf {
+    backup_dir.join(CLIENT_SYNC_JOURNAL)
+}
+
+fn write_sync_journal(backup_dir: &Path, journal: &ClientSyncJournal) -> Result<(), String> {
+    require_valid_sync_journal(journal)?;
+    persistence::write_json_atomically(
+        &client_sync_journal_path(backup_dir), journal, CLIENT_SYNC_JOURNAL_LABEL
+    )
+}
+
+/// An older manifest-less backup has unknown completeness, so it remains
+/// untouched. Complete journals are reconciled explicitly before the next sync.
+fn reconcile_client_sync_backups(mods_dir: &Path) -> Result<(), String> {
+    let mut backups = Vec::new();
+    for entry in fs::read_dir(mods_dir).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        if entry.file_name().to_string_lossy().starts_with(".lazybuilder-sync-backup-") {
+            backups.push(entry.path());
+        }
+    }
+    // There is only one transaction owner. Never apply one backup before
+    // discovering that another abandoned transaction makes ordering ambiguous.
+    if backups.len() > 1 {
+        return Err("Multiple Client Sync rollback areas are ambiguous; all were preserved.".into());
+    }
+    for backup_dir in backups {
+        let name = backup_dir.file_name().ok_or_else(|| "Client Sync rollback path is invalid.".to_string())?;
+        check_sync_backup_directory(&backup_dir)?;
+        let manifest_path = client_sync_journal_path(&backup_dir);
+        if !persistence::metadata_entry_exists(&manifest_path, CLIENT_SYNC_JOURNAL_LABEL)?
+            && !persistence::metadata_entry_exists(
+                &manifest_path.with_extension("json.tmp"), CLIENT_SYNC_JOURNAL_LABEL
+            )?
+            && !persistence::metadata_entry_exists(
+                &manifest_path.with_extension("json.previous"), CLIENT_SYNC_JOURNAL_LABEL
+            )? {
+            return Err(format!(
+                "Client Sync cannot safely recover legacy or incomplete backup {}. Backup was preserved.",
+                name.to_string_lossy()
+            ));
+        }
+        persistence::recover_atomic_file(&manifest_path, CLIENT_SYNC_JOURNAL_LABEL)?;
+        let journal: ClientSyncJournal = persistence::read_json(
+            &manifest_path, CLIENT_SYNC_JOURNAL_LABEL
+        )?;
+        require_valid_sync_journal(&journal)?;
+
+        // Verify all original bytes before changing the current Modrinth profile.
+        for original in &journal.previous {
+            let saved = backup_dir.join(&original.name);
+            if sync_file_digest(&saved)? != original.sha256 {
+                return Err(format!(
+                    "Client Sync rollback backup {} is incomplete or changed; recovery was blocked.",
+                    original.name
+                ));
+            }
+        }
+        // Never delete a user-modified or unrelated JAR, even when it has a
+        // LazyBuilder prefix. A known transaction can own only its recorded bytes.
+        let mut current = Vec::new();
+        for spec in MODS {
+            for path in owned_mod_paths(mods_dir, spec)? {
+                let entry = sync_file_record(&path)?;
+                let valid = journal.previous.iter().chain(&journal.installed)
+                    .any(|known| known.name.eq_ignore_ascii_case(&entry.name)
+                        && known.sha256 == entry.sha256);
+                if !valid {
+                    return Err(format!(
+                        "Client Sync found unrecognized component bytes in {}. Rollback data was preserved.",
+                        entry.name
+                    ));
+                }
+                current.push(path);
+            }
+        }
+        if journal.committed {
+            // A published suite is committed only when exactly its three
+            // expected targets remain. A missing/modified target fails closed.
+            if current.len() != MODS.len()
+                || journal.installed.iter().any(|expected| {
+                    !current.iter().any(|path| {
+                        path.file_name().and_then(|value| value.to_str()) == Some(expected.name.as_str())
+                            && sync_file_digest(path).ok().as_deref() == Some(expected.sha256.as_str())
+                    })
+                }) {
+                return Err("Committed Client Sync files no longer match the journal; recovery evidence was preserved.".into());
+            }
+            fs::remove_dir_all(&backup_dir).map_err(|error| error.to_string())?;
+            continue;
+        }
+
+        // Stage all original files before retiring any installed component.
+        // Re-entrant recovery may replace a leftover .restore-* file only after
+        // verifying it is a regular file in this transaction's own backup dir.
+        for original in &journal.previous {
+            let stage = backup_dir.join(format!(".restore-{}", original.name));
+            persistence::safe_path::remove_regular_file_if_present(&stage, "Client Sync recovery stage")?;
+            fs::copy(backup_dir.join(&original.name), &stage)
+                .map_err(|error| format!("Could not stage Client Sync recovery: {error}"))?;
+            if sync_file_digest(&stage)? != original.sha256 {
+                return Err("Client Sync recovery stage checksum mismatch; previous files were preserved.".into());
+            }
+        }
+        for path in current {
+            fs::remove_file(&path).map_err(|error| format!(
+                "Could not retire interrupted Client Sync component {}: {error}", path.display()
+            ))?;
+        }
+        for original in &journal.previous {
+            fs::rename(
+                backup_dir.join(format!(".restore-{}", original.name)),
+                mods_dir.join(&original.name)
+            ).map_err(|error| format!("Could not restore {}: {error}", original.name))?;
+        }
+        fs::remove_dir_all(&backup_dir).map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 fn transactional_sync(mods_dir: &Path, sources: &[(ClientModSpec, PathBuf)]) -> Result<(), String> {
-    ensure_no_interrupted_sync_backups(mods_dir)?;
+    let _sync_lease = CLIENT_SYNC_GATE.lock()
+        .map_err(|_| "Client Sync operation lock is poisoned.".to_string())?;
+    reconcile_client_sync_backups(mods_dir)?;
+
     let backup_dir = mods_dir.join(format!(".lazybuilder-sync-backup-{}", std::process::id()));
-    // create_dir is exclusive: concurrent sync calls cannot share a rollback area.
     fs::create_dir(&backup_dir)
         .map_err(|error| format!("Could not reserve Client Sync rollback area: {error}"))?;
-
     let cleanup_incoming = || {
         for spec in MODS {
             let _ = fs::remove_file(mods_dir.join(format!("{}.incoming", spec.file_name)));
@@ -211,83 +408,82 @@ fn transactional_sync(mods_dir: &Path, sources: &[(ClientModSpec, PathBuf)]) -> 
         let _ = fs::remove_dir_all(&backup_dir);
     };
 
-    // Neither staging nor backup preparation mutates installed client JARs.
-    // On failure before publish it is safe to discard this operation's copies.
-    let prepared = (|| -> Result<Vec<(PathBuf, PathBuf)>, String> {
+    let prepared = (|| -> Result<ClientSyncJournal, String> {
+        let mut installed = Vec::with_capacity(MODS.len());
         for (spec, source) in sources {
             let incoming = mods_dir.join(format!("{}.incoming", spec.file_name));
             if incoming.exists() {
-                fs::remove_file(&incoming)
-                    .map_err(|error| format!("Could not clear stale {} staging: {error}", spec.display_name))?;
+                persistence::safe_path::remove_regular_file_if_present(&incoming, "Client Sync incoming JAR")?;
             }
             fs::copy(source, &incoming)
                 .map_err(|error| format!("Could not stage {}: {error}", spec.display_name))?;
             if !files_equal(source, &incoming)? {
                 return Err(format!("Staged {} failed verification.", spec.display_name));
             }
+            // The staging filename ends in .jar.incoming; record the actual
+            // target JAR identity while hashing its verified staged bytes.
+            installed.push(ClientSyncFile {
+                name: spec.file_name.into(),
+                sha256: sync_file_digest(&incoming)?,
+            });
         }
-
-        let mut backups = Vec::<(PathBuf, PathBuf)>::new();
+        let mut previous = Vec::new();
         for spec in MODS {
-            for installed in owned_mod_paths(mods_dir, spec)? {
-                let file_name = installed.file_name()
+            for old in owned_mod_paths(mods_dir, spec)? {
+                let name = old.file_name()
                     .ok_or_else(|| "Installed LazyBuilder mod has no filename.".to_string())?;
-                let backup = backup_dir.join(file_name);
-                fs::copy(&installed, &backup)
-                    .map_err(|error| format!("Could not create rollback backup for {}: {error}", installed.display()))?;
-                if !files_equal(&installed, &backup)? {
-                    return Err(format!("Rollback backup verification failed for {}", installed.display()));
+                let saved = backup_dir.join(name);
+                fs::copy(&old, &saved)
+                    .map_err(|error| format!("Could not create rollback backup for {}: {error}", old.display()))?;
+                if !files_equal(&old, &saved)? {
+                    return Err(format!("Rollback backup verification failed for {}", old.display()));
                 }
-                backups.push((installed, backup));
+                let record = sync_file_record(&saved)?;
+                // Flush prepared JAR bytes before publishing transaction evidence.
+                fs::OpenOptions::new().read(true).write(true).open(&saved)
+                    .and_then(|file| file.sync_all())
+                    .map_err(|error| format!("Could not flush Client Sync backup: {error}"))?;
+                previous.push(record);
             }
         }
-        Ok(backups)
+        let journal = ClientSyncJournal { version: 1, committed: false, previous, installed };
+        write_sync_journal(&backup_dir, &journal)?;
+        Ok(journal)
     })();
 
-    let backups = match prepared {
-        Ok(backups) => backups,
+    let mut journal = match prepared {
+        Ok(journal) => journal,
         Err(error) => {
             cleanup();
             return Err(error);
         }
     };
-
+    // The complete and verified pre-image is now journaled. Only this block
+    // may mutate installed LazyBuilder JARs.
     let publish = (|| -> Result<(), String> {
         for (spec, _) in sources {
             remove_owned_mod_files(mods_dir, *spec)?;
             let incoming = mods_dir.join(format!("{}.incoming", spec.file_name));
-            let target = mods_dir.join(spec.file_name);
-            fs::rename(&incoming, &target)
+            fs::rename(&incoming, mods_dir.join(spec.file_name))
                 .map_err(|error| format!("Could not publish {}: {error}", spec.display_name))?;
         }
+        journal.committed = true;
+        write_sync_journal(&backup_dir, &journal)?;
         Ok(())
     })();
-
     if let Err(error) = publish {
-        let mut rollback_errors = Vec::new();
-        for spec in MODS {
-            if let Err(rollback_error) = remove_owned_mod_files(mods_dir, spec) {
-                rollback_errors.push(rollback_error);
-            }
-        }
-        for (target, backup) in &backups {
-            if let Err(rollback_error) = fs::copy(backup, target) {
-                rollback_errors.push(format!("Could not restore {}: {rollback_error}", target.display()));
-            }
-        }
-        if rollback_errors.is_empty() {
-            cleanup();
-            return Err(format!("Client Sync failed and previous LazyBuilder mods were restored: {error}"));
-        }
-        // Never delete the only previous-valid copies after an incomplete rollback.
-        // No heuristic recovery is performed without verified ownership/completeness.
         cleanup_incoming();
-        return Err(format!(
-            "Client Sync failed: {error}; rollback also reported: {}. Original rollback files were preserved and further syncing is blocked until recovery is resolved.",
-            rollback_errors.join("; ")
-        ));
+        // The same checks and atomic per-file restore path serve immediate
+        // rollback and restart recovery. Never copy directly over a live JAR.
+        return match reconcile_client_sync_backups(mods_dir) {
+            Ok(()) => Err(format!(
+                "Client Sync failed and its journal was reconciled safely: {error}"
+            )),
+            Err(recovery) => Err(format!(
+                "Client Sync failed: {error}; recovery is incomplete: {recovery}. Original backups were preserved."
+            )),
+        };
     }
-
     cleanup();
     Ok(())
 }
@@ -735,38 +931,82 @@ mod client_profile_compatibility_tests {
     }
 
     #[test]
-    fn existing_sync_backup_is_preserved_and_prevents_new_publication() {
-        let root = std::env::temp_dir().join(format!(
-            "lazybuilder-sync-preservation-test-{}",
-            std::process::id()
-        ));
+    fn manifestless_backup_remains_untouched_and_blocks_sync() {
+        let root = std::env::temp_dir().join(format!("lb-sync-legacy-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let mods = root.join("mods");
-        let prior = mods.join(format!(
-            ".lazybuilder-sync-backup-{}",
-            std::process::id().saturating_add(1)
-        ));
-        fs::create_dir_all(&prior).unwrap();
-        fs::write(prior.join("old-client.jar"), b"previous-valid").unwrap();
+        let backup = mods.join(".lazybuilder-sync-backup-legacy");
+        fs::create_dir_all(&backup).unwrap();
+        fs::write(backup.join("old.jar"), b"evidence").unwrap();
+        let error = transactional_sync(&mods, &[]).unwrap_err();
+        assert!(error.contains("incomplete backup"));
+        assert_eq!(fs::read(backup.join("old.jar")).unwrap(), b"evidence");
+        fs::remove_dir_all(root).unwrap();
+    }
 
-        let result = super::transactional_sync(&mods, &[]);
-        assert!(result.unwrap_err().contains("preserved rollback data"));
-        assert_eq!(fs::read(prior.join("old-client.jar")).unwrap(), b"previous-valid");
-        assert!(!mods.join(format!(".lazybuilder-sync-backup-{}", std::process::id())).exists());
+    fn make_sync_journal(mods: &Path, committed: bool) -> (PathBuf, ClientSyncJournal) {
+        let backup = mods.join(".lazybuilder-sync-backup-recovery");
+        fs::create_dir_all(&backup).unwrap();
+        let previous_name = "lazybuilder-map-manager-old.jar";
+        let previous_path = backup.join(previous_name);
+        fs::write(&previous_path, b"original-map").unwrap();
+        let mut journal = ClientSyncJournal {
+            version: 1,
+            committed,
+            previous: vec![sync_file_record(&previous_path).unwrap()],
+            installed: Vec::new(),
+        };
+        for spec in MODS {
+            let path = mods.join(spec.file_name);
+            fs::write(&path, spec.id.as_bytes()).unwrap();
+            journal.installed.push(sync_file_record(&path).unwrap());
+        }
+        write_sync_journal(&backup, &journal).unwrap();
+        (backup, journal)
+    }
 
+    #[test]
+    fn interrupted_publication_restores_verified_original_and_keeps_other_mods() {
+        let root = std::env::temp_dir().join(format!("lb-sync-recover-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let mods = root.join("mods");
+        fs::create_dir_all(&mods).unwrap();
+        let (backup, _) = make_sync_journal(&mods, false);
+        fs::write(mods.join("another-mod.jar"), b"user-data").unwrap();
+        reconcile_client_sync_backups(&mods).unwrap();
+        assert!(!backup.exists());
+        assert_eq!(fs::read(mods.join("lazybuilder-map-manager-old.jar")).unwrap(), b"original-map");
+        for spec in MODS { assert!(!mods.join(spec.file_name).exists()); }
+        assert_eq!(fs::read(mods.join("another-mod.jar")).unwrap(), b"user-data");
         fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn unrelated_mod_files_do_not_trigger_interrupted_sync_detection() {
-        let root = std::env::temp_dir().join(format!(
-            "lazybuilder-sync-unrelated-test-{}",
-            std::process::id()
-        ));
+    fn altered_backup_is_not_used_for_restore() {
+        let root = std::env::temp_dir().join(format!("lb-sync-corrupt-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
-        fs::create_dir_all(&root).unwrap();
-        fs::write(root.join("other-mod.jar"), b"unrelated").unwrap();
-        assert!(super::ensure_no_interrupted_sync_backups(&root).is_ok());
+        let mods = root.join("mods");
+        fs::create_dir_all(&mods).unwrap();
+        let (backup, _) = make_sync_journal(&mods, false);
+        fs::write(backup.join("lazybuilder-map-manager-old.jar"), b"tampered").unwrap();
+        assert!(reconcile_client_sync_backups(&mods).is_err());
+        assert!(backup.exists());
+        assert!(mods.join(MODS[0].file_name).exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn committed_transaction_cleans_only_matching_stale_backup() {
+        let root = std::env::temp_dir().join(format!("lb-sync-committed-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let mods = root.join("mods");
+        fs::create_dir_all(&mods).unwrap();
+        let (backup, _) = make_sync_journal(&mods, true);
+        reconcile_client_sync_backups(&mods).unwrap();
+        assert!(!backup.exists());
+        for spec in MODS {
+            assert_eq!(fs::read(mods.join(spec.file_name)).unwrap().as_slice(), spec.id.as_bytes());
+        }
         fs::remove_dir_all(root).unwrap();
     }
 
