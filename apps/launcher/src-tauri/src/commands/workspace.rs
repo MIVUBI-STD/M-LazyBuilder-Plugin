@@ -32,9 +32,16 @@ pub async fn workspace_provisioning_status() -> CommandResult<ProvisioningStatus
 
 #[tauri::command]
 pub async fn workspace_provision(app: AppHandle) -> CommandResult<provisioning::ProvisionResult> {
-    let active = require_available_active_workspace("Open a server before preparing it.")?;
-    let resource = format!("workspace:{}", active.id);
-    let operation = app.state::<OperationRegistry>().begin_exclusive("provision-server", &resource, false).map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+    // Select the workspace and register the exclusive operation while the
+    // Paper Start lifecycle lease is held; release it before long file work.
+    let (active, operation) = {
+        let _selection_lease = acquire_workspace_selection_lease()?;
+        let active = require_available_active_workspace("Open a server before preparing it.")?;
+        let resource = format!("workspace:{}", active.id);
+        let operation = app.state::<OperationRegistry>().begin_exclusive("provision-server", &resource, false)
+            .map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+        (active, operation)
+    };
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
@@ -68,9 +75,14 @@ pub async fn workspace_runtime_update_status() -> CommandResult<runtime_updates:
 
 #[tauri::command]
 pub async fn workspace_update_paper(app: AppHandle) -> CommandResult<runtime_updates::RuntimeUpdateStatus> {
-    let active = require_available_active_workspace("Open a server before updating Paper.")?;
-    let resource = format!("workspace:{}", active.id);
-    let operation = app.state::<OperationRegistry>().begin_exclusive("update-paper", &resource, false).map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+    let (active, operation) = {
+        let _selection_lease = acquire_workspace_selection_lease()?;
+        let active = require_available_active_workspace("Open a server before updating Paper.")?;
+        let resource = format!("workspace:{}", active.id);
+        let operation = app.state::<OperationRegistry>().begin_exclusive("update-paper", &resource, false)
+            .map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+        (active, operation)
+    };
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
@@ -203,12 +215,14 @@ pub fn workspace_duplicate_estimate(runtimes: State<'_, ServerRuntimeRegistry>, 
 
 #[tauri::command]
 pub async fn workspace_duplicate(app: AppHandle, id: String, parent_path: String, name: String) -> CommandResult<WorkspaceEntry> {
-    {
+    let operation = {
+        let _selection_lease = acquire_workspace_selection_lease()?;
         let operations = app.state::<OperationRegistry>();
         ensure_library_operation_idle(&operations)?;
-    }
-    let resource = format!("workspace:{id}");
-    let operation = app.state::<OperationRegistry>().begin_exclusive("duplicate-server", &resource, false).map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+        let resource = format!("workspace:{id}");
+        operations.begin_exclusive("duplicate-server", &resource, false)
+            .map_err(|error| CommandError::new("OPERATION_BUSY", error))?
+    };
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();
@@ -249,6 +263,8 @@ pub async fn workspace_duplicate(app: AppHandle, id: String, parent_path: String
 
 #[tauri::command]
 pub fn workspace_remove_from_library(runtimes: State<'_, ServerRuntimeRegistry>, operations: State<'_, OperationRegistry>, id: String) -> CommandResult<()> {
+    // Prevent Start from racing the Offline check and final library removal.
+    let _selection_lease = acquire_workspace_selection_lease()?;
     ensure_library_operation_idle(&operations)?;
     ensure_workspace_operation_idle(&operations, &id)?;
     ensure_remove_allowed(&runtimes, &id)?;
@@ -258,8 +274,12 @@ pub fn workspace_remove_from_library(runtimes: State<'_, ServerRuntimeRegistry>,
 
 #[tauri::command]
 pub async fn workspace_delete(app: AppHandle, id: String, typed_display_name: String) -> CommandResult<()> {
-    let resource = format!("workspace:{id}");
-    let operation = app.state::<OperationRegistry>().begin_exclusive("delete-server", &resource, false).map_err(|error| CommandError::new("OPERATION_BUSY", error))?;
+    let operation = {
+        let _selection_lease = acquire_workspace_selection_lease()?;
+        let resource = format!("workspace:{id}");
+        app.state::<OperationRegistry>().begin_exclusive("delete-server", &resource, false)
+            .map_err(|error| CommandError::new("OPERATION_BUSY", error))?
+    };
     let operation_id = operation.id.clone();
     let join_operation_id = operation.id.clone();
     let task_app = app.clone();

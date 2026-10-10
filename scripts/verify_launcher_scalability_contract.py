@@ -63,6 +63,7 @@ def main() -> int:
     server_engine = read(LAUNCHER / "src-tauri/src/engine/server_manager/mod.rs")
     startup_guard = read(LAUNCHER / "src-tauri/src/engine/startup_guard.rs")
     server_commands = read(LAUNCHER / "src-tauri/src/commands/server_manager.rs")
+    workspace_commands = read(LAUNCHER / "src-tauri/src/commands/workspace.rs")
     world_commands = read(LAUNCHER / "src-tauri/src/commands/world_manager.rs")
     server_tools = read(LAUNCHER / "src-tauri/src/commands/server_tools.rs")
     backup_commands = read(LAUNCHER / "src-tauri/src/commands/server_backups.rs")
@@ -169,6 +170,39 @@ def main() -> int:
     )
     if server_commands.count("let _lease = ServerStartLease::acquire()?;") < 4:
         errors.append("Start, Stop, Restart, and Detached recovery must share the lifecycle lease")
+
+    # Starts check OperationRegistry while holding the global lifecycle lease.
+    # Workspace file-mutation operations must register their resource under
+    # that same lease, otherwise they can pass the offline preflight while
+    # a concurrent Start is entering its process-spawn phase.
+    def workspace_command_region(name: str) -> str:
+        declaration = re.search(rf"(?m)^pub (?:async )?fn {re.escape(name)}\(", workspace_commands)
+        if declaration is None:
+            errors.append(f"missing workspace command: {name}")
+            return ""
+        tail = workspace_commands[declaration.start():]
+        following = re.search(r"(?m)^#\[tauri::command\]|^fn ", tail[1:])
+        return tail[:following.start() + 1] if following else tail
+
+    for command_name, admission in (
+        ("workspace_provision", 'begin_exclusive("provision-server"'),
+        ("workspace_update_paper", 'begin_exclusive("update-paper"'),
+        ("workspace_duplicate", 'begin_exclusive("duplicate-server"'),
+        ("workspace_delete", 'begin_exclusive("delete-server"'),
+    ):
+        region = workspace_command_region(command_name)
+        lease = region.find("acquire_workspace_selection_lease()")
+        reserved = region.find(admission)
+        if lease < 0 or reserved < 0 or lease > reserved:
+            errors.append(f"{command_name} must reserve its resource under the lifecycle lease")
+
+    remove_region = workspace_command_region("workspace_remove_from_library")
+    lease = remove_region.find("acquire_workspace_selection_lease()")
+    check = remove_region.find("ensure_remove_allowed(")
+    remove = remove_region.find("workspace_registry::remove_from_library(")
+    if lease < 0 or check < 0 or remove < 0 or not (lease < check < remove):
+        errors.append("Remove from library must hold the lifecycle lease through validation and removal")
+    require(errors, "Server Start admission", server_commands, "has_active_for_resource(&resource)?")
     require(errors, "startup RAM admission", startup_guard, "active_runtime_count: usize", "system.available_memory()")
 
     require(errors, "runtimeApi", runtime_api, "server: serverApi.server", "operations: appApi.operations")

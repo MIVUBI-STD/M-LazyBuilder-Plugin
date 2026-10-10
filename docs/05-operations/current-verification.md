@@ -167,6 +167,7 @@ lifecycle + workspace selection use one serialization lease
 verified detached runtimes consume capacity
 malformed/ambiguous process markers fail closed
 server-library mutations remain backend-guarded while runtime is active
+workspace file mutation admission and library removal are serialized with Paper Start through the same lifecycle lease
 legacy single-runtime guard is not part of the production command path
 ```
 
