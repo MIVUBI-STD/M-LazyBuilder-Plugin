@@ -132,6 +132,14 @@ Unrelated vanilla gamerules remain vanilla until explicitly changed.
 
 `defaultGameMode` is a durable LazyBuilder world-entry preference. Teleport to World applies the target world's preference after successful teleport.
 
+## Opt-in mob AI performance policy
+
+The BUILD_READY initialization profile above is distinct from runtime mob AI changes. Paper World-Manager does **not** suppress existing mobs or breeding in managed worlds by default. The aggressive entity profile is scoped through `world-manager.build-performance.enabled-worlds` in the Paper plugin `config.yml`; its default is `[]`. An operator must explicitly list exact managed world **folder** names (not display names) before the existing `disable-all-mob-ai`, `disable-villager-ai` and `disable-breeding` switches apply. There is no wildcard/global opt-in. Config changes take effect on plugin restart.
+
+When an eligible mob with AI enabled is suppressed, the controller writes a namespaced persistent marker of **LazyBuilder ownership** before toggling AI off. The same owned change is restored when the entity unloads, when World-Manager is disabled, or when a future load is no longer in the allowlist. Mobs that already have NoAI **without this marker** retain their authored state. `lazybuilder_gameplay_ai` is a suppression opt-out; it must not force unrelated NoAI mobs to AI-enabled. `lazybuilder_decorative` opts into suppression only inside an allowed managed world. Invalid folder lists fail closed.
+
+Older plugin versions may have changed AI without recording ownership. Those legacy NoAI states cannot safely be auto-restored because authored NoAI decorations cannot be distinguished from past mutations. Review them individually if necessary; source-only tests do not prove Paper entity-save ordering, so unload/restart behavior remains a runtime acceptance item.
+
 ## Teleport
 
 Teleport is the normal user path into a managed world:
