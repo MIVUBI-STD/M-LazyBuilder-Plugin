@@ -194,6 +194,39 @@ class WorldImportServiceTest {
     }
 
     @Test
+    void failedDurableCleanupMarkerReadRejectsImportBeforeDestinationReservation() {
+        WorldRegistry registry = new WorldRegistry();
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        imports.failCleanupMarkerRead = true;
+        WorldImportService service = nativeService(registry, imports);
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> service.prepare("Uncertain.zip", "Uncertain", "Uncertain"));
+        assertTrue(failure.getMessage().contains("Could not verify pending committed import cleanup"));
+        assertEquals(0, registry.all().size());
+        assertEquals(0, imports.deleteAttempts);
+        // A read failure must not hold the source reservation forever.
+        imports.failCleanupMarkerRead = false;
+        WorldImportService.ImportTask retried = service.prepare("Uncertain.zip", "Uncertain", "Uncertain");
+        service.finish(retried);
+    }
+
+    @Test
+    void committedImportMarkerReadIsCheckedBeforeAnotherWorldCanBeCreated() throws Exception {
+        WorldRegistry registry = new WorldRegistry();
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        imports.cleanupMarkers.add("Old.zip");
+        // Startup recovered the marker but deletion keeps failing.
+        imports.deleteFailuresRemaining = 3;
+        WorldImportService service = nativeService(registry, imports);
+        service.recoverPendingCommittedArtifactCleanup();
+
+        assertThrows(IllegalStateException.class, () -> service.prepare("Old.zip", "Duplicate", "Duplicate"));
+        assertTrue(registry.all().isEmpty());
+        assertEquals(Set.of("Old.zip"), imports.cleanupMarkers);
+    }
+
+    @Test
     void failedInspectionDiscardsUnusableUploadedArtifact() {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
@@ -456,6 +489,7 @@ class WorldImportServiceTest {
         private final List<String> deletedArtifacts = new ArrayList<>();
         private final Set<String> cleanupMarkers = new HashSet<>();
         private boolean failInspection;
+        private boolean failCleanupMarkerRead;
         private int deleteFailuresRemaining;
         private int deleteAttempts;
 
@@ -486,7 +520,10 @@ class WorldImportServiceTest {
         }
         @Override public void markCommittedCleanupPending(String artifactName) { cleanupMarkers.add(artifactName); }
         @Override public void clearCommittedCleanupPending(String artifactName) { cleanupMarkers.remove(artifactName); }
-        @Override public List<String> pendingCommittedCleanupArtifacts() { return List.copyOf(cleanupMarkers); }
+        @Override public List<String> pendingCommittedCleanupArtifacts() throws IOException {
+            if (failCleanupMarkerRead) throw new IOException("marker read failed");
+            return List.copyOf(cleanupMarkers);
+        }
     }
 
     private static final class FakeStore implements ConversionRuntimeStore {
