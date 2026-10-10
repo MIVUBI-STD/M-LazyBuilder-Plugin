@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.client;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.narration.NarrationMessageBuilder;
+import net.minecraft.client.gui.tooltip.Tooltip;
 import net.minecraft.client.gui.widget.PressableWidget;
 import net.minecraft.text.Text;
 
@@ -19,6 +20,12 @@ public final class LbButtonWidget extends PressableWidget {
         super(x, y, width, height, message);
         this.style = Objects.requireNonNull(style, "style");
         this.action = Objects.requireNonNull(action, "action");
+    }
+
+    /** Show why an unavailable action cannot be used, including keyboard focus. */
+    public void disable(String reason) {
+        active = false;
+        setTooltip(Tooltip.of(Text.literal(Objects.requireNonNull(reason, "reason"))));
     }
 
     @Override

@@ -28,6 +28,7 @@ public final class WorldManagerScreen extends Screen {
     private boolean showArchived;
     private boolean compactDetail;
     private boolean searchEditing;
+    private boolean searchRebuildPending;
     private boolean requestedInitialRefresh;
     private boolean requestedCurrentWorld;
     private long observedRevision;
@@ -61,6 +62,8 @@ public final class WorldManagerScreen extends Screen {
 
     @Override
     protected void init() {
+        search = null;
+        searchRebuildPending = false;
         if (!requestedInitialRefresh) {
             requestedInitialRefresh = true;
             controller.refresh();
@@ -74,7 +77,8 @@ public final class WorldManagerScreen extends Screen {
         observedMapRevision = maps.revision();
 
         List<WorldControlWireProtocol.WorldSummary> worlds = controller.worlds();
-        if (selectedWorld != null && worlds.stream().noneMatch(world -> world.worldId().equals(selectedWorld))) {
+        if (controller.worldListReady() && selectedWorld != null
+                && worlds.stream().noneMatch(world -> world.worldId().equals(selectedWorld))) {
             selectedWorld = null;
             compactDetail = false;
         }
@@ -126,7 +130,9 @@ public final class WorldManagerScreen extends Screen {
             query = value;
             scrollOffset = 0;
             searchEditing = true;
-            clearAndInit();
+            // Rebuild after the TextFieldWidget completes its key/selection update.
+            // Immediate clearAndInit here interrupts typing and resets its caret.
+            searchRebuildPending = true;
         });
         addDrawableChild(search);
         if (searchEditing) setInitialFocus(search);
@@ -196,6 +202,8 @@ public final class WorldManagerScreen extends Screen {
                     current ? LbButtonWidget.Style.GHOST : LbButtonWidget.Style.SECONDARY,
                     () -> controller.teleport(world.worldId()));
             teleport.active = !current && !busy;
+            if (current) teleport.disable("You are already in this world.");
+            else if (busy) teleport.disable("Wait for the current world operation to finish.");
             addDrawableChild(teleport);
             actionX += 70;
         }
@@ -284,6 +292,8 @@ public final class WorldManagerScreen extends Screen {
         LbButtonWidget archive = LbUi.button(x, y, contentWidth, 24, "Archive",
                 LbButtonWidget.Style.GHOST, () -> confirmArchive(world));
         archive.active = !busy && !isCurrentWorld(world.worldId());
+        if (busy) archive.disable("Wait for the current world operation to finish.");
+        else if (isCurrentWorld(world.worldId())) archive.disable("Leave this world before archiving it.");
         addDrawableChild(archive);
         y += 32;
 
@@ -385,15 +395,23 @@ public final class WorldManagerScreen extends Screen {
 
     @Override
     public void tick() {
-        if (observedMapRevision != maps.revision()) {
+        if (searchRebuildPending || observedMapRevision != maps.revision()
+                || observedRevision != controller.revision()) {
+            searchRebuildPending = false;
             observedMapRevision = maps.revision();
-            observeCurrentWorld();
-            clearAndInit();
-            return;
-        }
-        if (observedRevision != controller.revision()) {
             observedRevision = controller.revision();
-            clearAndInit();
+            observeCurrentWorld();
+            rebuildPreservingSearch();
+        }
+    }
+
+    private void rebuildPreservingSearch() {
+        boolean wasFocused = search != null && search.isFocused();
+        int cursor = wasFocused ? search.getCursor() : -1;
+        searchEditing = wasFocused;
+        clearAndInit();
+        if (cursor >= 0 && search != null) {
+            search.setCursor(Math.min(cursor, search.getText().length()), false);
         }
     }
 

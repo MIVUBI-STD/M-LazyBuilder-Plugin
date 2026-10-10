@@ -49,6 +49,7 @@ public final class ClientWorldController {
     }
 
     public void refresh() {
+        if (worldListPending) return;
         worldListPending = true;
         lastError = null;
         revision++;

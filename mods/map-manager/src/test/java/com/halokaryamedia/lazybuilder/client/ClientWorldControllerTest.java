@@ -25,6 +25,11 @@ final class ClientWorldControllerTest {
         assertInstanceOf(WorldControlWireProtocol.ListWorlds.class, sent.get(0));
         assertTrue(controller.worldListReady());
         assertTrue(controller.worldListPending());
+        controller.refresh();
+        assertEquals(1, sent.size(), "a second view may not duplicate an outstanding world-list request");
+        controller.accept(new WorldControlWireProtocol.WorldList(List.of(), true, true));
+        controller.refresh();
+        assertEquals(2, sent.size(), "a completed request permits the next explicit refresh");
     }
 
     @Test

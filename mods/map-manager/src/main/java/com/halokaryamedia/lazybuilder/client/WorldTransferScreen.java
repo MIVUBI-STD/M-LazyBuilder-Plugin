@@ -100,6 +100,10 @@ public final class WorldTransferScreen extends Screen {
         }
         reconcileSelectedFormat();
 
+        // Widgets are transient; the draft strings below remain presentation authority
+        // across resize and async screen reinitialization.
+        fileName = null;
+        importName = null;
         int panelWidth = Math.max(280, Math.min(600, width - 40));
         int left = width / 2 - panelWidth / 2;
         int contentLeft = left + 30;
@@ -135,6 +139,8 @@ public final class WorldTransferScreen extends Screen {
                 "Version   " + friendlyFormat(selectedExportFormat),
                 LbButtonWidget.Style.SECONDARY, this::cycleExportFormat);
         format.active = !busy() && availableFormats().size() > 1;
+        if (busy()) format.disable("Wait for the current transfer to finish.");
+        else if (availableFormats().size() <= 1) format.disable("Only one verified export version is available.");
         addDrawableChild(format);
 
         y += 48;
@@ -145,6 +151,7 @@ public final class WorldTransferScreen extends Screen {
         fileName.setEditableColor(LbUi.TEXT_PRIMARY);
         fileName.setUneditableColor(LbUi.TEXT_DISABLED);
         fileName.active = !busy();
+        fileName.setChangedListener(value -> exportFileName = value);
         addDrawableChild(fileName);
 
         y += 58;
@@ -153,6 +160,8 @@ public final class WorldTransferScreen extends Screen {
                 isCurrentDefault() ? LbButtonWidget.Style.GHOST : LbButtonWidget.Style.SECONDARY,
                 this::saveCurrentAsDefault);
         saveDefault.active = !busy() && !isCurrentDefault();
+        if (busy()) saveDefault.disable("Wait for the current transfer to finish.");
+        else if (isCurrentDefault()) saveDefault.disable("These settings are already your default.");
         addDrawableChild(saveDefault);
     }
 
@@ -204,6 +213,7 @@ public final class WorldTransferScreen extends Screen {
         importName.setEditableColor(LbUi.TEXT_PRIMARY);
         importName.setUneditableColor(LbUi.TEXT_DISABLED);
         importName.active = !busy();
+        importName.setChangedListener(value -> importDisplayName = value);
         addDrawableChild(importName);
     }
 
@@ -258,7 +268,8 @@ public final class WorldTransferScreen extends Screen {
 
     private void chooseImport() {
         if (busy()) return;
-        rememberFields();
+        // The live draft listener already owns the text. Do not read a stale
+        // field from the previous reviewed file when choosing another source.
         abandonImportReview = false;
         validation = null;
         importInspection = null;
@@ -354,7 +365,7 @@ public final class WorldTransferScreen extends Screen {
         if (!busy() && observedWorldRevision != worlds.revision()) {
             observedWorldRevision = worlds.revision();
             reconcileSelectedFormat();
-            clearAndInit();
+            rebuildPreservingDraftFocus();
             return;
         }
 
@@ -557,6 +568,18 @@ public final class WorldTransferScreen extends Screen {
     private void rememberFields() {
         if (fileName != null) exportFileName = fileName.getText();
         if (importName != null) importDisplayName = importName.getText();
+    }
+
+    private void rebuildPreservingDraftFocus() {
+        boolean exportFocused = fileName != null && fileName.isFocused();
+        boolean importFocused = importName != null && importName.isFocused();
+        int cursor = exportFocused ? fileName.getCursor() : importFocused ? importName.getCursor() : -1;
+        clearAndInit();
+        TextFieldWidget next = exportFocused ? fileName : importFocused ? importName : null;
+        if (cursor >= 0 && next != null) {
+            setInitialFocus(next);
+            next.setCursor(Math.min(cursor, next.getText().length()), false);
+        }
     }
 
     private List<String> availableFormats() {
