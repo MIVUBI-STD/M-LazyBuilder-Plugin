@@ -62,6 +62,10 @@ for marker in (
     "build-info.json",
     "SHA256SUMS.txt",
     "schemaVersion = 2",
+    "Paper-Plugins",
+    "Fabric-Mods",
+    "$RuntimeCopies",
+    "Get-Sha256 $Copy.Source",
 ):
     if marker not in publisher:
         errors.append(f"canonical Local publisher is missing package marker: {marker}")

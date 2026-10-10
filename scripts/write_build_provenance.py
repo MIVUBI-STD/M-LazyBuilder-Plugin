@@ -48,14 +48,63 @@ def main() -> int:
     parser.add_argument("--repository", required=True)
     args = parser.parse_args()
 
-    artifact_patterns = [
-        "apps/launcher/src-tauri/resources/core/*.jar",
-        "apps/launcher/src-tauri/resources/client-mods/*.jar",
+    if args.ref != "refs/heads/Local":
+        raise SystemExit("exact-commit Local package provenance requires the Local ref")
+
+    package_root = ROOT / "dist/Local"
+    package_info = package_root / "build-info.json"
+    if not package_info.is_file():
+        raise SystemExit("canonical Local build-info.json is missing")
+
+    # The publicly downloadable files must be byte-for-byte copies of the
+    # runtime modules packaged in the same Launcher source revision.
+    groups = (
+        ("apps/launcher/src-tauri/resources/core", "Paper-Plugins", 2),
+        ("apps/launcher/src-tauri/resources/client-mods", "Fabric-Mods", 3),
+    )
+    for source_dir, output_dir, count in groups:
+        source = ROOT / source_dir
+        target = package_root / output_dir
+        source_jars = sorted(source.glob("*.jar"))
+        target_jars = sorted(target.glob("*.jar"))
+        if len(source_jars) != count or {p.name for p in source_jars} != {p.name for p in target_jars}:
+            raise SystemExit(f"incorrect or missing standalone runtime JARs in {output_dir}")
+        for jar in source_jars:
+            if sha256(jar) != sha256(target / jar.name):
+                raise SystemExit(f"standalone JAR differs from Launcher bundled runtime: {jar.name}")
+
+    artifacts = collect((
+        "dist/Local/Paper-Plugins/*.jar",
+        "dist/Local/Fabric-Mods/*.jar",
         "dist/Local/*.exe",
-    ]
-    artifacts = collect(artifact_patterns)
-    if not artifacts:
-        raise SystemExit("no verified artifacts found for provenance manifest")
+    ))
+    installer = package_root / "LazyBuilder-Setup-Local.exe"
+    if not installer.is_file():
+        raise SystemExit("canonical Local installer is missing")
+    published = json.loads(package_info.read_text(encoding="utf-8"))
+    if published.get("commit") != args.commit or published.get("channel") != "local":
+        raise SystemExit("Local package identity does not match CI commit/channel")
+    actual = {
+        str(path.relative_to(package_root)).replace("\\", "/"): path
+        for path in package_root.rglob("*")
+        if path.is_file() and path.suffix.lower() in {".exe", ".jar"}
+    }
+    entries = published.get("artifacts", [])
+    if not isinstance(entries, list) or len(entries) != len(actual):
+        raise SystemExit("Local package manifest has the wrong artifact count")
+    recorded = {}
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("file"), str):
+            raise SystemExit("Local package manifest contains an invalid artifact entry")
+        name = entry["file"]
+        if name in recorded or name not in actual:
+            raise SystemExit(f"Local package manifest has duplicate or unknown artifact: {name}")
+        path = actual[name]
+        if entry.get("sha256") != sha256(path) or entry.get("bytes") != path.stat().st_size:
+            raise SystemExit(f"Local package manifest checksum/size mismatch: {name}")
+        recorded[name] = path
+    if set(recorded) != set(actual) or len(artifacts) != len(actual):
+        raise SystemExit("Local package provenance does not cover every downloadable binary")
 
     manifest = {
         "schema": 1,

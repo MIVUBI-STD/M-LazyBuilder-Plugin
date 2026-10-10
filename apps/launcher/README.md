@@ -103,12 +103,19 @@ Runtime-ready output:
 dist/Local/
 ├── LazyBuilder-Setup-Local.exe
 ├── LazyBuilder-Diagnostics.exe
+├── Paper-Plugins/
+│   ├── World-Manager-0.1.0-SNAPSHOT.jar
+│   └── Utilities-Manager-0.1.0-SNAPSHOT.jar
+├── Fabric-Mods/
+│   ├── lazybuilder-map-manager-0.1.0-SNAPSHOT.jar
+│   ├── lazybuilder-utility-manager-0.1.0-SNAPSHOT.jar
+│   └── lazybuilder-performance-manager-0.1.0-SNAPSHOT.jar
 ├── build-info.json
 ├── SHA256SUMS.txt
 └── README.txt
 ```
 
-CI may add exact-run provenance to the same package contract. Compile-only diagnostics, when explicitly requested through the internal build owner, are isolated under `dist/CompileOnly/` and must not be treated as acceptance candidates.
+The five standalone JARs are copied, byte-checked against the tested resources bundled in the same installer, and listed in build-info.json plus SHA256SUMS.txt. They do not require a second build or alternate packaging owner. CI also writes exact-run provenance into the same downloadable Local package. Compile-only diagnostics, when explicitly requested through the internal build owner, are isolated under `dist/CompileOnly/` and must not be treated as acceptance candidates.
 
 Use `DEV.cmd update` for repeated installed-app testing. Server workspaces, selected Modrinth profile, and normal LazyBuilder user data are preserved by the owning update path.
 

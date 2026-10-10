@@ -40,6 +40,47 @@ if ($DiagnosticExecutablePath) {
     $PublishedFiles += $CanonicalDiagnostic
 }
 
+# The same five tested JARs bundled in the installer are also published as
+# standalone installation artifacts. Reject stale/additional client mods.
+$Snapshot = "$Version-SNAPSHOT"
+$RuntimeGroups = @(
+    [pscustomobject]@{
+        SourceDir = (Join-Path $RepoRoot 'apps\launcher\src-tauri\resources\core')
+        TargetDir = 'Paper-Plugins'
+        Expected = @("World-Manager-$Snapshot.jar", "Utilities-Manager-$Snapshot.jar")
+    },
+    [pscustomobject]@{
+        SourceDir = (Join-Path $RepoRoot 'apps\launcher\src-tauri\resources\client-mods')
+        TargetDir = 'Fabric-Mods'
+        Expected = @(
+            "lazybuilder-map-manager-$Snapshot.jar",
+            "lazybuilder-utility-manager-$Snapshot.jar",
+            "lazybuilder-performance-manager-$Snapshot.jar"
+        )
+    }
+)
+$RuntimeCopies = @()
+foreach ($Group in $RuntimeGroups) {
+    if (-not (Test-Path -LiteralPath $Group.SourceDir -PathType Container)) {
+        throw "Bundled runtime source is missing: $($Group.SourceDir)"
+    }
+    $Actual = @(Get-ChildItem -LiteralPath $Group.SourceDir -Filter '*.jar' -File | ForEach-Object Name)
+    $Unexpected = @($Actual | Where-Object { $_ -notin $Group.Expected })
+    $Missing = @($Group.Expected | Where-Object { $_ -notin $Actual })
+    if ($Unexpected.Count -gt 0 -or $Missing.Count -gt 0 -or $Actual.Count -ne $Group.Expected.Count) {
+        throw "Runtime bundle $($Group.TargetDir) is not the exact expected JAR set. Missing: $($Missing -join ', '); unexpected: $($Unexpected -join ', ')"
+    }
+    $DestinationDir = Join-Path $OutputDir $Group.TargetDir
+    New-Item -ItemType Directory -Force -Path $DestinationDir | Out-Null
+    foreach ($Name in $Group.Expected) {
+        $Source = Join-Path $Group.SourceDir $Name
+        $Destination = Join-Path $DestinationDir $Name
+        Copy-Item -LiteralPath $Source -Destination $Destination
+        $PublishedFiles += $Destination
+        $RuntimeCopies += [pscustomobject]@{ Source = $Source; Destination = $Destination }
+    }
+}
+
 function Get-Sha256([string]$Path) {
     $stream = [System.IO.File]::OpenRead($Path)
     $hasher = [System.Security.Cryptography.SHA256]::Create()
@@ -53,10 +94,17 @@ function Get-Sha256([string]$Path) {
     }
 }
 
+# A copy differing from the runtime embedded in the installer is never published.
+foreach ($Copy in $RuntimeCopies) {
+    if ((Get-Sha256 $Copy.Source) -ne (Get-Sha256 $Copy.Destination)) {
+        throw "Runtime artifact mismatch between bundled and distributable JAR: $($Copy.Source)"
+    }
+}
+
 $Artifacts = @()
 $ChecksumLines = @()
 foreach ($File in $PublishedFiles) {
-    $Name = Split-Path $File -Leaf
+    $Name = $File.Substring($OutputDir.Length + 1).Replace('\', '/')
     $Digest = Get-Sha256 $File
     $Artifacts += [ordered]@{
         file = $Name
@@ -96,7 +144,10 @@ $Readme = @(
     "Workflow run: $RunNumber",
     '',
     'This package is for the Local development/test channel. Developer build tools are not required on the test machine.',
-    'build-info.json identifies package contents; CI may add build-provenance.json with independent verification claims.'
+    'Standalone plugins: Paper-Plugins/ (Paper 1.21.4). Standalone client mods: Fabric-Mods/ (Fabric Minecraft 1.21.4).',
+    'Use the installer for the managed LazyBuilder workspace; do not install Paper JARs into Fabric or Fabric JARs into Paper.',
+    'The five standalone JARs are byte-identical to the matching resources bundled into this installer.',
+    'build-info.json identifies all packaged binaries; CI may add build-provenance.json with independent verification claims.'
 ) | Where-Object { $null -ne $_ }
 Set-Content (Join-Path $OutputDir 'README.txt') -Value ($Readme -join [Environment]::NewLine) -Encoding UTF8
 
