@@ -56,9 +56,17 @@ pub fn reconcile_registered_process_markers() -> Result<StartupProcessReconcilia
         system.refresh_process(pid);
         let stale = match system.process(pid) {
             None => true,
-            Some(process) if marker.process_start_time != 0 && process.start_time() != marker.process_start_time => true,
-            Some(process) if !looks_like_workspace_paper(process, &root) => true,
-            Some(_) => false,
+            Some(process) => match marker_start_time_matches(marker.process_start_time, process.start_time()) {
+                Ok(true) => !looks_like_workspace_paper(process, &root),
+                Ok(false) => true,
+                Err(error) => {
+                    result.issues.push(format!(
+                        "Process marker for {} has unverified live PID {} and was preserved: {error}",
+                        server.name, marker.pid
+                    ));
+                    continue;
+                }
+            },
         };
         if stale {
             match persistence::safe_path::remove_regular_file_if_present(&marker_path, "managed Paper process marker") {
@@ -87,8 +95,12 @@ pub fn running_registered_papers() -> Result<Vec<RunningServerProcess>, String> 
         let pid = Pid::from_u32(marker.pid);
         system.refresh_process(pid);
         let Some(process) = system.process(pid) else { continue; };
-        if marker.process_start_time != 0 && process.start_time() != marker.process_start_time { continue; }
-        if !looks_like_workspace_paper(process, &root) { continue; }
+        let matches = marker_start_time_matches(marker.process_start_time, process.start_time())
+            .map_err(|error| format!(
+                "Cannot establish registered Paper process identity for {} (PID {}): {error}",
+                server.name, marker.pid
+            ))?;
+        if !matches || !looks_like_workspace_paper(process, &root) { continue; }
         running.push(RunningServerProcess {
             workspace_id: server.id,
             workspace_name: server.name,
@@ -126,8 +138,12 @@ pub fn workspace_has_running_paper(workspace_id: &str) -> Result<bool, String> {
     let mut system = System::new_all();
     system.refresh_process(pid);
     let Some(process) = system.process(pid) else { return Ok(false); };
-    if marker.process_start_time != 0 && process.start_time() != marker.process_start_time { return Ok(false); }
-    Ok(looks_like_workspace_paper(process, &root))
+    let matches = marker_start_time_matches(marker.process_start_time, process.start_time())
+        .map_err(|error| format!(
+            "Cannot establish Paper process identity for workspace {} (PID {}): {error}",
+            workspace_id, marker.pid
+        ))?;
+    Ok(matches && looks_like_workspace_paper(process, &root))
 }
 
 pub fn ensure_root_not_running(root: &Path) -> Result<(), String> {
@@ -145,6 +161,15 @@ pub fn ensure_root_not_running(root: &Path) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+/// A live PID cannot be attributed to a past workspace without its original
+/// process start time. Legacy zero/missing values are readable but never trusted.
+pub(crate) fn marker_start_time_matches(recorded: u64, observed: u64) -> Result<bool, String> {
+    if recorded == 0 || observed == 0 {
+        return Err("process start time is missing; resolve the original process before any lifecycle action".into());
+    }
+    Ok(recorded == observed)
 }
 
 fn process_marker_path(workspace: &Path) -> PathBuf { workspace.join("tools").join("lazybuilder").join("cache").join("server-process.json") }
@@ -173,12 +198,27 @@ fn looks_like_workspace_paper(process: &sysinfo::Process, workspace: &Path) -> b
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_capacity, process_marker_path, MAX_CONCURRENT_SERVERS};
+    use super::{ensure_capacity, marker_start_time_matches, process_marker_path, ProcessMarker, MAX_CONCURRENT_SERVERS};
     use std::path::Path;
 
     #[test]
     fn marker_path_stays_workspace_local() {
         assert_eq!(process_marker_path(Path::new("C:/BuildServer")), Path::new("C:/BuildServer/tools/lazybuilder/cache/server-process.json"));
+    }
+
+    #[test]
+    fn live_process_identity_requires_both_nonzero_start_times() {
+        assert_eq!(marker_start_time_matches(1_234, 1_234).unwrap(), true);
+        assert_eq!(marker_start_time_matches(1_234, 1_235).unwrap(), false);
+        assert!(marker_start_time_matches(0, 1_234).is_err());
+        assert!(marker_start_time_matches(1_234, 0).is_err());
+    }
+
+    #[test]
+    fn old_marker_without_start_time_is_preserved_but_untrusted() {
+        let legacy: ProcessMarker = serde_json::from_str(r#"{"pid":42}"#).unwrap();
+        assert_eq!(legacy.process_start_time, 0);
+        assert!(marker_start_time_matches(legacy.process_start_time, 1_234).is_err());
     }
 
     #[test]

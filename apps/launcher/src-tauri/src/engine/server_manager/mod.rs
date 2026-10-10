@@ -1,4 +1,4 @@
-use crate::engine::{paths, persistence, resource_settings, server_config, world_manager};
+use crate::engine::{paths, persistence, resource_settings, server_config, server_process_guard, world_manager};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::fs::OpenOptions;
@@ -202,6 +202,19 @@ impl ServerManagerState {
         let Some(pid_value) = self.detached_process()? else { return Err("No detached LazyBuilder Paper process marker exists for this workspace.".into()); };
         let pid = Pid::from_u32(pid_value); let mut system = self.system.lock().map_err(|_| "system monitor lock poisoned".to_string())?; system.refresh_process(pid);
         let Some(process) = system.process(pid) else { drop(system); self.remove_process_marker_if_matches(pid_value)?; self.clear_legacy_process_identity(); return Ok(DetachedRecoveryResult { pid: pid_value, stopped: true, message: "The previous Paper process is no longer running. Its stale recovery marker was cleared.".into() }); };
+        // The initial detached lookup and the termination lookup are separate
+        // observations. Re-check the persisted identity against the process about to
+        // receive the termination request rather than trusting the PID alone.
+        let marker = self.read_process_marker()?
+            .ok_or_else(|| "Detached Paper process marker disappeared during recovery.".to_string())?;
+        if marker.pid != pid_value
+            || !server_process_guard::marker_start_time_matches(
+                marker.process_start_time, process.start_time()
+            )? {
+            return Err(format!(
+                "Detached Paper PID {pid_value} changed identity during recovery; termination was blocked."
+            ));
+        }
         if !self.looks_like_managed_paper(process)? { return Err(format!("PID {pid_value} no longer matches the LazyBuilder-managed Paper command line for this workspace. Recovery was blocked to avoid terminating an unrelated process.")); }
         self.expected_stop.store(true, Ordering::SeqCst); set_runtime_state(&self.runtime_state, "Stopping")?;
         if !process.kill() { self.expected_stop.store(false, Ordering::SeqCst); return Err(format!("Windows refused to terminate detached Paper PID {pid_value}.")); }
@@ -226,16 +239,54 @@ impl ServerManagerState {
 
     fn process_usage(&self, pid: u32) -> Result<(f32, u64), String> { let pid = Pid::from_u32(pid); let mut system = self.system.lock().map_err(|_| "system monitor lock poisoned".to_string())?; system.refresh_process(pid); Ok(system.process(pid).map(|process| (process.cpu_usage(), process.memory())).unwrap_or((0.0, 0))) }
     fn detached_process(&self) -> Result<Option<u32>, String> {
-        let Some(mut marker) = self.read_process_marker()? else { return Ok(None); }; let pid = Pid::from_u32(marker.pid); let mut system = self.system.lock().map_err(|_| "system monitor lock poisoned".to_string())?; system.refresh_process(pid);
-        let Some(process) = system.process(pid) else { drop(system); let _ = self.remove_process_marker_if_matches(marker.pid); self.clear_legacy_process_identity(); return Ok(None); };
-        if marker.process_start_time != 0 { if process.start_time() != marker.process_start_time { drop(system); let _ = self.remove_process_marker_if_matches(marker.pid); self.clear_legacy_process_identity(); return Ok(None); } return Ok(Some(marker.pid)); }
-        if !self.looks_like_managed_paper(process)? { drop(system); let _ = self.remove_process_marker_if_matches(marker.pid); self.clear_legacy_process_identity(); return Ok(None); }
-        marker.process_start_time = process.start_time(); drop(system); self.write_process_marker_value(&marker)?; self.clear_legacy_process_identity(); Ok(Some(marker.pid))
+        let Some(marker) = self.read_process_marker()? else { return Ok(None); };
+        let pid = Pid::from_u32(marker.pid);
+        let mut system = self.system.lock().map_err(|_| "system monitor lock poisoned".to_string())?;
+        system.refresh_process(pid);
+        let Some(process) = system.process(pid) else {
+            drop(system);
+            let _ = self.remove_process_marker_if_matches(marker.pid);
+            self.clear_legacy_process_identity();
+            return Ok(None);
+        };
+        let matches = server_process_guard::marker_start_time_matches(
+            marker.process_start_time, process.start_time()
+        ).map_err(|error| format!(
+            "Cannot recover Paper PID {} for this workspace: {error}. The marker was preserved.",
+            marker.pid
+        ))?;
+        if !matches {
+            drop(system);
+            let _ = self.remove_process_marker_if_matches(marker.pid);
+            self.clear_legacy_process_identity();
+            return Ok(None);
+        }
+        if !self.looks_like_managed_paper(process)? {
+            return Err(format!(
+                "Paper PID {} has a matching start time but no longer matches this workspace's Paper command line. The recovery marker was preserved.",
+                marker.pid
+            ));
+        }
+        Ok(Some(marker.pid))
     }
     fn current_log_path(&self) -> String { self.active_log_path.lock().map(|value| value.clone()).unwrap_or_default() }
 
     fn process_marker_path(&self) -> Result<PathBuf, String> { Ok(self.workspace_root()?.join("tools").join("lazybuilder").join("cache").join("server-process.json")) }
-    fn write_process_marker(&self, pid: u32) -> Result<(), String> { let pid_value = Pid::from_u32(pid); let mut system = System::new_all(); system.refresh_process(pid_value); let process = system.process(pid_value).ok_or_else(|| format!("Paper PID {pid} exited before its process marker could be recorded"))?; let marker = ServerProcessMarker { pid, process_start_time: process.start_time() }; self.write_process_marker_value(&marker)?; self.clear_legacy_process_identity(); Ok(()) }
+    fn write_process_marker(&self, pid: u32) -> Result<(), String> {
+        let pid_value = Pid::from_u32(pid);
+        let mut system = System::new_all();
+        system.refresh_process(pid_value);
+        let process = system.process(pid_value)
+            .ok_or_else(|| format!("Paper PID {pid} exited before its process marker could be recorded"))?;
+        let started = process.start_time();
+        if started == 0 {
+            return Err(format!("Paper PID {pid} has no verifiable process start time"));
+        }
+        let marker = ServerProcessMarker { pid, process_start_time: started };
+        self.write_process_marker_value(&marker)?;
+        self.clear_legacy_process_identity();
+        Ok(())
+    }
     fn write_process_marker_value(&self, marker: &ServerProcessMarker) -> Result<(), String> {
         let path = self.process_marker_path()?;
         persistence::write_json_atomically(&path, marker, "managed Paper process marker")
