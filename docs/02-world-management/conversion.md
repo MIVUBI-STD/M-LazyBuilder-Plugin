@@ -241,6 +241,28 @@ Only one active conversion job is allowed in V1 to keep CPU, memory, disk I/O, a
 
 Desktop import request replay is process-local and capped at the World Task Registry history ceiling (256 admissions). Accepted requests, even after task completion or failure, are not silently evicted: removing their identities could allow duplicate import admission or discard of a retained retry artifact. At capacity the server rejects new Desktop import admissions **for that running Paper process**. An existing identical request ID can still retrieve its recorded task if that task remains in the task registry. This is an explicit bounded safety limit, not a cleanup mechanism or production proof of durable restart-safe idempotency. Restart **does not reconcile** the previously admitted requests: the process-local admission index is lost, and the client must inspect the authoritative world state before considering another import. Do not instruct users to restart merely to free admission capacity; a restart can remove duplicate-prevention evidence. A bounded retirement design needs an upload-generation identity plus durable outcome/replay evidence, not a second in-memory cache.
 
+### Restart-safe import admission: required transaction contract
+
+**Decision (WM-04): do not add a second task registry or automatic eviction.** The existing `WorldTaskRegistry` is volatile and bounded; the world registry is durable but does not record an import request ID. The transfer ownership marker persists an upload owner, not a task outcome. Therefore an accepted request cannot yet be proven safe to replay **across Paper restarts**. The current 256-entry in-process guard is deliberately fail-closed; do not advertise it as durable idempotency.
+
+A future implementation must extend the **existing transaction/transfer owners**, not create a parallel controller. Its atomic/recoverable evidence must bind a server/workspace identity, the Desktop import request UUID, immutable upload generation/digest, requested destination identity, resulting `WorldId` (once committed), and an explicit outcome or unresolved state. A filename or display name alone is not a durable request identity. If this evidence cannot be read consistently, keep the operation unresolved and block destructive cleanup or resubmission.
+
+| Case | Required behavior before enabling automatic retirement |
+| --- | --- |
+| Same request ID + same parameters, queued/running | Return the original accepted task; never queue another |
+| Same request ID + changed destination/source/digest | Reject with an actionable conflict |
+| Response lost after accept | Recover accepted status/outcome, not by blindly resubmitting |
+| Restart before world publication | Reconcile ownership and staging; do not assume completed import |
+| Restart after durable registry commit | Resolve the committed `WorldId` and suppress duplicate publication |
+| Task failed and source upload still valid | Preserve retry or explicit owner-scoped discard, without treating a new request as the old one |
+| Import result is uncertain or markers disagree | Fail closed; preserve world/upload evidence and provide a reconcile outcome |
+| History capacity reached | Retire only requests whose durable outcome and cleanup ownership are proven; otherwise reject new admissions safely |
+| Concurrent retry versus discard | One existing ownership boundary must serialize admission and deletion; in-use artifacts may never be deleted |
+
+**Required proof before implementation is complete:** executable cases for two concurrent identical submissions, altered replay payload, response loss before/after commit, task queue rejection and forced shutdown, valid retry after failure, orphan upload cleanup, restart before/after registry commit, corrupt/missing marker, and history exhaustion. These are proof requirements, not claims that any test was run.
+
+Do not persist duplicate mutable lifecycle state in the world registry merely to support request history. Durable import provenance must be minimal and reconciled against the canonical `WorldRegistryTransactions` commit and the transfer/file ownership markers. A recovery decision must never infer a committed world solely from an upload filename.
+
 ### Desktop upload discard boundary
 
 The authenticated Desktop control bridge may discard **only** a completed upload that is still unclaimed and owned by the Desktop transfer identity. It must refuse files already associated with an admitted import request, including failed tasks whose input was retained for retry, rather than treating every returned transfer claim as permission to delete. This is a request-scoped explicit operation, not a background cleanup daemon or arbitrary filesystem delete. UI activation and live concurrency verification are separate from the existence of this server endpoint.
