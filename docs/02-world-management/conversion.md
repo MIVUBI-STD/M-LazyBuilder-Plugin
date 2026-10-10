@@ -237,6 +237,10 @@ Import has no source managed world, so the existing `WorldImportService` reserve
 
 Only one active conversion job is allowed in V1 to keep CPU, memory, disk I/O, and progress semantics bounded.
 
+### Import request history and discard safety
+
+Desktop import request replay is process-local and capped at the World Task Registry history ceiling (256 admissions). Accepted requests, even after task completion or failure, are not silently evicted: removing their identities could allow duplicate import admission or discard of a retained retry artifact. At capacity the server rejects further Desktop import admissions until restart/reconciliation. This is an explicit bounded safety limit, **not** production proof of durable restart-safe idempotency. Never present restart as permission to blindly retry an uncertain import without checking world state first.
+
 ### Desktop upload discard boundary
 
 The authenticated Desktop control bridge may discard **only** a completed upload that is still unclaimed and owned by the Desktop transfer identity. It must refuse files already associated with an admitted import request, including failed tasks whose input was retained for retry, rather than treating every returned transfer claim as permission to delete. This is a request-scoped explicit operation, not a background cleanup daemon or arbitrary filesystem delete. UI activation and live concurrency verification are separate from the existence of this server endpoint.

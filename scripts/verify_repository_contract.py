@@ -552,6 +552,18 @@ def main() -> int:
         fail(errors, "Delete guide must require the canonical display name, not folder identity")
     if "WM-01 goal" not in world_product_guide:
         fail(errors, "World Manager product goal must remain explicit in its owning README")
+    # Import replay and Desktop discard must not lose the same request's
+    # ownership guard merely because an unrelated task becomes terminal.
+    paper_local_control_import = paper_local_control.split(
+        "private synchronized void handleImportTaskStart(", 1
+    )[-1].split("private void handleDeleteTaskStart(", 1)[0]
+    if "importAdmissions.remove(removable)" in paper_local_control_import:
+        fail(errors, "Import replay may not evict a terminal admission that still protects discard")
+    if "Import admission history is full; restart and reconcile before another import" not in paper_local_control_import:
+        fail(errors, "Import admission capacity must fail closed until reconciliation")
+    if "importAdmissions.values().stream()" not in paper_local_control:
+        fail(errors, "Desktop discard must consult the accepted-import ownership history")
+
     if default_conversion:
         mode = default_conversion.group(1)
         if f"`{mode}`" not in world_conversion_guide:

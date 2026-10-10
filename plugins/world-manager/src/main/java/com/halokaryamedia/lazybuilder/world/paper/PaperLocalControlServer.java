@@ -421,17 +421,11 @@ public final class PaperLocalControlServer {
             return;
         }
         if (importAdmissions.size() >= MAX_IMPORT_ADMISSIONS) {
-            UUID removable = null;
-            for (Map.Entry<UUID, ImportAdmission> entry : importAdmissions.entrySet()) {
-                WorldTaskSnapshot prior = tasks.find(entry.getValue().taskId()).orElse(null);
-                if (prior == null || prior.state() == com.halokaryamedia.lazybuilder.world.task.WorldTaskState.SUCCEEDED
-                        || prior.state() == com.halokaryamedia.lazybuilder.world.task.WorldTaskState.FAILED) {
-                    removable = entry.getKey();
-                    break;
-                }
-            }
-            if (removable == null) throw new IllegalStateException("Import task admission history is full");
-            importAdmissions.remove(removable);
+            // A terminal task is still an acknowledged request. Eviction would
+            // permit a stale request ID to be admitted again and would remove
+            // the same input's protection from Desktop discard.
+            throw new IllegalStateException(
+                    "Import admission history is full; restart and reconcile before another import");
         }
         if (!importUploads.claimForImport(artifactName)) {
             throw new IllegalStateException("Desktop import artifact is missing or already claimed");
