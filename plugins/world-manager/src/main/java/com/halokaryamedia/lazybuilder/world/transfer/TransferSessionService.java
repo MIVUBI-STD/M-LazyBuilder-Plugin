@@ -227,7 +227,16 @@ public final class TransferSessionService {
             CompletedUploadOwnership current = completedUploads.get(safeName);
             if (current == null || !current.ownerId().equals(ownerId) || current.claimedForReview()) return false;
             if (current.importRequestId() != null) {
-                throw new IllegalStateException("Import already admitted; reconcile before resubmission");
+                // The Paper admission registry prevents duplicate running tasks.
+                // After restart only the original request may reclaim its upload.
+                if (!current.importRequestId().equals(requestId)
+                        || !current.destinationFolder().equals(destinationFolder)
+                        || !current.displayName().equals(displayName)) {
+                    throw new IllegalStateException("Import request identity conflicts with the admitted upload");
+                }
+                completedUploads.put(safeName, new CompletedUploadOwnership(
+                        ownerId, true, requestId, destinationFolder, displayName));
+                return true;
             }
             CompletedUploadOwnership admitted = new CompletedUploadOwnership(
                     ownerId, true, requestId, destinationFolder, displayName);

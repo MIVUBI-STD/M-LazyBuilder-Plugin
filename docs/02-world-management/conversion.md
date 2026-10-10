@@ -245,6 +245,8 @@ Desktop import request replay is process-local and capped at the World Task Regi
 
 **Decision (WM-04): do not add a second task registry or automatic eviction.** The existing `WorldTaskRegistry` is volatile and bounded; the world registry is durable but does not record an import request ID. The transfer ownership marker persists an upload owner, not a task outcome. Therefore an accepted request cannot yet be proven safe to replay **across Paper restarts**. The current 256-entry in-process guard is deliberately fail-closed; do not advertise it as durable idempotency.
 
+The Desktop path now persists admitted request identity in its existing transfer ownership marker before task queue acceptance. Once Paper has completed startup registry/filesystem recovery, a committed request resolves from the canonical world registry; an uncommitted request can reclaim only the original surviving upload with identical UUID, destination, and display name. Other request IDs and unsafe discard are rejected. Immutable file-digest binding and native fault-injection evidence remain release gates.
+
 A future implementation must extend the **existing transaction/transfer owners**, not create a parallel controller. Its atomic/recoverable evidence must bind a server/workspace identity, the Desktop import request UUID, immutable upload generation/digest, requested destination identity, resulting `WorldId` (once committed), and an explicit outcome or unresolved state. A filename or display name alone is not a durable request identity. If this evidence cannot be read consistently, keep the operation unresolved and block destructive cleanup or resubmission.
 
 | Case | Required behavior before enabling automatic retirement |

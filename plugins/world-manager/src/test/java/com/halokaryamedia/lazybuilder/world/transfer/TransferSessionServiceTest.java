@@ -196,7 +196,11 @@ class TransferSessionServiceTest {
         TransferSessionService recovered = new TransferSessionService(imports, exports, transfers, policy);
         assertFalse(recovered.discardUnclaimedCompletedUpload(owner, "admitted.zip"));
         assertThrows(IllegalStateException.class, () ->
-                recovered.claimCompletedUploadForImport(owner, "admitted.zip", requestId, "WorldOne", "World One"));
+                recovered.claimCompletedUploadForImport(owner, "admitted.zip", UUID.randomUUID(), "WorldOne", "World One"));
+        assertThrows(IllegalStateException.class, () ->
+                recovered.claimCompletedUploadForImport(owner, "admitted.zip", requestId, "Changed", "World One"));
+        assertTrue(recovered.claimCompletedUploadForImport(owner, "admitted.zip", requestId, "WorldOne", "World One"),
+                "the original request may resume only after ownership recovery");
         assertTrue(Files.isRegularFile(imports.resolve("admitted.zip")));
         recovered.abortAllForOwner(owner);
         assertTrue(Files.isRegularFile(imports.resolve("admitted.zip")));
