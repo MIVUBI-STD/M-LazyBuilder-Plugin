@@ -237,6 +237,10 @@ Import has no source managed world, so the existing `WorldImportService` reserve
 
 Only one active conversion job is allowed in V1 to keep CPU, memory, disk I/O, and progress semantics bounded.
 
+### Desktop upload discard boundary
+
+The authenticated Desktop control bridge may discard **only** a completed upload that is still unclaimed and owned by the Desktop transfer identity. It must refuse files already associated with an admitted import request, including failed tasks whose input was retained for retry, rather than treating every returned transfer claim as permission to delete. This is a request-scoped explicit operation, not a background cleanup daemon or arbitrary filesystem delete. UI activation and live concurrency verification are separate from the existence of this server endpoint.
+
 ## Client/server transfer
 
 The client may open native file picker/save dialogs. Files stream over LazyBuilder's bounded transfer protocol on the existing Minecraft connection.

@@ -111,6 +111,7 @@ public final class PaperLocalControlServer {
             created.createContext("/v1/worlds", exchange -> handleWorlds(exchange, token));
             created.createContext("/v1/tasks", exchange -> handleTasks(exchange, token));
             created.createContext("/v1/imports/upload", exchange -> handleImportUpload(exchange, token));
+            created.createContext("/v1/imports/discard", exchange -> handleImportDiscard(exchange, token));
             stopping.set(false);
             created.start();
             server = created;
@@ -234,6 +235,41 @@ public final class PaperLocalControlServer {
         } catch (Exception exception) {
             plugin.getLogger().warning("Local World import upload failed: " + exception.getMessage());
             sendError(exchange, 500, "upload_failed", "World-Manager could not store the import artifact.");
+        }
+    }
+
+    private void handleImportDiscard(HttpExchange exchange, String token) throws IOException {
+        if (rejectDuringShutdown(exchange)) return;
+        if (!authorize(exchange, token)) return;
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendError(exchange, 405, "method_not_allowed", "Only POST is supported.");
+            return;
+        }
+        try {
+            ImportDiscardRequest request = readJson(exchange, ImportDiscardRequest.class);
+            String artifactName = requireNonBlank(request.artifactName(), "artifactName");
+            boolean discarded;
+            synchronized (this) {
+                // Avoid removing an input associated with an admitted import,
+                // even when a failed worker has returned its transfer claim.
+                if (importAdmissions.values().stream()
+                        .anyMatch(admission -> admission.artifactName().equalsIgnoreCase(artifactName))) {
+                    throw new IllegalStateException("Import request has already been admitted; reconcile its task first");
+                }
+                discarded = importUploads.discardUnclaimed(artifactName);
+            }
+            if (!discarded) {
+                sendError(exchange, 409, "import_discard_conflict", "Import upload is missing, in use, or not owned by Desktop.");
+                return;
+            }
+            sendJson(exchange, 200, new ImportDiscardResponse(artifactName, true));
+        } catch (IllegalArgumentException exception) {
+            sendError(exchange, 400, "invalid_import_discard", exception.getMessage());
+        } catch (IllegalStateException exception) {
+            sendError(exchange, 409, "import_discard_conflict", exception.getMessage());
+        } catch (IOException exception) {
+            plugin.getLogger().warning("Desktop import discard failed: " + exception.getMessage());
+            sendError(exchange, 500, "import_discard_failed", "World-Manager could not discard the upload.");
         }
     }
 
@@ -672,6 +708,8 @@ public final class PaperLocalControlServer {
     private record TaskStartRequest(String worldId) {}
     private record DuplicateTaskStartRequest(String worldId, String destinationFolder, String displayName) {}
     private record ExportTaskStartRequest(String worldId, String targetFormat, String artifactName) {}
+    private record ImportDiscardRequest(String artifactName) {}
+    private record ImportDiscardResponse(String artifactName, boolean discarded) {}
     private record ImportTaskStartRequest(String requestId, String artifactName, String destinationFolder, String displayName) {}
     private record ImportAdmission(String artifactName, String destinationFolder, String displayName, UUID taskId) {}
     private record DeleteTaskStartRequest(String worldId, String typedDisplayName) {}

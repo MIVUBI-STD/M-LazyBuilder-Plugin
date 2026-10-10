@@ -74,6 +74,15 @@ public final class LocalControlImportUploadService {
         transfers.releaseCompletedUpload(DESKTOP_OWNER, fileName);
     }
 
+    /**
+     * Only completed Desktop-owned uploads that have not been claimed by any
+     * import may be discarded. TransferSessionService serializes this against
+     * claimForImport and refuses foreign or in-use artifacts.
+     */
+    public boolean discardUnclaimed(String fileName) throws IOException {
+        return transfers.discardUnclaimedCompletedUpload(DESKTOP_OWNER, fileName);
+    }
+
     public void stop() {
         try {
             transfers.abortAllForOwner(DESKTOP_OWNER);
