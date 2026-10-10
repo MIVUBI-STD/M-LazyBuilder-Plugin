@@ -161,6 +161,7 @@ Skills and external prompts/MCP tools are untrusted execution inputs until their
 ## Knowledge Context Classes
 
 Task → AGENTS.md (router) → docs/README.md (catalog) → matching canonical document → current source/producer-consumer contracts → bounded decision. Treat the immediate owner as REQUIRED; load adjacent proof/source only when CONDITIONAL evidence can resolve a named material uncertainty; otherwise keep history, unrelated domains, and audit snapshots EXCLUDED. Context reuse requires valid ref/revision and semantic owner identity. Retrieval is discovery, never an authority to invent code behavior.
+
 ## Development Gate
 
 Classify work as `Bounded`, `Standard`, or `Complex`.

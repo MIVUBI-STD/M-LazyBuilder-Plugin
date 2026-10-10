@@ -206,6 +206,67 @@
       "mode_changed": true,
       "mode_change_approved": true,
       "allow": true
+    },
+    {
+      "id": "validate-ci-wrong-branch",
+      "mode": "VALIDATE",
+      "action": "dispatch_ci",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": false,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "develop-cannot-release",
+      "mode": "DEVELOP",
+      "action": "release",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "unknown-mode-deny",
+      "mode": "UNKNOWN",
+      "action": "read",
+      "gates": {},
+      "allow": false
+    },
+    {
+      "id": "unknown-action-deny",
+      "mode": "DEVELOP",
+      "action": "admin_repository",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "allow": false
+    },
+    {
+      "id": "release-mode-switch-deny",
+      "mode": "RELEASE",
+      "action": "release",
+      "gates": {
+        "scope_approved": true,
+        "owner_matches": true,
+        "branch_local": true,
+        "ci_approved": true,
+        "release_approved": true
+      },
+      "mode_changed": true,
+      "mode_change_approved": false,
+      "allow": false
     }
   ]
 }
