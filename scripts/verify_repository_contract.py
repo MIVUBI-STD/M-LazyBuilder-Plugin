@@ -557,10 +557,14 @@ def main() -> int:
     paper_local_control_import = paper_local_control.split(
         "private synchronized void handleImportTaskStart(", 1
     )[-1].split("private void handleDeleteTaskStart(", 1)[0]
-    if "importAdmissions.remove(removable)" in paper_local_control_import:
-        fail(errors, "Import replay may not evict a terminal admission that still protects discard")
-    if "Import admission history is full; restart and reconcile before another import" not in paper_local_control_import:
-        fail(errors, "Import admission capacity must fail closed until reconciliation")
+    if "registry.findByImportRequestId(entry.getKey())" not in paper_local_control_import:
+        fail(errors, "Import retirement requires canonical durable world provenance")
+    if "WorldTaskState.SUCCEEDED" not in paper_local_control_import:
+        fail(errors, "Import retirement must preserve active/failed task admissions")
+    if "importAdmissions.remove(removable)" not in paper_local_control_import:
+        fail(errors, "Completed requests need bounded safe retirement, not unbounded blocking")
+    if "Import admission history is full; unresolved requests require reconciliation" not in paper_local_control_import:
+        fail(errors, "Import admission capacity must fail closed when no retired candidate is proven")
     if "importAdmissions.values().stream()" not in paper_local_control:
         fail(errors, "Desktop discard must consult the accepted-import ownership history")
     if "private synchronized void handleImportTaskStart(" not in paper_local_control:

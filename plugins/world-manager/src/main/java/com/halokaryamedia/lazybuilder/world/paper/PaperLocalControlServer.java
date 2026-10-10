@@ -437,11 +437,28 @@ public final class PaperLocalControlServer {
             return;
         }
         if (importAdmissions.size() >= MAX_IMPORT_ADMISSIONS) {
-            // A terminal task is still an acknowledged request. Eviction would
-            // permit a stale request ID to be admitted again and would remove
-            // the same input's protection from Desktop discard.
-            throw new IllegalStateException(
-                    "Import admission history is full; restart and reconcile before another import");
+            // Retire only an accepted request with authoritative durable
+            // WorldRegistry provenance and a terminal (or trimmed terminal)
+            // task. Such a task has already released its transfer ownership.
+            UUID removable = null;
+            for (Map.Entry<UUID, ImportAdmission> entry : importAdmissions.entrySet()) {
+                WorldRecord world = registry.findByImportRequestId(entry.getKey()).orElse(null);
+                if (world == null) continue;
+                WorldTaskSnapshot prior = tasks.find(entry.getValue().taskId()).orElse(null);
+                if (prior != null && prior.state()
+                        != com.halokaryamedia.lazybuilder.world.task.WorldTaskState.SUCCEEDED) continue;
+                WorldRecord.ImportProvenance provenance = world.importProvenance();
+                if (!provenance.artifactName().equals(entry.getValue().artifactName())
+                        || !world.folderName().equals(entry.getValue().destinationFolder())
+                        || !provenance.requestedDisplayName().equals(entry.getValue().displayName())) continue;
+                removable = entry.getKey();
+                break;
+            }
+            if (removable == null) {
+                throw new IllegalStateException(
+                        "Import admission history is full; unresolved requests require reconciliation");
+            }
+            importAdmissions.remove(removable);
         }
         if (!importUploads.claimForImport(artifactName, requestId, destinationFolder, displayName)) {
             throw new IllegalStateException("Desktop import artifact is missing or already claimed");
