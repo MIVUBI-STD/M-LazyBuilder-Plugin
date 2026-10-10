@@ -179,6 +179,51 @@ class TransferSessionServiceTest {
     }
 
     @Test
+    void admittedImportSurvivesTransferRestartWithoutBecomingDiscardable() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        Path exports = tempDir.resolve("exports");
+        Path transfers = tempDir.resolve("transfer");
+        TransferPolicy policy = new TransferPolicy(4, 1024, 1, 1);
+        TransferSessionService service = new TransferSessionService(imports, exports, transfers, policy);
+        UUID owner = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        byte[] body = {1, 2, 3, 4};
+        TransferDescriptor upload = service.beginUpload(owner, "admitted.zip", body.length, sha256(body));
+        service.acceptUploadChunk(owner, upload.sessionId(), 0, body);
+        service.finishUpload(owner, upload.sessionId());
+        assertTrue(service.claimCompletedUploadForImport(owner, "admitted.zip", requestId, "WorldOne", "World One"));
+
+        TransferSessionService recovered = new TransferSessionService(imports, exports, transfers, policy);
+        assertFalse(recovered.discardUnclaimedCompletedUpload(owner, "admitted.zip"));
+        assertThrows(IllegalStateException.class, () ->
+                recovered.claimCompletedUploadForImport(owner, "admitted.zip", requestId, "WorldOne", "World One"));
+        assertTrue(Files.isRegularFile(imports.resolve("admitted.zip")));
+        recovered.abortAllForOwner(owner);
+        assertTrue(Files.isRegularFile(imports.resolve("admitted.zip")));
+    }
+
+    @Test
+    void rejectedTaskAdmissionCanReleaseDurableOwnershipBeforeRetry() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        Path exports = tempDir.resolve("exports");
+        Path transfers = tempDir.resolve("transfer");
+        TransferPolicy policy = new TransferPolicy(4, 1024, 1, 1);
+        TransferSessionService service = new TransferSessionService(imports, exports, transfers, policy);
+        UUID owner = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        byte[] body = {1, 2, 3, 4};
+        TransferDescriptor upload = service.beginUpload(owner, "rejected.zip", body.length, sha256(body));
+        service.acceptUploadChunk(owner, upload.sessionId(), 0, body);
+        service.finishUpload(owner, upload.sessionId());
+        assertTrue(service.claimCompletedUploadForImport(owner, "rejected.zip", requestId, "WorldTwo", "World Two"));
+        assertTrue(service.cancelUnacceptedImport(owner, "rejected.zip", requestId));
+
+        TransferSessionService recovered = new TransferSessionService(imports, exports, transfers, policy);
+        assertTrue(recovered.claimCompletedUploadForImport(owner, "rejected.zip",
+                UUID.randomUUID(), "WorldTwo", "World Two"));
+    }
+
+    @Test
     void downloadIsExplicitSequentialAndBoundToOwner() throws Exception {
         Path exports = tempDir.resolve("exports");
         Files.createDirectories(exports);

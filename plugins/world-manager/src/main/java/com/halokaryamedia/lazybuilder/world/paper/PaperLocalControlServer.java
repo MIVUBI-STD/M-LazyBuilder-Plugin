@@ -443,7 +443,7 @@ public final class PaperLocalControlServer {
             throw new IllegalStateException(
                     "Import admission history is full; restart and reconcile before another import");
         }
-        if (!importUploads.claimForImport(artifactName)) {
+        if (!importUploads.claimForImport(artifactName, requestId, destinationFolder, displayName)) {
             throw new IllegalStateException("Desktop import artifact is missing or already claimed");
         }
         WorldTaskSnapshot queued;
@@ -467,7 +467,13 @@ public final class PaperLocalControlServer {
                     () -> importUploads.returnForRetry(artifactName)
             );
         } catch (RuntimeException | Error rejected) {
-            importUploads.returnForRetry(artifactName);
+            // Submission was not accepted: atomically restore the original marker,
+            // otherwise retain the admission evidence and fail closed.
+            try {
+                importUploads.cancelUnacceptedImport(artifactName, requestId);
+            } catch (IOException rollbackFailure) {
+                rejected.addSuppressed(rollbackFailure);
+            }
             throw rejected;
         }
         importAdmissions.put(requestId, new ImportAdmission(artifactName, destinationFolder, displayName, queued.taskId()));

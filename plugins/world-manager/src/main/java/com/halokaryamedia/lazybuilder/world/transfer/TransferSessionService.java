@@ -40,7 +40,7 @@ public final class TransferSessionService {
     private static final String OWNERSHIP_SUFFIX = ".owner";
     private static final String OWNERSHIP_TEMP_PREFIX = "owner-";
     private static final String OWNERSHIP_TEMP_SUFFIX = ".tmp";
-    private static final long MAX_OWNERSHIP_MARKER_BYTES = 64L;
+    private static final long MAX_OWNERSHIP_MARKER_BYTES = 1536L;
 
     private final Path importsRoot;
     private final Path exportsRoot;
@@ -158,7 +158,8 @@ public final class TransferSessionService {
                 if (!actual.equals(session.sha256)) throw new IOException("Upload checksum mismatch");
                 if (Files.exists(session.target)) throw new IOException("Import artifact already exists: " + session.fileName);
 
-                persistOwnershipMarker(session.fileName, session.ownerId);
+                persistOwnershipMarker(session.fileName,
+                        new CompletedUploadOwnership(session.ownerId, false));
                 move(session.partial, session.target);
                 uploads.remove(sessionId, session);
                 synchronized (completedUploads) {
@@ -197,10 +198,57 @@ public final class TransferSessionService {
         String safeName = validateImportFileName(fileName);
         synchronized (completedUploads) {
             CompletedUploadOwnership ownership = completedUploads.get(safeName);
-            if (ownership == null || !ownership.ownerId().equals(ownerId) || ownership.claimedForReview()) {
+            if (ownership == null || !ownership.ownerId().equals(ownerId)
+                    || ownership.claimedForReview() || ownership.importRequestId() != null) {
                 return false;
             }
             completedUploads.put(safeName, new CompletedUploadOwnership(ownerId, true));
+            return true;
+        }
+    }
+
+    /**
+     * Records a Desktop import admission durably in the existing transfer ownership marker
+     * before the asynchronous task can be queued. A recovered admitted artifact cannot
+     * be treated as a fresh upload or discarded without explicit reconciliation.
+     */
+    public boolean claimCompletedUploadForImport(
+            UUID ownerId, String fileName, UUID requestId,
+            String destinationFolder, String displayName
+    ) throws IOException {
+        Objects.requireNonNull(ownerId, "ownerId");
+        Objects.requireNonNull(requestId, "requestId");
+        String safeName = validateImportFileName(fileName);
+        if (destinationFolder == null || destinationFolder.isBlank() || destinationFolder.length() > 255
+                || displayName == null || displayName.isBlank() || displayName.length() > 256) {
+            throw new IllegalArgumentException("Invalid admitted import destination/display name");
+        }
+        synchronized (completedUploads) {
+            CompletedUploadOwnership current = completedUploads.get(safeName);
+            if (current == null || !current.ownerId().equals(ownerId) || current.claimedForReview()) return false;
+            if (current.importRequestId() != null) {
+                throw new IllegalStateException("Import already admitted; reconcile before resubmission");
+            }
+            CompletedUploadOwnership admitted = new CompletedUploadOwnership(
+                    ownerId, true, requestId, destinationFolder, displayName);
+            persistOwnershipMarker(safeName, admitted);
+            completedUploads.put(safeName, admitted);
+            return true;
+        }
+    }
+
+    /** Undo only a request that was rejected before task admission. */
+    public boolean cancelUnacceptedImport(UUID ownerId, String fileName, UUID requestId) throws IOException {
+        Objects.requireNonNull(ownerId, "ownerId");
+        Objects.requireNonNull(requestId, "requestId");
+        String safeName = validateImportFileName(fileName);
+        synchronized (completedUploads) {
+            CompletedUploadOwnership current = completedUploads.get(safeName);
+            if (current == null || !current.ownerId().equals(ownerId)
+                    || !requestId.equals(current.importRequestId()) || !current.claimedForReview()) return false;
+            CompletedUploadOwnership unclaimed = new CompletedUploadOwnership(ownerId, false);
+            persistOwnershipMarker(safeName, unclaimed);
+            completedUploads.put(safeName, unclaimed);
             return true;
         }
     }
@@ -217,7 +265,7 @@ public final class TransferSessionService {
         synchronized (completedUploads) {
             CompletedUploadOwnership ownership = completedUploads.get(safeName);
             if (ownership == null || !ownership.ownerId().equals(ownerId)
-                    || ownership.claimedForReview()) {
+                    || ownership.claimedForReview() || ownership.importRequestId() != null) {
                 return false;
             }
             Files.deleteIfExists(directChild(importsRoot, safeName));
@@ -236,7 +284,8 @@ public final class TransferSessionService {
             if (claim == null || !claim.ownerId().equals(ownerId) || !claim.claimedForReview()) {
                 return false;
             }
-            completedUploads.put(safeName, new CompletedUploadOwnership(ownerId, false));
+            completedUploads.put(safeName, new CompletedUploadOwnership(
+                    ownerId, false, claim.importRequestId(), claim.destinationFolder(), claim.displayName()));
             return true;
         }
     }
@@ -360,7 +409,8 @@ public final class TransferSessionService {
         synchronized (completedUploads) {
             for (Map.Entry<String, CompletedUploadOwnership> entry : Map.copyOf(completedUploads).entrySet()) {
                 CompletedUploadOwnership ownership = entry.getValue();
-                if (!ownership.ownerId().equals(ownerId) || ownership.claimedForReview()) continue;
+                if (!ownership.ownerId().equals(ownerId) || ownership.claimedForReview()
+                        || ownership.importRequestId() != null) continue;
                 try {
                     Files.deleteIfExists(directChild(importsRoot, entry.getKey()));
                     Files.deleteIfExists(ownershipMarkerPath(entry.getKey()));
@@ -400,11 +450,22 @@ public final class TransferSessionService {
 
                 String encoded = markerName.substring(0, markerName.length() - OWNERSHIP_SUFFIX.length());
                 String fileName;
-                UUID ownerId;
+                CompletedUploadOwnership ownership;
                 try {
                     fileName = validateImportFileName(new String(
                             Base64.getUrlDecoder().decode(encoded), StandardCharsets.UTF_8));
-                    ownerId = UUID.fromString(Files.readString(marker, StandardCharsets.UTF_8).strip());
+                    String[] fields = Files.readString(marker, StandardCharsets.UTF_8).strip().split("\\R");
+                    if (fields.length != 1 && fields.length != 4) continue;
+                    UUID ownerId = UUID.fromString(fields[0]);
+                    if (fields.length == 1) {
+                        ownership = new CompletedUploadOwnership(ownerId, false);
+                    } else {
+                        UUID requestId = UUID.fromString(fields[1]);
+                        String folder = new String(Base64.getUrlDecoder().decode(fields[2]), StandardCharsets.UTF_8);
+                        String display = new String(Base64.getUrlDecoder().decode(fields[3]), StandardCharsets.UTF_8);
+                        if (folder.isBlank() || folder.length() > 255 || display.isBlank() || display.length() > 256) continue;
+                        ownership = new CompletedUploadOwnership(ownerId, false, requestId, folder, display);
+                    }
                 } catch (IllegalArgumentException invalid) {
                     continue;
                 }
@@ -414,12 +475,12 @@ public final class TransferSessionService {
                     Files.deleteIfExists(marker);
                     continue;
                 }
-                completedUploads.putIfAbsent(fileName, new CompletedUploadOwnership(ownerId, false));
+                completedUploads.putIfAbsent(fileName, ownership);
             }
         }
     }
 
-    private void persistOwnershipMarker(String fileName, UUID ownerId) throws IOException {
+    private void persistOwnershipMarker(String fileName, CompletedUploadOwnership ownership) throws IOException {
         Files.createDirectories(tempRoot);
         if (Files.exists(completedOwnershipRoot)) {
             if (!Files.isDirectory(completedOwnershipRoot) || Files.isSymbolicLink(completedOwnershipRoot)) {
@@ -439,10 +500,24 @@ public final class TransferSessionService {
             throw new IOException("Completed upload ownership temp escaped owned root");
         }
         try {
-            Files.writeString(temporary, ownerId.toString(), StandardCharsets.UTF_8,
+            String payload = ownership.ownerId().toString();
+            if (ownership.importRequestId() != null) {
+                payload += "\n" + ownership.importRequestId()
+                        + "\n" + Base64.getUrlEncoder().withoutPadding().encodeToString(
+                                ownership.destinationFolder().getBytes(StandardCharsets.UTF_8))
+                        + "\n" + Base64.getUrlEncoder().withoutPadding().encodeToString(
+                                ownership.displayName().getBytes(StandardCharsets.UTF_8));
+            }
+            if (payload.getBytes(StandardCharsets.UTF_8).length > MAX_OWNERSHIP_MARKER_BYTES) {
+                throw new IOException("Completed upload ownership marker exceeds safety bound");
+            }
+            Files.writeString(temporary, payload, StandardCharsets.UTF_8,
                     StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
-            Files.deleteIfExists(marker);
-            move(temporary, marker);
+            try {
+                Files.move(temporary, marker, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(temporary, marker, StandardCopyOption.REPLACE_EXISTING);
+            }
         } finally {
             Files.deleteIfExists(temporary);
         }
@@ -636,9 +711,20 @@ public final class TransferSessionService {
         @Override public byte[] bytes() { return Arrays.copyOf(bytes, bytes.length); }
     }
 
-    private record CompletedUploadOwnership(UUID ownerId, boolean claimedForReview) {
+    private record CompletedUploadOwnership(
+            UUID ownerId, boolean claimedForReview,
+            UUID importRequestId, String destinationFolder, String displayName
+    ) {
+        private CompletedUploadOwnership(UUID ownerId, boolean claimedForReview) {
+            this(ownerId, claimedForReview, null, null, null);
+        }
+
         private CompletedUploadOwnership {
             Objects.requireNonNull(ownerId, "ownerId");
+            if ((importRequestId == null) != (destinationFolder == null)
+                    || (importRequestId == null) != (displayName == null)) {
+                throw new IllegalArgumentException("Incomplete import admission ownership");
+            }
         }
     }
 
