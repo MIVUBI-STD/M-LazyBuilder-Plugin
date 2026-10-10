@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.world.registry;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Durable LazyBuilder metadata for one managed world.
@@ -16,7 +17,8 @@ public record WorldRecord(
         String displayName,
         WorldKind kind,
         WorldLifecycle lifecycle,
-        String defaultGameMode
+        String defaultGameMode,
+        ImportProvenance importProvenance
 ) {
     public static final String DEFAULT_GAME_MODE = "CREATIVE";
     private static final int MAX_FOLDER_NAME_CHARS = 255;
@@ -34,6 +36,17 @@ public record WorldRecord(
         folderName = validateFolderName(folderName);
         displayName = validateDisplayName(displayName);
         defaultGameMode = validateGameMode(defaultGameMode);
+        if (importProvenance != null && kind != WorldKind.IMPORTED) {
+            throw new IllegalArgumentException("Only imported worlds can have import provenance");
+        }
+    }
+
+    /** Existing callers and legacy records have no Desktop import provenance. */
+    public WorldRecord(
+            WorldId id, String folderName, String displayName, WorldKind kind,
+            WorldLifecycle lifecycle, String defaultGameMode
+    ) {
+        this(id, folderName, displayName, kind, lifecycle, defaultGameMode, null);
     }
 
     public WorldRecord(
@@ -47,15 +60,30 @@ public record WorldRecord(
     }
 
     public WorldRecord withDisplayName(String newDisplayName) {
-        return new WorldRecord(id, folderName, newDisplayName, kind, lifecycle, defaultGameMode);
+        return new WorldRecord(id, folderName, newDisplayName, kind, lifecycle, defaultGameMode, importProvenance);
     }
 
     public WorldRecord withLifecycle(WorldLifecycle newLifecycle) {
-        return new WorldRecord(id, folderName, displayName, kind, newLifecycle, defaultGameMode);
+        return new WorldRecord(id, folderName, displayName, kind, newLifecycle, defaultGameMode, importProvenance);
     }
 
     public WorldRecord withDefaultGameMode(String newDefaultGameMode) {
-        return new WorldRecord(id, folderName, displayName, kind, lifecycle, newDefaultGameMode);
+        return new WorldRecord(id, folderName, displayName, kind, lifecycle, newDefaultGameMode, importProvenance);
+    }
+
+    /** Immutable request-to-world evidence committed together with the world registry. */
+    public record ImportProvenance(UUID requestId, String artifactName, String requestedDisplayName) {
+        public ImportProvenance {
+            Objects.requireNonNull(requestId, "requestId");
+            Objects.requireNonNull(artifactName, "artifactName");
+            if (artifactName.isBlank() || !artifactName.equals(artifactName.strip())
+                    || artifactName.length() > 255 || artifactName.contains("/")
+                    || artifactName.contains("\\")
+                    || artifactName.chars().anyMatch(Character::isISOControl)) {
+                throw new IllegalArgumentException("Invalid import provenance artifact name");
+            }
+            requestedDisplayName = validateDisplayName(requestedDisplayName);
+        }
     }
 
     private static String validateFolderName(String value) {

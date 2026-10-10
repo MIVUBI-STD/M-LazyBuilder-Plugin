@@ -316,6 +316,10 @@ public final class PaperLocalControlServer {
         }
         WorldTaskSnapshot snapshot = tasks.find(taskId).orElse(null);
         if (snapshot == null) {
+            WorldRecord committed = registry.findByImportRequestId(taskId).orElse(null);
+            if (committed != null) snapshot = committedImportSnapshot(committed);
+        }
+        if (snapshot == null) {
             sendError(exchange, 404, "task_not_found", "World task was not found.");
             return;
         }
@@ -408,6 +412,18 @@ public final class PaperLocalControlServer {
         String displayName = request.displayName() == null || request.displayName().isBlank()
                 ? destinationFolder
                 : request.displayName().trim();
+        // Durable registry commit is authoritative after Paper restart or task-history eviction.
+        WorldRecord committed = registry.findByImportRequestId(requestId).orElse(null);
+        if (committed != null) {
+            WorldRecord.ImportProvenance origin = committed.importProvenance();
+            if (!origin.artifactName().equals(artifactName)
+                    || !committed.folderName().equals(destinationFolder)
+                    || !origin.requestedDisplayName().equals(displayName)) {
+                throw new IllegalStateException("Committed import request ID reused with different parameters");
+            }
+            sendJson(exchange, 202, taskResponse(committedImportSnapshot(committed)));
+            return;
+        }
         ImportAdmission previous = importAdmissions.get(requestId);
         if (previous != null) {
             if (!previous.artifactName().equals(artifactName)
@@ -440,7 +456,7 @@ public final class PaperLocalControlServer {
                         boolean committed = false;
                         try {
                             String result = heavyOperations.importWorld(
-                                    artifactName, destinationFolder, displayName, progress::update).id().toString();
+                                    artifactName, destinationFolder, displayName, requestId, progress::update).id().toString();
                             committed = true;
                             return result;
                         } finally {
@@ -584,6 +600,16 @@ public final class PaperLocalControlServer {
         return new ManagedWorldResponse(
                 world.id().toString(), world.displayName(), world.kind().name(),
                 world.lifecycle().name(), world.defaultGameMode());
+    }
+
+    private static WorldTaskSnapshot committedImportSnapshot(WorldRecord committed) {
+        java.time.Instant now = java.time.Instant.now();
+        return new WorldTaskSnapshot(
+                committed.importProvenance().requestId(),
+                WorldTaskType.IMPORT, committed.id(),
+                com.halokaryamedia.lazybuilder.world.task.WorldTaskState.SUCCEEDED,
+                100, "Import already committed; recovered from durable world registry.",
+                committed.id().toString(), "", now, now);
     }
 
     private static TaskResponse taskResponse(WorldTaskSnapshot snapshot) {

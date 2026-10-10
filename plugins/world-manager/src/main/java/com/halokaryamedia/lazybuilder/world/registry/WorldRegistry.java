@@ -26,6 +26,11 @@ public final class WorldRegistry {
                     "Managed world limit reached: " + MAX_MANAGED_WORLDS);
         }
         ensureFolderAvailable(world.folderName(), null);
+        if (world.importProvenance() != null
+                && findByImportRequestId(world.importProvenance().requestId()).isPresent()) {
+            throw new IllegalArgumentException("Import request was already committed: "
+                    + world.importProvenance().requestId());
+        }
         worlds.put(world.id(), world);
     }
 
@@ -37,6 +42,14 @@ public final class WorldRegistry {
         String target = folderKey(Objects.requireNonNull(folderName, "folderName"));
         return worlds.values().stream()
                 .filter(world -> folderKey(world.folderName()).equals(target))
+                .findFirst();
+    }
+
+    public synchronized Optional<WorldRecord> findByImportRequestId(java.util.UUID requestId) {
+        Objects.requireNonNull(requestId, "requestId");
+        return worlds.values().stream()
+                .filter(world -> world.importProvenance() != null
+                        && world.importProvenance().requestId().equals(requestId))
                 .findFirst();
     }
 
@@ -74,6 +87,9 @@ public final class WorldRegistry {
         WorldRecord current = worlds.get(updated.id());
         if (current == null) {
             throw new IllegalArgumentException("World id is not registered: " + updated.id());
+        }
+        if (!Objects.equals(current.importProvenance(), updated.importProvenance())) {
+            throw new IllegalArgumentException("Imported request provenance is immutable");
         }
         if (!current.folderName().equals(updated.folderName())) {
             throw new IllegalArgumentException("folderName cannot be changed through registry metadata updates");

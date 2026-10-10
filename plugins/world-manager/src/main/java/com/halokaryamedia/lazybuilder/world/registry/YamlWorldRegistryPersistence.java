@@ -79,13 +79,23 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
             if (section == null) throw new IOException("Invalid world registry entry: " + idText);
 
             try {
+                boolean hasImportIdentity = section.contains("import-request-id")
+                        || section.contains("import-artifact")
+                        || section.contains("import-display-name");
+                WorldRecord.ImportProvenance importProvenance = hasImportIdentity
+                        ? new WorldRecord.ImportProvenance(
+                                java.util.UUID.fromString(requiredString(section, "import-request-id")),
+                                requiredString(section, "import-artifact"),
+                                requiredString(section, "import-display-name"))
+                        : null;
                 WorldRecord record = new WorldRecord(
                         WorldId.parse(idText),
                         requiredString(section, "folder"),
                         requiredString(section, "display-name"),
                         WorldKind.valueOf(requiredString(section, "kind")),
                         WorldLifecycle.valueOf(requiredString(section, "lifecycle")),
-                        section.getString("default-game-mode", WorldRecord.DEFAULT_GAME_MODE)
+                        section.getString("default-game-mode", WorldRecord.DEFAULT_GAME_MODE),
+                        importProvenance
                 );
                 validation.register(record);
                 loaded.add(record);
@@ -131,6 +141,11 @@ public final class YamlWorldRegistryPersistence implements WorldRegistryPersiste
             yaml.set(base + ".kind", world.kind().name());
             yaml.set(base + ".lifecycle", world.lifecycle().name());
             yaml.set(base + ".default-game-mode", world.defaultGameMode());
+            if (world.importProvenance() != null) {
+                yaml.set(base + ".import-request-id", world.importProvenance().requestId().toString());
+                yaml.set(base + ".import-artifact", world.importProvenance().artifactName());
+                yaml.set(base + ".import-display-name", world.importProvenance().requestedDisplayName());
+            }
         }
 
         byte[] payload = yaml.saveToString().getBytes(StandardCharsets.UTF_8);

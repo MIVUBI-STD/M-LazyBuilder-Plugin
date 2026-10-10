@@ -190,14 +190,18 @@ public final class WorldHeavyOperationOrchestrator {
     }
 
     public WorldRecord importWorld(
-            String artifactName,
-            String destinationFolder,
-            String displayName,
-            Progress progress
+            String artifactName, String destinationFolder, String displayName, Progress progress
+    ) throws Exception {
+        return importWorld(artifactName, destinationFolder, displayName, null, progress);
+    }
+
+    public WorldRecord importWorld(
+            String artifactName, String destinationFolder, String displayName,
+            java.util.UUID requestId, Progress progress
     ) throws Exception {
         Progress reporter = progressOrNone(progress);
         reporter.update(10, "Preparing import.");
-        WorldImportService.ImportTask task = importService.prepare(artifactName, destinationFolder, displayName);
+        WorldImportService.ImportTask task = importService.prepare(artifactName, destinationFolder, displayName, requestId);
         Exception failure = null;
         WorldRecord imported = null;
         try {

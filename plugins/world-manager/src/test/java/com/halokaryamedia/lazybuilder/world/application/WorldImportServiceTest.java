@@ -38,6 +38,30 @@ class WorldImportServiceTest {
     @TempDir Path tempDir;
 
     @Test
+    void importedRequestIdentityIsCommittedToCanonicalWorldRegistry() throws Exception {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        FakeFiles files = new FakeFiles(tempDir);
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        FakeStore store = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> { throw new AssertionError("native import should not convert"); };
+        WorldImportService service = new WorldImportService(
+                registry, persistence, files, imports, store, updates(store, converter), converter,
+                new ConversionJobCoordinator());
+        UUID requestId = UUID.randomUUID();
+        WorldImportService.ImportTask task = service.prepare(
+                "Owned.zip", "ImportedOwned", "Imported Owned", requestId);
+        WorldRecord world = service.executeFilePhase(task);
+        service.finish(task);
+        assertEquals(world.id(), registry.findByImportRequestId(requestId).orElseThrow().id());
+        assertEquals(requestId, persistence.saved.getFirst().importProvenance().requestId());
+        assertEquals("Owned.zip", world.importProvenance().artifactName());
+        assertThrows(IllegalArgumentException.class, () ->
+                registry.register(new WorldRecord(WorldId.create(), "Another", "Another", WorldKind.IMPORTED,
+                        WorldLifecycle.ACTIVE, WorldRecord.DEFAULT_GAME_MODE, world.importProvenance())));
+    }
+
+    @Test
     void trustedNativeImportPublishesFreshActiveRecordWithoutConverter() throws Exception {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();

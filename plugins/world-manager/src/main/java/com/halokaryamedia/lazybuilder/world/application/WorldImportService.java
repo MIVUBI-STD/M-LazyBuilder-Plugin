@@ -96,6 +96,10 @@ public final class WorldImportService {
     }
 
     public ImportTask prepare(String artifactName, String destinationFolder, String displayName) {
+        return prepare(artifactName, destinationFolder, displayName, null);
+    }
+
+    public ImportTask prepare(String artifactName, String destinationFolder, String displayName, UUID requestId) {
         UUID operationId = UUID.randomUUID();
         reserveArtifact(artifactName, operationId);
         try {
@@ -110,9 +114,13 @@ public final class WorldImportService {
             if (pendingCommittedArtifactCleanup.contains(artifactName)) {
                 throw new IllegalStateException("Import upload has pending committed cleanup: " + artifactName);
             }
+            if (requestId != null && registry.findByImportRequestId(requestId).isPresent()) {
+                throw new IllegalStateException("Import request already committed: " + requestId);
+            }
             WorldRecord destination = new WorldRecord(
                     WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
-                    WorldLifecycle.ACTIVE
+                    WorldLifecycle.ACTIVE, WorldRecord.DEFAULT_GAME_MODE,
+                    requestId == null ? null : new WorldRecord.ImportProvenance(requestId, artifactName, displayName)
             );
             WorldRegistry.FolderReservation destinationReservation =
                     registry.reserveFolder(destination.folderName());

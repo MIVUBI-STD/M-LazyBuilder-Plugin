@@ -52,6 +52,41 @@ class YamlWorldRegistryPersistenceTest {
     }
 
     @Test
+    void importedRequestProvenanceSurvivesSaveLoadAndMetadataChanges() throws Exception {
+        Path file = tempDir.resolve("import-registry.yml");
+        var persistence = new YamlWorldRegistryPersistence(file);
+        var requestId = java.util.UUID.randomUUID();
+        WorldRecord imported = new WorldRecord(
+                WorldId.create(), "ImportedWorld", "Requested Display", WorldKind.IMPORTED,
+                WorldLifecycle.ACTIVE, WorldRecord.DEFAULT_GAME_MODE,
+                new WorldRecord.ImportProvenance(requestId, "upload.mcworld", "Requested Display"));
+        persistence.save(List.of(imported));
+        WorldRecord recovered = persistence.load().getFirst();
+        assertEquals(imported, recovered);
+        assertEquals(requestId, recovered.importProvenance().requestId());
+        assertEquals(imported.importProvenance(), recovered.withDisplayName("Renamed World").importProvenance());
+        assertEquals(imported.importProvenance(), recovered.withLifecycle(WorldLifecycle.ARCHIVED).importProvenance());
+        assertEquals(imported.importProvenance(), recovered.withDefaultGameMode("SURVIVAL").importProvenance());
+    }
+
+    @Test
+    void partialImportProvenanceInRegistryFailsClosed() throws Exception {
+        Path file = tempDir.resolve("partial-import-registry.yml");
+        WorldId worldId = WorldId.create();
+        Files.writeString(file, """
+                schema-version: 1
+                worlds:
+                  %s:
+                    folder: Imported
+                    display-name: Imported
+                    kind: IMPORTED
+                    lifecycle: ACTIVE
+                    import-request-id: %s
+                """.formatted(worldId, java.util.UUID.randomUUID()));
+        assertThrows(IOException.class, new YamlWorldRegistryPersistence(file)::load);
+    }
+
+    @Test
     void emptyCurrentRegistryCarriesSchemaAndRoundTripsAsEmpty() throws Exception {
         Path path = tempDir.resolve("registry-empty-current.yml");
         YamlWorldRegistryPersistence persistence = new YamlWorldRegistryPersistence(path);
