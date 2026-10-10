@@ -7,7 +7,7 @@ The repository is organized by runtime/product responsibility so a maintainer ca
 ## Canonical top-level layout
 
 ```text
-LazyBuilder-Plugin/
+M-LazyBuilder-Plugin/
 ├── apps/
 │   └── launcher/
 │       ├── src/

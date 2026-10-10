@@ -124,7 +124,7 @@ A failed feature includes a concise reason. Command diagnostics verify that cano
 
 ## Verification
 
-The independent `utilities` CI job compiles/tests Utilities-Manager without waiting on unrelated Paper modules and uploads the tested Utilities JAR for that exact SHA. Repository-wide release readiness still requires the complete Paper and other required gates.
+Utilities-Manager is compiled and tested through the repository Maven reactor in the integrated `Verify` workflow's `paper` job, which also builds World-Manager and stages the tested core JARs for that commit. There is no standalone `utilities` job. Verification workflows are manual-only (`workflow_dispatch`); use `DEV.cmd verify paper` for focused development checks. Source/build success does not replace the required live-server proof or the full repository readiness gate.
 
 ## Maintenance constraints
 

@@ -92,11 +92,13 @@ check
 Local development and CI are deliberately separate:
 
 ```text
-Local commits       → no automatic full CI
-workflow dispatch   → full final CI on demand
-pull request        → full CI
-push to main        → full CI
+Local commits       → no automatic CI
+pull request        → no automatic CI
+push to main        → no automatic CI
+workflow_dispatch   → verification only on explicit request
 ```
+
+GitHub registers manually dispatched workflows through its default branch. Workflow definitions on `Local` alone may not expose the Run workflow button; do not modify `main` or change repository settings as a development workaround.
 
 Local proof does not replace CI; CI does not replace target-machine/runtime acceptance. Promotion and release side effects remain explicit operations, never hidden inside ordinary build/test commands.
 
