@@ -1,11 +1,21 @@
 package com.halokaryamedia.lazybuilder.world.paper;
 
+import org.bukkit.NamespacedKey;
+import org.bukkit.entity.Mob;
+import org.bukkit.persistence.PersistentDataContainer;
 import org.junit.jupiter.api.Test;
 
+
+import java.lang.reflect.Proxy;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class BuildPerformanceControllerPolicyTest {
@@ -47,6 +57,65 @@ class BuildPerformanceControllerPolicyTest {
     void suppressionClaimsOnlyAiThatWasEnabled() {
         assertEquals(SUPPRESS, BuildPerformanceController.decideAiAction(false, true, true));
         assertEquals(NONE, BuildPerformanceController.decideAiAction(true, false, true));
+    }
+
+    private static final NamespacedKey TEST_LEASE =
+            Objects.requireNonNull(NamespacedKey.fromString("lazybuilder:managed_ai_suppressed"));
+
+    private static final class MobFixture {
+        boolean hasAi;
+        boolean failDisable;
+        final Map<NamespacedKey, Byte> data = new HashMap<>();
+        final PersistentDataContainer pdc = (PersistentDataContainer) Proxy.newProxyInstance(
+                PersistentDataContainer.class.getClassLoader(), new Class<?>[]{PersistentDataContainer.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "has" -> data.containsKey(args[0]);
+                    case "set" -> { data.put((NamespacedKey) args[0], (Byte) args[2]); yield null; }
+                    case "remove" -> { data.remove(args[0]); yield null; }
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+        final Mob mob = (Mob) Proxy.newProxyInstance(
+                Mob.class.getClassLoader(), new Class<?>[]{Mob.class},
+                (proxy, method, args) -> switch (method.getName()) {
+                    case "hasAI" -> hasAi;
+                    case "setAI" -> {
+                        if (failDisable && Boolean.FALSE.equals(args[0])) {
+                            throw new IllegalStateException("simulated setAI failure");
+                        }
+                        hasAi = (boolean) args[0];
+                        yield null;
+                    }
+                    case "getPersistentDataContainer" -> pdc;
+                    default -> throw new UnsupportedOperationException(method.getName());
+                });
+
+        MobFixture(boolean hasAi) { this.hasAi = hasAi; }
+    }
+
+    @Test
+    void leasedAiRestoresWithoutTouchingAuthoredNoAi() {
+        MobFixture owned = new MobFixture(true);
+        assertEquals(SUPPRESS, BuildPerformanceController.applyAiLeaseDecision(owned.mob, TEST_LEASE, true));
+        assertFalse(owned.hasAi);
+        assertTrue(owned.data.containsKey(TEST_LEASE));
+        assertEquals(RESTORE, BuildPerformanceController.applyAiLeaseDecision(owned.mob, TEST_LEASE, false));
+        assertTrue(owned.hasAi);
+        assertFalse(owned.data.containsKey(TEST_LEASE));
+
+        MobFixture preexistingNoAi = new MobFixture(false);
+        assertEquals(NONE, BuildPerformanceController.applyAiLeaseDecision(preexistingNoAi.mob, TEST_LEASE, true));
+        assertFalse(preexistingNoAi.hasAi);
+        assertFalse(preexistingNoAi.data.containsKey(TEST_LEASE));
+    }
+
+    @Test
+    void failedSetAiRollsBackOwnershipMarker() {
+        MobFixture broken = new MobFixture(true);
+        broken.failDisable = true;
+        assertThrows(IllegalStateException.class, () ->
+                BuildPerformanceController.applyAiLeaseDecision(broken.mob, TEST_LEASE, true));
+        assertTrue(broken.hasAi);
+        assertFalse(broken.data.containsKey(TEST_LEASE));
     }
 
     @Test

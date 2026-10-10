@@ -81,9 +81,7 @@ public final class BuildPerformanceController implements Listener {
         int reconciled = 0;
         for (World world : Bukkit.getWorlds()) {
             boolean canSuppress = scanLoadedEntitiesOnEnable && isEnabledManagedWorld(world);
-            for (Entity entity : world.getEntities()) {
-                if (reconcileAi(entity, canSuppress) != AiAction.NONE) reconciled++;
-            }
+            reconciled += reconcileBatch(world.getEntities(), canSuppress, "plugin startup");
         }
         if (reconciled > 0) {
             plugin.getLogger().info("Reconciled LazyBuilder-owned mob AI for "
@@ -93,45 +91,67 @@ public final class BuildPerformanceController implements Listener {
 
     public void stop() {
         HandlerList.unregisterAll(this);
-        int restored = 0;
+        int released = 0;
         for (World world : Bukkit.getWorlds()) {
-            for (Entity entity : world.getEntities()) {
-                if (restoreOwnedAi(entity) == AiAction.RESTORE) restored++;
-            }
+            // Do not let one failed Mob block remaining lease restoration or shutdown cleanup.
+            released += reconcileBatch(world.getEntities(), false, "plugin shutdown");
         }
-        if (restored > 0) {
-            plugin.getLogger().info("Restored mob AI for " + restored
-                    + " loaded LazyBuilder-owned entities before plugin shutdown.");
+        if (released > 0) {
+            plugin.getLogger().info("Released " + released
+                    + " loaded LazyBuilder-owned AI leases before plugin shutdown.");
         }
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onCreatureSpawn(CreatureSpawnEvent event) {
-        reconcileAi(event.getEntity(), isEnabledManagedWorld(event.getLocation().getWorld()));
+        try {
+            reconcileAi(event.getEntity(), isEnabledManagedWorld(event.getLocation().getWorld()));
+        } catch (RuntimeException failure) {
+            plugin.getLogger().log(Level.WARNING, "Could not apply a LazyBuilder mob AI lease on spawn", failure);
+        }
     }
 
     @EventHandler
+    public void onEntitiesLoad    @EventHandler
     public void onEntitiesLoad(EntitiesLoadEvent event) {
-        boolean canSuppress = isEnabledManagedWorld(event.getWorld());
-        for (Entity entity : event.getEntities()) {
-            reconcileAi(entity, canSuppress);
-        }
+        reconcileBatch(event.getEntities(), isEnabledManagedWorld(event.getWorld()), "entity load");
     }
 
     @EventHandler
+    public void onEntitiesUnload    @EventHandler
     public void onEntitiesUnload(EntitiesUnloadEvent event) {
-        // Paper entity unload is a separate lifecycle from chunk unload. Restore
-        // before the entity is serialized, including entities in retired worlds.
-        for (Entity entity : event.getEntities()) {
-            restoreOwnedAi(entity);
-        }
+        // Attempt owned AI restoration before serialization. A failed entity
+        // retains its PDC marker for the next load/recovery attempt.
+        reconcileBatch(event.getEntities(), false, "entity unload");
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onBreed    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBreed(EntityBreedEvent event) {
         if (breedingSuppression && isEnabledManagedWorld(event.getEntity().getWorld())) {
             event.setCancelled(true);
         }
+    }
+
+    private int reconcileBatch(Iterable<? extends Entity> entities, boolean canSuppress, String phase) {
+        int changed = 0;
+        int failures = 0;
+        RuntimeException firstFailure = null;
+        for (Entity entity : entities) {
+            try {
+                if (reconcileAi(entity, canSuppress) != AiAction.NONE) changed++;
+            } catch (RuntimeException failure) {
+                failures++;
+                if (firstFailure == null) firstFailure = failure;
+            }
+        }
+        if (firstFailure != null) {
+            plugin.getLogger().log(Level.WARNING,
+                    "Could not reconcile " + failures + " LazyBuilder mob AI leases during " + phase
+                            + "; affected entities retain their marker for later recovery.",
+                    firstFailure);
+        }
+        return changed;
     }
 
     private boolean isEnabledManagedWorld(World world) {
@@ -151,24 +171,27 @@ public final class BuildPerformanceController implements Listener {
         return applyDecision(mob, suppressRequested);
     }
 
-    private AiAction restoreOwnedAi(Entity entity) {
-        return entity instanceof Mob mob ? applyDecision(mob, false) : AiAction.NONE;
+    private AiAction applyDecision(Mob mob, boolean suppressRequested) {
+        return applyAiLeaseDecision(mob, aiLeaseKey, suppressRequested);
     }
 
-    private AiAction applyDecision(Mob mob, boolean suppressRequested) {
+    /** Exact PDC/AI transition, exercised with a narrow Mob proxy in tests. */
+    static AiAction applyAiLeaseDecision(Mob mob, NamespacedKey leaseKey, boolean suppressRequested) {
+        Objects.requireNonNull(mob, "mob");
+        Objects.requireNonNull(leaseKey, "leaseKey");
         PersistentDataContainer data = mob.getPersistentDataContainer();
-        boolean leased = data.has(aiLeaseKey, PersistentDataType.BYTE);
+        boolean leased = data.has(leaseKey, PersistentDataType.BYTE);
         AiAction decision = decideAiAction(leased, mob.hasAI(), suppressRequested);
         switch (decision) {
             case SUPPRESS -> {
                 // Persist lease first: interruption before setAI can only leave
                 // a harmless marker on an AI-enabled entity, not an orphaned NoAI.
-                data.set(aiLeaseKey, PersistentDataType.BYTE, (byte) 1);
+                data.set(leaseKey, PersistentDataType.BYTE, (byte) 1);
                 try {
                     mob.setAI(false);
                 } catch (RuntimeException failure) {
                     try {
-                        data.remove(aiLeaseKey);
+                        data.remove(leaseKey);
                     } catch (RuntimeException cleanupFailure) {
                         failure.addSuppressed(cleanupFailure);
                     }
@@ -177,9 +200,9 @@ public final class BuildPerformanceController implements Listener {
             }
             case RESTORE -> {
                 mob.setAI(true);
-                data.remove(aiLeaseKey);
+                data.remove(leaseKey);
             }
-            case CLEAR_LEASE -> data.remove(aiLeaseKey);
+            case CLEAR_LEASE -> data.remove(leaseKey);
             case NONE -> { }
         }
         return decision;
