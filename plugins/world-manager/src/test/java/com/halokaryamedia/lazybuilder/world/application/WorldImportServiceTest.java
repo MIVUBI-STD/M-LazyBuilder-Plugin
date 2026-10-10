@@ -60,6 +60,7 @@ class WorldImportServiceTest {
         assertEquals(requestId, persistence.saved.getFirst().importProvenance().requestId());
         assertEquals("Owned.zip", world.importProvenance().artifactName());
         assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", world.importProvenance().artifactSha256());
+        assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", imports.stagedExpectedSha256);
         assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", persistence.saved.getFirst().importProvenance().artifactSha256());
         assertThrows(IllegalArgumentException.class, () ->
                 service.prepare("Owned.zip", "NoRequest", "No Request", null, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
@@ -587,6 +588,7 @@ class WorldImportServiceTest {
         private boolean failCommittedMarkerRuntime;
         private int deleteFailuresRemaining;
         private int deleteAttempts;
+        private String stagedExpectedSha256;
 
         private FakeImports(DetectedEdition edition, String trustedFormat) {
             this.edition = edition;
@@ -603,6 +605,11 @@ class WorldImportServiceTest {
             Files.createDirectory(workspace);
             Files.writeString(workspace.resolve("level.dat"), "level");
             return new StagedImport(workspace, edition, trustedFormat);
+        }
+        @Override public StagedImport stageArchive(String artifactName, Path workspace, String expectedSha256)
+                throws IOException {
+            stagedExpectedSha256 = expectedSha256;
+            return stageArchive(artifactName, workspace);
         }
         @Override public void sanitizeConvertedWorld(Path worldDirectory) { }
         @Override public void deleteArtifact(String artifactName) throws IOException {

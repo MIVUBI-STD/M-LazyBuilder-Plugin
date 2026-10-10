@@ -346,7 +346,7 @@ Chunker/converter runtime names are implementation details and must not become p
 
 - file-first `.zip` / `.mcworld` workflow;
 - bounded upload/extraction validation;
-- a Desktop import carries its verified uploaded-archive SHA-256 through the existing import transaction into optional persisted world provenance. Older records and Fabric imports remain valid without this digest. The hash identifies the uploaded archive, **not** the extracted or converted world, and does not eliminate a filesystem race between verification and staging;
+- a Desktop import carries its verified uploaded-archive SHA-256 through the existing import transaction into optional persisted world provenance. The artifact store copies and hashes the admitted archive inside the existing owned import workspace, rejects mismatches before extracting, and extracts **only from that verified snapshot**; the disk-space preflight reserves capacity for the snapshot as well as extracted content. Snapshot and partial output share existing workspace cleanup/recovery. Older records and Fabric imports retain their original import path without an invented digest. This SHA-256 identifies the uploaded archive, **not** the extracted or converted world;
 - source edition/version detection;
 - canonical managed target Java 1.21.4;
 - fresh WorldId;

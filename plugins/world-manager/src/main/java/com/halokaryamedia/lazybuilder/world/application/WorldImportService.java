@@ -152,7 +152,10 @@ public final class WorldImportService {
         boolean published = false;
         try {
             stagedInput = files.reserveWorkspace(task.operationId);
-            WorldImportArtifactStore.StagedImport staged = imports.stageArchive(task.artifactName, stagedInput);
+            String expectedSha256 = task.destination.importProvenance() == null
+                    ? null : task.destination.importProvenance().artifactSha256();
+            WorldImportArtifactStore.StagedImport staged =
+                    imports.stageArchive(task.artifactName, stagedInput, expectedSha256);
             publishSource = staged.worldDirectory();
 
             boolean nativeTrusted = staged.edition() == WorldImportArtifactStore.DetectedEdition.JAVA

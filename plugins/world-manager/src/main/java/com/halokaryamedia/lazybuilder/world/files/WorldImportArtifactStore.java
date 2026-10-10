@@ -9,6 +9,18 @@ public interface WorldImportArtifactStore {
     StagedImport stageArchive(String artifactName, Path workspace) throws IOException;
 
     /**
+     * Stage only bytes matching an admission-verified archive digest. Unsupported stores
+     * fail closed rather than silently using the unverified legacy staging path.
+     */
+    default StagedImport stageArchive(String artifactName, Path workspace, String expectedSha256)
+            throws IOException {
+        if (expectedSha256 != null) {
+            throw new IOException("Verified archive staging is not supported by this artifact store");
+        }
+        return stageArchive(artifactName, workspace);
+    }
+
+    /**
      * Reads bounded presentation metadata from an uploaded import artifact without
      * publishing or mutating a managed world.
      */

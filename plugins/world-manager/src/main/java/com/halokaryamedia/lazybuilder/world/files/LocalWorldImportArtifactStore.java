@@ -6,6 +6,10 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.LinkOption;
+import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.FileVisitResult;
@@ -15,6 +19,7 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -119,6 +124,14 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
 
     @Override
     public StagedImport stageArchive(String artifactName, Path workspace) throws IOException {
+        return stageArchive(artifactName, workspace, null);
+    }
+
+    @Override
+    public StagedImport stageArchive(String artifactName, Path workspace, String expectedSha256) throws IOException {
+        if (expectedSha256 != null && !expectedSha256.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("Invalid expected import SHA-256");
+        }
         requireSafeImportsRoot();
         Path artifact = resolveArtifact(artifactName);
         Path target = Objects.requireNonNull(workspace, "workspace").toAbsolutePath().normalize();
@@ -130,6 +143,15 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         }
         ArchiveEstimate estimate = estimateArchive(artifact);
         long requiredFreeBytes = requiredFreeBytes(estimate.uncompressedBytes(), estimate.entries());
+        long compressedBytes = 0;
+        if (expectedSha256 != null) {
+            compressedBytes = Files.size(artifact);
+            try {
+                requiredFreeBytes = Math.addExact(requiredFreeBytes, compressedBytes);
+            } catch (ArithmeticException overflow) {
+                throw new IOException("Verified import requires too much staging disk space", overflow);
+            }
+        }
         long usableBytes = Files.getFileStore(workspaceRoot).getUsableSpace();
         if (usableBytes < requiredFreeBytes) {
             throw new IOException("Insufficient disk space to extract import: required at least "
@@ -139,19 +161,75 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         Files.createDirectories(target);
         boolean success = false;
         try {
-            extractBounded(artifact, target);
-            normalizeSingleRoot(target);
-            Path levelDat = target.resolve("level.dat");
+            Path extracted = target;
+            if (expectedSha256 != null) {
+                // Keep input and extraction isolated inside the already-owned workspace.
+                // A crash can therefore be reclaimed by the existing workspace recovery.
+                Path sourceSnapshot = target.resolve(".lazybuilder-import-source.zip");
+                extracted = target.resolve(".lazybuilder-import-extracted");
+                Files.createDirectory(extracted);
+                try {
+                    copyVerifiedArchive(artifact, sourceSnapshot, expectedSha256, compressedBytes);
+                    extractBounded(sourceSnapshot, extracted);
+                } finally {
+                    Files.deleteIfExists(sourceSnapshot);
+                }
+            } else {
+                extractBounded(artifact, target);
+            }
+            normalizeSingleRoot(extracted);
+            Path levelDat = extracted.resolve("level.dat");
             if (!Files.isRegularFile(levelDat)) throw new IOException("Import archive does not contain a Minecraft level.dat");
-            DetectedEdition edition = Files.isDirectory(target.resolve("db")) ? DetectedEdition.BEDROCK : DetectedEdition.JAVA;
+            DetectedEdition edition = Files.isDirectory(extracted.resolve("db")) ? DetectedEdition.BEDROCK : DetectedEdition.JAVA;
             String trustedFormat = edition == DetectedEdition.JAVA
                     && JavaLevelDataVersion.read(levelDat).orElse(-1) == JavaLevelDataVersion.JAVA_1_21_4
                     ? JAVA_1_21_4 : null;
-            sanitizeIdentity(target);
+            sanitizeIdentity(extracted);
+            if (!extracted.equals(target)) {
+                // Promote the validated contents into the original workspace, preserving
+                // WorldFileRepository's single direct-workspace publication contract.
+                try (var contents = Files.list(extracted)) {
+                    for (Path child : contents.toList()) {
+                        Path destination = target.resolve(child.getFileName());
+                        if (Files.exists(destination)) {
+                            throw new IOException("Import contains a reserved staging path: " + child.getFileName());
+                        }
+                        Files.move(child, destination);
+                    }
+                }
+                Files.delete(extracted);
+            }
             success = true;
             return new StagedImport(target, edition, trustedFormat);
         } finally {
             if (!success) deleteTree(target);
+        }
+    }
+
+    private static void copyVerifiedArchive(Path source, Path snapshot, String expectedSha256, long maxBytes)
+            throws IOException {
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("JVM does not support SHA-256", unavailable);
+        }
+        long copied = 0;
+        byte[] buffer = new byte[IO_BUFFER_BYTES];
+        try (InputStream in = Files.newInputStream(source, LinkOption.NOFOLLOW_LINKS);
+             var out = new BufferedOutputStream(
+                     Files.newOutputStream(snapshot, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE),
+                     IO_BUFFER_BYTES)) {
+            for (int read; (read = in.read(buffer)) >= 0;) {
+                if (read == 0) continue;
+                copied = Math.addExact(copied, read);
+                if (copied > maxBytes) throw new IOException("Import source grew during staging");
+                digest.update(buffer, 0, read);
+                out.write(buffer, 0, read);
+            }
+        }
+        if (!HexFormat.of().formatHex(digest.digest()).equals(expectedSha256)) {
+            throw new IOException("Import archive checksum mismatch during staging");
         }
     }
 

@@ -230,6 +230,56 @@ class LocalWorldImportArtifactStoreTest {
     }
 
     @Test
+    void verifiedArchiveIsExtractedFromCleanOwnedSnapshot() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("verified-imports"));
+        Path archive = imports.resolve("verified.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "Build/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+            put(zip, "Build/region/r.0.0.mca", "safe-region".getBytes(StandardCharsets.UTF_8));
+        }
+        byte[] originalArchive = Files.readAllBytes(archive);
+        String digest = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(originalArchive));
+        LocalWorldImportArtifactStore store = new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        Path workspace = tempDir.resolve("verified-workspace");
+
+        var staged = store.stageArchive("verified.zip", workspace, digest);
+
+        assertEquals(workspace.toAbsolutePath(), staged.worldDirectory());
+        assertEquals("JAVA_1_21_4", staged.trustedFormat());
+        assertEquals("safe-region", Files.readString(workspace.resolve("region/r.0.0.mca")));
+        assertTrue(Files.isRegularFile(workspace.resolve("level.dat")));
+        assertFalse(Files.exists(workspace.resolve(".lazybuilder-import-source.zip")));
+        assertFalse(Files.exists(workspace.resolve(".lazybuilder-import-extracted")));
+        assertTrue(java.util.Arrays.equals(originalArchive, Files.readAllBytes(archive)));
+    }
+
+    @Test
+    void changedUploadFailsBeforePublicationAndPreservesUploadForRetry() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("changed-imports"));
+        Path archive = imports.resolve("changed.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+            put(zip, "region/r.0.0.mca", "original".getBytes(StandardCharsets.UTF_8));
+        }
+        String expected = java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(archive)));
+        // Simulate replacement after Desktop transfer admission but before staging.
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+            put(zip, "region/r.0.0.mca", "changed!".getBytes(StandardCharsets.UTF_8));
+        }
+        LocalWorldImportArtifactStore store = new LocalWorldImportArtifactStore(imports, 100, 1024 * 1024);
+        Path workspace = tempDir.resolve("rejected-workspace");
+        IOException failure = assertThrows(IOException.class,
+                () -> store.stageArchive("changed.zip", workspace, expected));
+
+        assertTrue(failure.getMessage().contains("checksum mismatch"));
+        assertFalse(Files.exists(workspace), "uncommitted extraction workspace must be removed");
+        assertTrue(Files.exists(archive), "source stays available as explicit recovery evidence");
+    }
+
+    @Test
     void detectsBedrockByDbDirectory() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports"));
         try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(imports.resolve("world.mcworld")))) {
