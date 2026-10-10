@@ -18,18 +18,24 @@ LazyBuilder-Plugin/
 ├── mods/
 │   ├── map-manager/
 │   ├── utility-manager/
-│   └── performance-manager/
+│   ├── performance-manager/
+│   └── builder-utilities/         # independent Axiom-first extension
 ├── shared/
 │   └── protocol/
 ├── docs/
 ├── scripts/
+├── tooling/
+│   └── windows-toolchain/
 ├── .agents/
 ├── .github/
-├── BUILD-LAUNCHER.cmd
-├── UPDATE-LAUNCHER.cmd
+├── DEV.cmd
+├── mvnw.cmd
+├── gradlew.bat
+├── toolchain.json
 ├── pom.xml
 ├── VERSION
 ├── AGENTS.md
+├── GITHUB_RULES.md
 ├── CONTEXT.md
 └── README.md
 ```
@@ -56,18 +62,19 @@ Fabric client mods only.
 ```text
 mods/map-manager/          world/map/transfer UI
 mods/utility-manager/      passive client convenience
-mods/performance-manager/  performance/resource coordination
+mods/performance-manager/  client performance/resource policy
+mods/builder-utilities/     separate Axiom-first builder extension (not part of core Client Setup)
 ```
 
-Each Manager is one Fabric mod and one output JAR.
+Each core Manager is one Fabric mod and one output JAR. Builder Utilities is a separate extension mod/artifact and does not become a fourth required Client Setup component.
 
 ### `shared/`
 
 Neutral contracts genuinely consumed across runtime boundaries. The current owner is `shared/protocol/`. Do not turn `shared/` into a generic implementation dump.
 
-### `docs/` and `scripts/`
+### `docs/`, `scripts/` and `tooling/`
 
-`docs/` owns durable product/system/operations documentation. `scripts/` owns repository-level verification/build support, not runtime business logic.
+`docs/` owns durable product/system/operations documentation. `scripts/` owns repository-level verification/contract support, not runtime business logic. `tooling/windows-toolchain/` owns repository-supported Windows bootstrap, builds and Local packaging. `DEV.cmd` delegates to the canonical tooling command surface; retired root build/update CMD wrappers must not return.
 
 ## Runtime ownership
 
@@ -78,7 +85,9 @@ Neutral contracts genuinely consumed across runtime boundaries. The current owne
 | `plugins/utilities-manager/` | Paper | World Safety, Movement, Build Helpers |
 | `mods/map-manager/` | Fabric | world/map/transfer presentation |
 | `mods/utility-manager/` | Fabric | passive client QoL |
-| `mods/performance-manager/` | Fabric | lightweight performance/resource policy |
+| `mods/performance-manager/` | Fabric | bounded performance/resource policy |
+| `mods/builder-utilities/` | Fabric / Axiom | independent builder extension with bounded mutation/history/recovery, not V1 core Client Setup |
+| `tooling/windows-toolchain/` | Developer/build tooling | canonical developer bootstrap and verification/package commands |
 | `shared/protocol/` | Paper + Fabric | versioned neutral request/result contracts |
 
 ## Naming rule

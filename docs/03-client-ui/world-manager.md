@@ -67,19 +67,19 @@ Operations requiring a consistent filesystem snapshot must fail safely while bui
 
 ```text
 lazybuilder:world
-→ World Control V5
+→ World Control V7
 → world list/capabilities/create/manage/settings/import/export intents
 → server-authoritative Import inspection + review discard
 
 lazybuilder:map
-→ Map Action V2
+→ Map Action V5
 → current-world state, map teleport, selected-area export intent
 
 lazybuilder:transfer
 → upload/download bytes only
 ```
 
-World Control V5 excludes manual Load/Unload and autoLoad/runtimeState product metadata. Map Action V2 includes explicit current-world clear/update semantics.
+World Control V7 carries the current settings/export customization and Import inspection/review/discard contract while excluding manual Load/Unload and autoLoad/runtimeState product metadata. Map Action V5 preserves explicit server-pushed current-world clear/update semantics and correlates request-bound responses using positive request IDs; ID `0` is reserved for unsolicited current-world state and unbound errors.
 
 Desktop ↔ Paper control is a separate authenticated loopback protocol and is not the Fabric World Control version.
 

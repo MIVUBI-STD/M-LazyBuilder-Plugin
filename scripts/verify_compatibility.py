@@ -116,6 +116,7 @@ canonical_world_map_docs = (
     "CONTEXT.md",
     "docs/02-world-management/README.md",
     "docs/03-client-ui/README.md",
+    "docs/03-client-ui/world-manager.md",
     "docs/04-system/README.md",
     "docs/04-system/networking.md",
     "docs/04-system/world-control-bridge.md",

@@ -28,6 +28,7 @@ REQUIRED_FILES = [
     "docs/04-system/README.md",
     "docs/04-system/development-discipline.md",
     "docs/04-system/skill-routing.md",
+    "docs/04-system/repository-layout.md",
     "docs/04-system/development-operations.md",
     "docs/05-operations/current-verification.md",
     ".github/workflows/verify.yml",
@@ -261,6 +262,7 @@ def main() -> int:
     docs_entry = read_text("docs/README.md", errors)
     system_doc = read_text("docs/04-system/README.md", errors)
     verification_doc = read_text("docs/05-operations/current-verification.md", errors)
+    layout_doc = read_text("docs/04-system/repository-layout.md", errors)
     product_doc = read_text("docs/01-product/README.md", errors)
     module_boundaries = read_text("docs/04-system/module-boundaries.md", errors)
     client_architecture = read_text("docs/04-system/client-manager-architecture-lock.md", errors)
@@ -399,6 +401,15 @@ def main() -> int:
     for phrase in REQUIRED_SYSTEM_DOC_PHRASES:
         if phrase not in system_doc:
             fail(errors, f"system documentation missing evidence-boundary marker: {phrase}")
+
+    # The canonical repository layout must not resurrect retired root entrypoints
+    # or hide the separate Builder extension and repository-owned toolchain.
+    for path in ("DEV.cmd", "mods/builder-utilities/", "tooling/windows-toolchain/", "GITHUB_RULES.md"):
+        if path not in layout_doc:
+            fail(errors, f"repository layout omits canonical source/entrypoint: {path}")
+    for obsolete in ("BUILD-LAUNCHER.cmd", "UPDATE-LAUNCHER.cmd"):
+        if obsolete in layout_doc:
+            fail(errors, f"repository layout still references retired root entrypoint: {obsolete}")
 
     for phrase in REQUIRED_DISCIPLINE_PHRASES:
         if phrase not in discipline:
