@@ -367,13 +367,33 @@ public final class PaperLocalControlServer {
         String displayName = request.displayName() == null || request.displayName().isBlank()
                 ? destinationFolder
                 : request.displayName().trim();
-        WorldTaskSnapshot queued = taskRunner.submit(
-                WorldTaskType.IMPORT,
-                null,
-                "Import queued.",
-                progress -> heavyOperations.importWorld(
-                        artifactName, destinationFolder, displayName, progress::update).id().toString()
-        );
+        if (!importUploads.claimForImport(artifactName)) {
+            throw new IllegalStateException("Desktop import artifact is missing or already claimed");
+        }
+        WorldTaskSnapshot queued;
+        try {
+            queued = taskRunner.submit(
+                    WorldTaskType.IMPORT,
+                    null,
+                    "Import queued.",
+                    progress -> {
+                        boolean committed = false;
+                        try {
+                            String result = heavyOperations.importWorld(
+                                    artifactName, destinationFolder, displayName, progress::update).id().toString();
+                            committed = true;
+                            return result;
+                        } finally {
+                            if (committed) importUploads.releaseAfterImport(artifactName);
+                            else importUploads.returnForRetry(artifactName);
+                        }
+                    },
+                    () -> importUploads.returnForRetry(artifactName)
+            );
+        } catch (RuntimeException | Error rejected) {
+            importUploads.returnForRetry(artifactName);
+            throw rejected;
+        }
         sendJson(exchange, 202, taskResponse(queued));
     }
 

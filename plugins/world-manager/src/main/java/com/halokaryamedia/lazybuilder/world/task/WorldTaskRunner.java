@@ -68,6 +68,15 @@ public final class WorldTaskRunner implements AutoCloseable {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(work, "work");
 
+        return submit(type, worldId, message, work, () -> { });
+    }
+
+    /** Optional cleanup runs only when an admitted task is dropped before starting. */
+    public WorldTaskSnapshot submit(
+            WorldTaskType type, WorldId worldId, String message,
+            WorldTaskWork work, Runnable onNotStarted
+    ) {
+        Objects.requireNonNull(onNotStarted, "onNotStarted");
         reserveWorld(worldId);
         WorldTaskSnapshot queued = null;
         try {
@@ -76,7 +85,7 @@ public final class WorldTaskRunner implements AutoCloseable {
             }
 
             queued = registry.create(type, worldId, message);
-            SubmittedTask submitted = new SubmittedTask(queued.taskId(), worldId, work);
+            SubmittedTask submitted = new SubmittedTask(queued.taskId(), worldId, work, onNotStarted);
             executor.execute(submitted);
             return queued;
         } catch (RejectedExecutionException exception) {
@@ -176,6 +185,11 @@ public final class WorldTaskRunner implements AutoCloseable {
         for (Runnable runnable : dropped) {
             if (!(runnable instanceof SubmittedTask task)) continue;
             releaseWorld(task.worldId);
+            try {
+                task.onNotStarted.run();
+            } catch (RuntimeException cleanupFailure) {
+                // Preserve cancellation of remaining queued tasks on shutdown.
+            }
             registry.find(task.taskId).ifPresent(snapshot -> {
                 if (snapshot.state() == WorldTaskState.QUEUED) {
                     registry.fail(
@@ -192,11 +206,13 @@ public final class WorldTaskRunner implements AutoCloseable {
         private final UUID taskId;
         private final WorldId worldId;
         private final WorldTaskWork work;
+        private final Runnable onNotStarted;
 
-        private SubmittedTask(UUID taskId, WorldId worldId, WorldTaskWork work) {
+        private SubmittedTask(UUID taskId, WorldId worldId, WorldTaskWork work, Runnable onNotStarted) {
             this.taskId = taskId;
             this.worldId = worldId;
             this.work = work;
+            this.onNotStarted = onNotStarted;
         }
 
         @Override

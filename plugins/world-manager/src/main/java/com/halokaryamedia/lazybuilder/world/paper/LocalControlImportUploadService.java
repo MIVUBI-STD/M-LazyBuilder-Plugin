@@ -62,6 +62,18 @@ public final class LocalControlImportUploadService {
         }
     }
 
+    public boolean claimForImport(String fileName) {
+        return transfers.claimCompletedUpload(DESKTOP_OWNER, fileName);
+    }
+
+    public boolean returnForRetry(String fileName) {
+        return transfers.returnCompletedUploadToOwner(DESKTOP_OWNER, fileName);
+    }
+
+    public void releaseAfterImport(String fileName) {
+        transfers.releaseCompletedUpload(DESKTOP_OWNER, fileName);
+    }
+
     public void stop() {
         try {
             transfers.abortAllForOwner(DESKTOP_OWNER);

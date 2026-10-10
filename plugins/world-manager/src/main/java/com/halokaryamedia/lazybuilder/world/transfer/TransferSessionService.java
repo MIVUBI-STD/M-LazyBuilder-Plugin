@@ -227,6 +227,20 @@ public final class TransferSessionService {
         }
     }
 
+    /** A failed import returns its claimed upload to the same owner for retry. */
+    public boolean returnCompletedUploadToOwner(UUID ownerId, String fileName) {
+        Objects.requireNonNull(ownerId, "ownerId");
+        String safeName = validateImportFileName(fileName);
+        synchronized (completedUploads) {
+            CompletedUploadOwnership claim = completedUploads.get(safeName);
+            if (claim == null || !claim.ownerId().equals(ownerId) || !claim.claimedForReview()) {
+                return false;
+            }
+            completedUploads.put(safeName, new CompletedUploadOwnership(ownerId, false));
+            return true;
+        }
+    }
+
     /** Release the transient ownership claim after discard or successful import. */
     public void releaseCompletedUpload(UUID ownerId, String fileName) {
         Objects.requireNonNull(ownerId, "ownerId");

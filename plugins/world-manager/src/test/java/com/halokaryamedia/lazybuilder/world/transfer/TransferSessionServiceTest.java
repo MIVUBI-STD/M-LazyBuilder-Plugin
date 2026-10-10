@@ -157,6 +157,28 @@ class TransferSessionServiceTest {
     }
 
     @Test
+    void failedImportClaimReturnsToOriginalOwnerForRetry() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        TransferSessionService service = new TransferSessionService(
+                imports, tempDir.resolve("exports"), tempDir.resolve("transfer"),
+                new TransferPolicy(4, 1024, 1, 1));
+        UUID owner = UUID.randomUUID();
+        byte[] bytes = {1, 2, 3, 4};
+        TransferDescriptor descriptor = service.beginUpload(owner, "retry.zip", bytes.length, sha256(bytes));
+        service.acceptUploadChunk(owner, descriptor.sessionId(), 0, bytes);
+        service.finishUpload(owner, descriptor.sessionId());
+
+        assertTrue(service.claimCompletedUpload(owner, "retry.zip"));
+        assertFalse(service.discardUnclaimedCompletedUpload(owner, "retry.zip"));
+        assertFalse(service.returnCompletedUploadToOwner(UUID.randomUUID(), "retry.zip"));
+        assertTrue(service.returnCompletedUploadToOwner(owner, "retry.zip"));
+        assertFalse(service.returnCompletedUploadToOwner(owner, "retry.zip"));
+        assertTrue(Files.exists(imports.resolve("retry.zip")));
+        assertTrue(service.claimCompletedUpload(owner, "retry.zip"));
+        assertFalse(service.discardUnclaimedCompletedUpload(owner, "retry.zip"));
+    }
+
+    @Test
     void downloadIsExplicitSequentialAndBoundToOwner() throws Exception {
         Path exports = tempDir.resolve("exports");
         Files.createDirectories(exports);
