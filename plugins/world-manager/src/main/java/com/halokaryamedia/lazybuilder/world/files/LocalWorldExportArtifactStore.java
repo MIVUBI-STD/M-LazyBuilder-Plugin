@@ -3,12 +3,10 @@ package com.halokaryamedia.lazybuilder.world.files;
 import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
-import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Objects;
 import java.util.UUID;
@@ -148,12 +146,17 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
         return SafeArtifactName.requirePortable(value, "artifactName");
     }
 
-    private static void moveIntoPlace(Path source, Path target) throws IOException {
-        try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, target);
-        }
+    /**
+     * Publish without replacing another completed export.
+     *
+     * ATOMIC_MOVE permits provider-specific replacement of an existing target,
+     * even without REPLACE_EXISTING. In particular, a target created after the
+     * existence preflight can be silently replaced on Linux filesystems.
+     * The ordinary move with no replace option fails instead. Both paths are
+     * direct children of the same canonical export directory.
+     */
+    static void moveIntoPlace(Path source, Path target) throws IOException {
+        Files.move(source, target);
     }
 
     private record SourceEstimate(long bytes, long files) {}

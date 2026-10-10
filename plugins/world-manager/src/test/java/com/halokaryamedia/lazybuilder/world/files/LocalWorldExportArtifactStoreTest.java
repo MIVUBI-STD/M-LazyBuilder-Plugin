@@ -3,10 +3,12 @@ package com.halokaryamedia.lazybuilder.world.files;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.zip.ZipFile;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -36,6 +38,22 @@ class LocalWorldExportArtifactStoreTest {
                         "Build",
                         ExportArtifactType.JAVA_ZIP
                 ));
+    }
+
+    @Test
+    void finalPublicationRefusesExistingDestinationEvenAfterEarlierPreflight() throws Exception {
+        // Model a second export publishing between exists(target) and rename.
+        Path exports = Files.createDirectory(tempDir.resolve("race-exports"));
+        Path staged = exports.resolve("export-candidate.tmp");
+        Path published = exports.resolve("Build.zip");
+        Files.writeString(staged, "new candidate");
+        Files.writeString(published, "previously committed");
+
+        assertThrows(FileAlreadyExistsException.class,
+                () -> LocalWorldExportArtifactStore.moveIntoPlace(staged, published));
+        assertEquals("previously committed", Files.readString(published));
+        assertEquals("new candidate", Files.readString(staged),
+                "caller still owns temporary file for finally cleanup");
     }
 
     @Test
