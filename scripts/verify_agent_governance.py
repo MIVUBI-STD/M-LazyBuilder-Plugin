@@ -234,12 +234,30 @@ def verify_agent_governance(root: Path, errors: list[str]) -> None:
                     if (action, gate) not in gate_denials:
                         errors.append(f"missing negative permission fixture for {action}/{gate}")
 
-    for skill in (root / ".agents/skills").glob("*/SKILL.md"):
+    # Referenced procedures are agent input too; scanning only SKILL.md misses
+    # a network-to-shell instruction supplied by a nested reference.
+    skills_root = root / ".agents/skills"
+    if not skills_root.is_dir():
+        errors.append("missing canonical Skills root for supply-chain scan")
+        return
+    for entry in sorted(skills_root.rglob("*")):
+        if entry.is_symlink():
+            errors.append(f"Skill supply-chain symlink requires review: {entry.relative_to(root)}")
+            continue
+        if not entry.is_file():
+            continue
+        if entry.suffix.lower() != ".md":
+            errors.append(
+                f"unreviewed executable/non-Markdown Skill asset: {entry.relative_to(root)}"
+            )
+            continue
         try:
-            if UNSAFE_PIPE.search(skill.read_text(encoding="utf-8")):
-                errors.append(f"untrusted network-to-shell recipe in Skill: {skill.relative_to(root)}")
+            if UNSAFE_PIPE.search(entry.read_text(encoding="utf-8")):
+                errors.append(
+                    f"untrusted network-to-shell recipe in Skill: {entry.relative_to(root)}"
+                )
         except (OSError, UnicodeError) as exc:
-            errors.append(f"cannot inspect skill safety: {skill.relative_to(root)}: {exc}")
+            errors.append(f"cannot inspect Skill source: {entry.relative_to(root)}: {exc}")
 
 
 if __name__ == "__main__":

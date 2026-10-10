@@ -90,7 +90,7 @@ The canonical dependency graph above is also a checkable build/source contract:
 - Fabric `map-manager`, `utility-manager`, and `builder-utilities` may compile only their own sources and the explicitly selected neutral shared-protocol sources. `performance-manager` remains independent.
 - Neutral `shared/protocol` must not import Bukkit/Paper, Fabric/Minecraft implementation, Launcher, or component-specific implementation classes.
 - Current protocol/source versions and canonical documentation must match. The source-owned World Control and Map Action constants, not copied documentation values, determine compatibility.
-- `scripts/verify_compatibility.py` checks the bounded Maven/Gradle dependency direction, neutral protocol dependencies, channel wiring, and canonical protocol versions. It is a static architectural guard, **not** a compiler, link-time analysis, or real Paper/Fabric interoperability test.
+- `scripts/verify_compatibility.py` derives Java class ownership from existing source roots and checks direct imports (including static and wildcard imports), Maven/Gradle dependency direction, neutral protocol dependencies, channel wiring, and canonical protocol versions. It is a static guard; reflective or fully qualified references without imports, packaging, and runtime interoperability still require targeted build/live proof.
 
 ## Versioning model
 

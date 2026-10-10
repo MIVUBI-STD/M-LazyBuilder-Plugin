@@ -204,6 +204,76 @@ for module in ("map-manager", "utility-manager", "performance-manager", "builder
     ):
         errors.append(f"{module} must consume its neutral shared-protocol source owner")
 
+
+# Detect cross-component Java implementation imports by deriving identity from
+# the source tree. This is not a generated registry or an API surface baseline.
+# The module build and runtime verifiers remain the owners of executable proof.
+java_owners = {
+    "shared-protocol": ROOT / "shared/protocol/src/main/java",
+    "paper-world-manager": ROOT / "plugins/world-manager/src/main/java",
+    "paper-utilities-manager": ROOT / "plugins/utilities-manager/src/main/java",
+    "fabric-map-manager": ROOT / "mods/map-manager/src/main/java",
+    "fabric-utility-manager": ROOT / "mods/utility-manager/src/main/java",
+    "fabric-performance-manager": ROOT / "mods/performance-manager/src/main/java",
+    "fabric-builder-utilities": ROOT / "mods/builder-utilities/src/main/java",
+}
+java_types: dict[str, str] = {}
+java_packages: dict[str, set[str]] = {}
+module_java: dict[str, list[Path]] = {}
+for owner, source_root in java_owners.items():
+    java_paths = sorted(source_root.rglob("*.java")) if source_root.is_dir() else []
+    if not java_paths:
+        errors.append(f"{owner}: canonical Java source root missing or empty")
+        continue
+    module_java[owner] = java_paths
+    for java_path in java_paths:
+        fq_type = ".".join(java_path.relative_to(source_root).with_suffix("").parts)
+        previous = java_types.get(fq_type)
+        if previous is not None:
+            errors.append(
+                f"duplicate Java source ownership: {fq_type}: {previous}, {owner}"
+            )
+            continue
+        java_types[fq_type] = owner
+        package = fq_type.rpartition(".")[0]
+        java_packages.setdefault(package, set()).add(owner)
+
+# Java permits nested-class/static imports and wildcard package imports.
+# Resolve the longest declared source type first; external dependencies are
+# governed by Maven/Gradle, not assumed to be LazyBuilder-owned implementations.
+import_pattern = re.compile(
+    r"(?m)^\s*import\s+(static\s+)?([A-Za-z_][\w.]*(?:\.\*)?)\s*;"
+)
+for owner, paths in module_java.items():
+    for java_path in paths:
+        source = java_path.read_text(encoding="utf-8")
+        for static_flag, imported in import_pattern.findall(source):
+            if imported.startswith(("java.", "javax.")):
+                continue
+            wildcard = imported.endswith(".*")
+            target = imported[:-2] if wildcard else imported
+            prefixes = target.split(".")
+            resolved_owner = None
+            for length in range(len(prefixes), 1, -1):
+                candidate = ".".join(prefixes[:length])
+                if candidate in java_types:
+                    resolved_owner = java_types[candidate]
+                    break
+            if resolved_owner is not None:
+                if resolved_owner not in (owner, "shared-protocol"):
+                    errors.append(
+                        f"{java_path.relative_to(ROOT)} imports {resolved_owner} "
+                        f"implementation: {imported}"
+                    )
+                continue
+            if wildcard and not static_flag:
+                foreign = java_packages.get(target, set()) - {owner, "shared-protocol"}
+                if foreign:
+                    errors.append(
+                        f"{java_path.relative_to(ROOT)} uses ambiguous wildcard "
+                        f"import from foreign package {target}: {sorted(foreign)}"
+                    )
+
 if errors:
     print("Compatibility contract failed:")
     for error in errors:
