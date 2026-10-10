@@ -97,6 +97,7 @@ Do not reintroduce generic `EngineData`, `modules`, or `client` source buckets. 
 
 Canonical execution discipline: `docs/04-system/development-discipline.md`.
 Canonical specialist routing: `docs/04-system/skill-routing.md`.
+Advisory action/path preflight: `scripts/agent_preflight.py` consuming `.agents/permissions/work-lanes.json` and `.agents/permissions/path-access.json` (semantic authority remains in the canonical docs).
 Canonical developer/deployment operations: `docs/04-system/development-operations.md`.
 Current remediation authority: `docs/05-operations/local-pc-remediation-2026-09-15.md`.
 Current proof authority: `docs/05-operations/current-verification.md`.

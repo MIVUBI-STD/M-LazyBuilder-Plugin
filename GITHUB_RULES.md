@@ -12,7 +12,7 @@ Before a material write, know:
 - exact scope;
 - required proof.
 
-`Local` is the normal development authority. Never silently fall back to `main`.
+`Local` is the normal development authority. Never silently fall back to `main`. Pin the current HEAD SHA before a material write and use an expected-HEAD fast-forward ref update; never force-push to resolve a stale or conflicted write.
 
 ## 2. Read minimum
 
@@ -80,6 +80,21 @@ chore(<scope>): ...
 
 Do not create checkpoint/retry commits or temporary files solely to transfer work.
 
+### Commit-based continuity (no duplicate status database)
+
+For material work, include the relevant fields in the logical commit body when their values are known:
+
+```text
+Work: <domain / outcome>
+State: ACTIVE | BLOCKED | PAUSED | DONE
+Decision: <canonical owner / reason>
+Proof: <actual evidence and its ceiling>
+Unresolved: <specific remaining risk>
+Next: <one next action, when incomplete>
+```
+
+Current source and `docs/05-operations/` remain the canonical continuation/proof owner where those documents already apply. Git history captures previous work and decisions; it is **not** an automatic instruction to execute the next commit. Do not add a second TODO, session memory, checkpoint, status tracker, or roadmap to duplicate them. A clean, complete work item may finish with `State: DONE` and no new task.
+
 ## 6. Integrity rules
 
 - Never commit secrets, credentials, private keys, server tokens, `.env` values, or production data.
@@ -122,7 +137,7 @@ workflow_dispatch      -> integrated final Verify on explicit request
 
 The durable developer/CI/promotion contract is `docs/04-system/development-operations.md`.
 
-GitHub registers `workflow_dispatch` from the repository's default branch. A workflow present only on `Local` does not make the manual *Run workflow* action available. If the default branch lacks the workflow definitions, report this prerequisite and seek explicit approval before any branch/default-branch administration or promotion. Release/update-channel workflows also require separate user authorization.
+GitHub registers `workflow_dispatch` from the repository's default branch. A workflow present only on `Local` does not make the manual *Run workflow* action available. This is **not a blocker for ordinary Local source development**: run available scoped source checks instead. Do not fill or modify `main`, change the default branch, or bypass administration controls merely to register Actions; that remains a separate expressly approved release/administration decision. Release/update-channel workflows also require separate user authorization.
 
 A green unrelated workflow is not proof. A skipped required check is not PASS. Focused Launcher, Paper, or visual workflows are supplementary evidence and do not become parallel repository-readiness authorities.
 

@@ -377,6 +377,17 @@ Do not preload sibling Skills, all docs, historical reports, or broad source tre
 
 Read continuation/ops context only when unfinished prior state can change the current decision.
 
+### Task → Router → Catalog → Graph → Retrieval → Bounded Context → Decision
+
+1. **Task / Router:** normalize outcome, work mode, non-goals, and first wrong semantic owner via `AGENTS.md` and `skill-routing.md`. An ambiguous cue without separating evidence is `UNKNOWN`, not a guessed specialist.
+2. **Catalog:** `docs/README.md` selects the exact canonical document/source path. Stable identity is repository-relative path + relevant revision, never a duplicated data store.
+3. **Graph:** expand only explicit producer/consumer relationships supported by source imports, build dependencies, neutral DTOs, or canonical document links. Derived relations do not create new product truth.
+4. **Retrieval:** load the exact file/heading/section or source symbol; default to 1–3 primary reads. Full repository search, speculative graph expansion, and historical evidence are excluded by default.
+5. **Bounded Context:** REQUIRED = current user task + relevant authority/contract and owner; CONDITIONAL = only the named unresolved dependency or specialist; EXCLUDED = sibling skills, unrelated history, ops and supporting audits.
+6. **Decision:** diagnose first wrong owner, preflight each intended write with `scripts/agent_preflight.py`, implement a minimum complete change, verify affected proof, record honest evidence, and STOP.
+
+For a follow-up, reuse previously read context only if branch/ref, semantic owner and source evidence remain valid. **Affected verification** starts with changed canonical source and its directly verified consumers/tests; where dependency direction is unknown, expand verification rather than declaring a skipped test safe. Do not introduce a cache, persistent graph, token manager, new router, or telemetry service without an actual proven repeated consumer. Token/usage savings are claims only with real telemetry; counts of bytes/files/tool calls are proxies.
+
 ## Change Budget
 
 A normal change should aim for:

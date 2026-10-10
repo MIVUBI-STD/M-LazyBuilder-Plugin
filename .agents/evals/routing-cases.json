@@ -5,43 +5,57 @@
       "id": "positive-desktop",
       "kind": "positive",
       "primary": "lazybuilder-desktop-runtime",
-      "cue": "workspace"
+      "cue": "workspace",
+      "language": "id",
+      "prompt": "Periksa proses Launcher start Paper workspace dan diagnosis state runtime, jangan ubah world semantics."
     },
     {
       "id": "positive-plugin",
       "kind": "positive",
       "primary": "lazybuilder-plugin-management",
-      "cue": "third-party plugin"
+      "cue": "third-party plugin",
+      "language": "en",
+      "prompt": "Investigate third-party Paper plugin install dependencies and rollback, not internal plugin code."
     },
     {
       "id": "positive-world",
       "kind": "positive",
       "primary": "lazybuilder-world-management",
-      "cue": "world load"
+      "cue": "world load",
+      "language": "id",
+      "prompt": "Cek kenapa world load tidak mengembalikan managed world sesuai registry, audit dahulu."
     },
     {
       "id": "positive-ui",
       "kind": "positive",
       "primary": "lazybuilder-ui",
-      "cue": "focus"
+      "cue": "focus",
+      "language": "en",
+      "prompt": "Review focus and Back button behavior on a Fabric screen without changing server result semantics."
     },
     {
       "id": "positive-protocol",
       "kind": "positive",
       "primary": "lazybuilder-protocol",
-      "cue": "payload"
+      "cue": "payload",
+      "language": "id",
+      "prompt": "Audit payload World Control yang berbeda versi antara Fabric dan Paper, jangan ganti fitur."
     },
     {
       "id": "positive-paper",
       "kind": "positive",
       "primary": "lazybuilder-paper-plugin-development",
-      "cue": "listener"
+      "cue": "listener",
+      "language": "en",
+      "prompt": "Repair a Paper event listener registration after the world contract is already correct."
     },
     {
       "id": "positive-fabric",
       "kind": "positive",
       "primary": "lazybuilder-fabric-mod-development",
-      "cue": "initializer"
+      "cue": "initializer",
+      "language": "id",
+      "prompt": "Perbaiki Fabric initializer dan resource packaging tanpa mengubah kontrak UI."
     },
     {
       "id": "negative-third-party",
@@ -49,7 +63,9 @@
       "primary": "lazybuilder-plugin-management",
       "cue": "third-party plugin",
       "forbidden": "lazybuilder-paper-plugin-development",
-      "reject_cue": "third-party plugin lifecycle"
+      "reject_cue": "third-party plugin lifecycle",
+      "language": "en",
+      "prompt": "The third-party plugin fails on update; audit plugin lifecycle, not LazyBuilder internal Paper implementation."
     },
     {
       "id": "ambiguous-http",
@@ -57,28 +73,76 @@
       "primary": "lazybuilder-desktop-runtime",
       "cue": "desktop HTTP",
       "forbidden": "lazybuilder-protocol",
-      "reject_cue": "desktop HTTP"
+      "reject_cue": "desktop HTTP",
+      "language": "id",
+      "prompt": "Desktop HTTP bridge bermasalah; cek owner desktop, jangan ubah protokol Paper–Fabric."
     },
     {
       "id": "cross-world-paper",
       "kind": "cross_domain",
       "primary": "lazybuilder-world-management",
       "cue": "world load",
-      "handoff_to": "lazybuilder-paper-plugin-development"
+      "handoff_to": "lazybuilder-paper-plugin-development",
+      "language": "id",
+      "prompt": "Ubah kebijakan world load dulu, lalu handoff implementasi Paper adapter jika diperlukan."
     },
     {
       "id": "cross-ui-fabric",
       "kind": "cross_domain",
       "primary": "lazybuilder-ui",
       "cue": "layout",
-      "handoff_to": "lazybuilder-fabric-mod-development"
+      "handoff_to": "lazybuilder-fabric-mod-development",
+      "language": "en",
+      "prompt": "Decide the new screen layout contract, then hand off the implementation to the Fabric specialist."
     },
     {
       "id": "cross-protocol-fabric",
       "kind": "cross_domain",
       "primary": "lazybuilder-protocol",
       "cue": "payload",
-      "handoff_to": "lazybuilder-fabric-mod-development"
+      "handoff_to": "lazybuilder-fabric-mod-development",
+      "language": "en",
+      "prompt": "Freeze the payload schema, then update its Fabric receiver without changing wire meaning."
+    },
+    {
+      "id": "negative-semantic-world",
+      "kind": "negative",
+      "primary": "lazybuilder-world-management",
+      "cue": "world load",
+      "forbidden": "lazybuilder-paper-plugin-development",
+      "reject_cue": "world/product meaning",
+      "language": "id",
+      "prompt": "Tolong diagnosis world load yang salah secara semantik, jangan mengubah Paper listener hanya karena ada bug."
+    },
+    {
+      "id": "negative-fabric-ui-contract",
+      "kind": "negative",
+      "primary": "lazybuilder-ui",
+      "cue": "focus",
+      "forbidden": "lazybuilder-fabric-mod-development",
+      "reject_cue": "UI semantic decision",
+      "language": "en",
+      "prompt": "Determine whether focus handling is correct before altering the Fabric adapter."
+    },
+    {
+      "id": "negative-wire-vs-paper",
+      "kind": "negative",
+      "primary": "lazybuilder-protocol",
+      "cue": "payload",
+      "forbidden": "lazybuilder-paper-plugin-development",
+      "reject_cue": "shared wire meaning",
+      "language": "id",
+      "prompt": "Tentukan dulu struktur payload Paper–Fabric yang benar, jangan langsung patch listener Paper."
+    },
+    {
+      "id": "negative-paper-wiring",
+      "kind": "negative",
+      "primary": "lazybuilder-paper-plugin-development",
+      "cue": "listener",
+      "forbidden": "lazybuilder-world-management",
+      "reject_cue": "pure Paper implementation mechanics",
+      "language": "en",
+      "prompt": "A listener is not registered although world rules are unchanged; repair only the Paper wiring."
     }
   ]
 }

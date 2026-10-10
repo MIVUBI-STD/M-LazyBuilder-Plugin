@@ -1,0 +1,126 @@
+{
+  "schema": 1,
+  "purpose": "Executable path authorization projection. Canonical semantic ownership remains in docs/04-system/module-boundaries.md and docs/04-system/skill-routing.md.",
+  "rules": [
+    {
+      "path": "AGENTS.md",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "GITHUB_RULES.md",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "CONTEXT.md",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "docs/README.md",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "docs/04-system/**",
+      "owner": "repository-governance"
+    },
+    {
+      "path": ".agents/**",
+      "owner": "repository-governance"
+    },
+    {
+      "path": ".github/workflows/**",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "scripts/agent_preflight.py",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "scripts/verify_agent_governance.py",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "scripts/verify_repository_contract.py",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "scripts/verify_compatibility.py",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "docs/01-product/**",
+      "owner": "product"
+    },
+    {
+      "path": "docs/02-world-management/**",
+      "owner": "world-management"
+    },
+    {
+      "path": "docs/03-client-ui/**",
+      "owner": "client-ui"
+    },
+    {
+      "path": "docs/05-operations/**",
+      "owner": "operations"
+    },
+    {
+      "path": "apps/launcher/**",
+      "owner": "desktop-runtime"
+    },
+    {
+      "path": "plugins/world-manager/**",
+      "owner": "paper-world"
+    },
+    {
+      "path": "plugins/utilities-manager/**",
+      "owner": "paper-utilities"
+    },
+    {
+      "path": "mods/map-manager/**",
+      "owner": "fabric-map"
+    },
+    {
+      "path": "mods/utility-manager/**",
+      "owner": "fabric-utility"
+    },
+    {
+      "path": "mods/performance-manager/**",
+      "owner": "fabric-performance"
+    },
+    {
+      "path": "mods/builder-utilities/**",
+      "owner": "fabric-builder"
+    },
+    {
+      "path": "shared/protocol/**",
+      "owner": "shared-protocol"
+    },
+    {
+      "path": "tooling/**",
+      "owner": "development-tooling"
+    },
+    {
+      "path": "scripts/**",
+      "owner": "development-tooling"
+    },
+    {
+      "path": "DEV.cmd",
+      "owner": "development-tooling"
+    },
+    {
+      "path": "mvnw.cmd",
+      "owner": "development-tooling"
+    },
+    {
+      "path": "gradlew.bat",
+      "owner": "development-tooling"
+    },
+    {
+      "path": "pom.xml",
+      "owner": "development-tooling"
+    },
+    {
+      "path": "toolchain.json",
+      "owner": "development-tooling"
+    }
+  ]
+}

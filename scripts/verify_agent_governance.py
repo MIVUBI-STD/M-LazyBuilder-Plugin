@@ -11,6 +11,8 @@ from pathlib import Path
 import re
 import sys
 
+from agent_preflight import evaluate, path_matches, path_owner, permitted, safe_path
+
 MODES = {"INSPECT", "PLAN", "DIAGNOSE", "DEVELOP", "REPAIR", "VALIDATE", "RELEASE"}
 READ_ONLY = {"INSPECT", "PLAN", "DIAGNOSE"}
 MUTATIONS = {"write", "dispatch_ci", "release"}
@@ -40,34 +42,13 @@ def load_contract(root: Path, path: str, errors: list[str]) -> dict:
         return {}
 
 
-def permitted(policy: dict, case: dict) -> bool:
-    """Deny malformed/unknown mode/action/gates and any unapproved lane switch."""
-    mode, action = case.get("mode"), case.get("action")
-    modes = policy.get("modes", {})
-    required = policy.get("required_gates", {})
-    if not isinstance(mode, str) or not isinstance(action, str):
-        return False
-    if not isinstance(modes, dict) or not isinstance(required, dict):
-        return False
-    allowed_actions = modes.get(mode)
-    if not isinstance(allowed_actions, list) or action not in allowed_actions:
-        return False
-    conditions = required.get(action, [])
-    gates = case.get("gates", {})
-    if not isinstance(conditions, list) or not isinstance(gates, dict):
-        return False
-    if any(gates.get(gate) is not True for gate in conditions):
-        return False
-    if case.get("mode_changed", False) is True:
-        return case.get("mode_change_approved") is True
-    return case.get("mode_changed", False) is False
-
-
 def verify_agent_governance(root: Path, errors: list[str]) -> None:
     policy = load_contract(root, ".agents/permissions/work-lanes.json", errors)
     routing_fixtures = load_contract(root, ".agents/evals/routing-cases.json", errors)
     permission_fixtures = load_contract(root, ".agents/evals/permission-cases.json", errors)
-    if not all((policy, routing_fixtures, permission_fixtures)):
+    path_catalog = load_contract(root, ".agents/permissions/path-access.json", errors)
+    preflight_fixtures = load_contract(root, ".agents/evals/preflight-cases.json", errors)
+    if not all((policy, routing_fixtures, permission_fixtures, path_catalog, preflight_fixtures)):
         return
 
     modes = policy.get("modes", {})
@@ -100,8 +81,9 @@ def verify_agent_governance(root: Path, errors: list[str]) -> None:
         "dispatch_ci": {"ci_approved", "branch_local"},
         "release": {"release_approved"},
     }.items():
-        if not isinstance(gates.get(action), list) or not required.issubset(gates[action]):
-            errors.append(f"missing mandatory preflight gate for {action}")
+        configured = gates.get(action)
+        if not isinstance(configured, list) or set(configured) != required or len(configured) != len(required):
+            errors.append(f"unexpected or missing mandatory preflight gate for {action}")
     invariant = policy.get("invariant", {})
     if not isinstance(invariant, dict):
         errors.append("work-lane invariant must be an object")
@@ -124,6 +106,7 @@ def verify_agent_governance(root: Path, errors: list[str]) -> None:
         return
 
     kinds: set[str] = set()
+    languages: set[str] = set()
     covered: set[str] = set()
     seen_routing_ids: set[str] = set()
     cases = routing_fixtures.get("cases", [])
@@ -135,6 +118,11 @@ def verify_agent_governance(root: Path, errors: list[str]) -> None:
             errors.append("routing fixture must be an object")
             continue
         ident = case.get("id")
+        lang, prompt = case.get("language"), case.get("prompt")
+        if not isinstance(lang, str) or lang not in {"id", "en"} or not isinstance(prompt, str) or len(prompt.strip()) < 24:
+            errors.append(f"routing fixture missing a realistic bilingual prompt: {ident}")
+        else:
+            languages.add(lang)
         if not isinstance(ident, str) or not ident or ident in seen_routing_ids:
             errors.append(f"routing fixture has missing/duplicate ID: {ident}")
         else:
@@ -180,6 +168,8 @@ def verify_agent_governance(root: Path, errors: list[str]) -> None:
             errors.append(f"invalid cross-owner handoff fixture: {ident}")
     if not {"positive", "negative", "ambiguous", "cross_domain"}.issubset(kinds):
         errors.append("routing eval cases must include all four outcome classes")
+    if languages != {"id", "en"}:
+        errors.append("routing prompt corpus needs Indonesian and English cases")
     if not skills.issubset(covered):
         errors.append(f"routing eval misses specialist: {sorted(skills - covered)}")
 
@@ -233,6 +223,74 @@ def verify_agent_governance(root: Path, errors: list[str]) -> None:
                 for gate in required:
                     if (action, gate) not in gate_denials:
                         errors.append(f"missing negative permission fixture for {action}/{gate}")
+
+    # Path policy is an executable authorization projection, not a competing
+    # semantic ownership source; verify the seven runtime roots exist and agree
+    # with the canonical architecture document before trusting the projection.
+    path_rules = path_catalog.get("rules")
+    if not isinstance(path_rules, list) or not path_rules:
+        errors.append("preflight path-access rules must be a non-empty list")
+        path_rules = []
+    seen_patterns: set[str] = set()
+    for rule in path_rules:
+        if not isinstance(rule, dict):
+            errors.append("preflight path rule must be an object")
+            continue
+        pattern, owner = rule.get("path"), rule.get("owner")
+        if not isinstance(pattern, str) or not isinstance(owner, str) or not owner:
+            errors.append("preflight path rule needs a path and owner")
+            continue
+        is_prefix = pattern.endswith("/**")
+        if not safe_path(pattern[:-3] if is_prefix else pattern):
+            errors.append(f"unsafe preflight path rule: {pattern}")
+        if pattern in seen_patterns:
+            errors.append(f"duplicate preflight path rule: {pattern}")
+        seen_patterns.add(pattern)
+
+    architecture = (root / "docs/04-system/module-boundaries.md").read_text(encoding="utf-8")
+    for source_root, owner in {
+        "apps/launcher": "desktop-runtime",
+        "plugins/world-manager": "paper-world",
+        "plugins/utilities-manager": "paper-utilities",
+        "mods/map-manager": "fabric-map",
+        "mods/utility-manager": "fabric-utility",
+        "mods/performance-manager": "fabric-performance",
+        "mods/builder-utilities": "fabric-builder",
+        "shared/protocol": "shared-protocol",
+    }.items():
+        if not (root / source_root).is_dir():
+            errors.append(f"missing canonical source owner directory: {source_root}")
+        if source_root + "/" not in architecture:
+            errors.append(f"source owner absent from canonical module boundaries: {source_root}")
+        if path_owner(source_root + "/__preflight_probe__", path_catalog) != owner:
+            errors.append(f"preflight path ownership drift: {source_root} must map to {owner}")
+
+    cases = preflight_fixtures.get("cases", [])
+    if not isinstance(cases, list) or len(cases) < 25:
+        errors.append("preflight cases must cover representative positive and negative actions")
+        cases = []
+    ids: set[str] = set()
+    decisions: set[str] = set()
+    for case in cases:
+        if not isinstance(case, dict):
+            errors.append("preflight fixture must be an object")
+            continue
+        ident, expected = case.get("id"), case.get("decision")
+        if not isinstance(ident, str) or not ident or ident in ids:
+            errors.append(f"preflight fixture id missing/duplicate: {ident}")
+        else:
+            ids.add(ident)
+        if not isinstance(expected, str) or expected not in {"allow", "ask", "deny"}:
+            errors.append(f"preflight fixture has unknown decision: {ident}")
+            continue
+        actual = evaluate(case.get("request"), policy, path_catalog)
+        if actual["decision"] != expected:
+            errors.append(f"preflight {ident}: expected {expected}, got {actual['decision']}")
+        decisions.add(expected)
+    if decisions != {"allow", "ask", "deny"}:
+        errors.append("preflight fixture corpus must exercise allow, ask and deny")
+    if not all(path_matches("mods/map-manager/src/main/java/X.java", p) for p in ["mods/map-manager/**"]):
+        errors.append("preflight path prefix matching regressed")
 
     # Referenced procedures are agent input too; scanning only SKILL.md misses
     # a network-to-shell instruction supplied by a nested reference.

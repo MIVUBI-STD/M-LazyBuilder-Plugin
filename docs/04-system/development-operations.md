@@ -178,6 +178,18 @@ Rules:
 - do not add a logging service, telemetry database, or second diagnostic runner merely to format failures;
 - generated diagnostic evidence stays outside source ownership.
 
+## Targeted repository-governance proof
+
+When governance is changed on `Local`, prefer the existing independent Python checks before any integrated CI:
+
+```text
+python scripts/verify_agent_governance.py
+python scripts/verify_repository_contract.py
+python scripts/verify_compatibility.py   # only when module/contract ownership changes
+```
+
+`scripts/agent_preflight.py` is an advisory, deterministic per-action tool, not a substitute for these verifiers or for actual user authorization. Its cases are consumed by `verify_agent_governance.py`; permission coverage and observed model routing are separate proof layers. Running the Python checks on a temporary copy proves only the identical files exercised there; do not promote the unexecuted full repository gate to PASS. A target-PC or server runtime is **not** required to accept policy-only changes, and an unavailable GitHub workflow button is not a reason to touch `main`.
+
 ## CI policy
 
 The full `Verify` workflow is an **independent final verification layer**, not the inner development loop.

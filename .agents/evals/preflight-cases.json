@@ -1,0 +1,492 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "id": "fabric-valid-write",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "scope-other-file",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "plugins/world-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "wrong-owner",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "paper-world",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "wrong-branch",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "main",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "scope-not-approved",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": false,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "ask"
+    },
+    {
+      "id": "missing-explicit-scope",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "traversal",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/../utilities-manager/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "windows-path",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "C:\\Users\\foo.txt",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "percent-encoded",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/%2e%2e/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "environment-secret",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": ".env.production",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "unknown-owner-root",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "unknown-owner/file.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "scope-handoff",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ],
+        "mode_changed": true,
+        "mode_change_approved": true
+      },
+      "decision": "ask"
+    },
+    {
+      "id": "known-read",
+      "request": {
+        "mode": "INSPECT",
+        "action": "read",
+        "branch": "Local",
+        "path": "AGENTS.md"
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "no-read-path",
+      "request": {
+        "mode": "INSPECT",
+        "action": "read",
+        "branch": "Local"
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "read-sensitive",
+      "request": {
+        "mode": "INSPECT",
+        "action": "read",
+        "branch": "Local",
+        "path": ".ssh/id_rsa"
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "plan-no-write",
+      "request": {
+        "mode": "PLAN",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "validate-no-write",
+      "request": {
+        "mode": "VALIDATE",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "unknown-mode",
+      "request": {
+        "mode": "UNKNOWN",
+        "action": "read",
+        "branch": "Local",
+        "path": "docs/README.md"
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "unknown-action",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "run_arbitrary",
+        "branch": "Local"
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "repo-admin",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "repo_admin",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "force-push",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "force_push",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "install",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "dependency_install",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "ask"
+    },
+    {
+      "id": "manual-ci-approval-missing",
+      "request": {
+        "mode": "VALIDATE",
+        "action": "dispatch_ci",
+        "branch": "Local",
+        "workflow_registered": true
+      },
+      "decision": "ask"
+    },
+    {
+      "id": "manual-ci-main",
+      "request": {
+        "mode": "VALIDATE",
+        "action": "dispatch_ci",
+        "branch": "main",
+        "ci_approved": true,
+        "workflow_registered": true
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "manual-ci-not-registered",
+      "request": {
+        "mode": "VALIDATE",
+        "action": "dispatch_ci",
+        "branch": "Local",
+        "ci_approved": true,
+        "workflow_registered": false
+      },
+      "decision": "ask"
+    },
+    {
+      "id": "manual-ci-explicit",
+      "request": {
+        "mode": "VALIDATE",
+        "action": "dispatch_ci",
+        "branch": "Local",
+        "ci_approved": true,
+        "workflow_registered": true
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "release-always-ask",
+      "request": {
+        "mode": "RELEASE",
+        "action": "release",
+        "branch": "Local",
+        "release_approved": true
+      },
+      "decision": "ask"
+    },
+    {
+      "id": "untrusted-code",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "execute_untrusted",
+        "branch": "Local"
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "governance-specific-owner",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "repository-governance",
+        "path": "scripts/verify_agent_governance.py",
+        "approved_paths": [
+          "scripts/verify_agent_governance.py"
+        ],
+        "scope_approved": true
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "not-allowed-other-script",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "repository-governance",
+        "path": "scripts/verify_launcher_bridge_contract.py",
+        "approved_paths": [
+          "scripts/**"
+        ],
+        "scope_approved": true
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "multiple-path-scopes",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "plugins/world-manager/**",
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "malformed-mode-change",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ],
+        "mode_changed": "false"
+      },
+      "decision": "ask"
+    },
+    {
+      "id": "negative-new-branch",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "dev-branch",
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "unknown-owner",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "something-else",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "release-workflow-source-needs-approval",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "repository-governance",
+        "path": ".github/workflows/launcher-release.yml",
+        "scope_approved": true,
+        "approved_paths": [
+          ".github/workflows/launcher-release.yml"
+        ]
+      },
+      "decision": "ask"
+    },
+    {
+      "id": "release-workflow-source-authorized",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "owner": "repository-governance",
+        "path": ".github/workflows/launcher-release.yml",
+        "scope_approved": true,
+        "approved_paths": [
+          ".github/workflows/launcher-release.yml"
+        ],
+        "release_change_approved": true
+      },
+      "decision": "allow"
+    }
+  ]
+}
