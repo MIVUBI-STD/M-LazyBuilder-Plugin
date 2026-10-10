@@ -178,50 +178,79 @@ pub fn sync(resource_dir: Option<&Path>) -> Result<(), String> {
     transactional_sync(&mods_dir, &sources)
 }
 
-fn transactional_sync(mods_dir: &Path, sources: &[(ClientModSpec, PathBuf)]) -> Result<(), String> {
-    let backup_dir = mods_dir.join(format!(".lazybuilder-sync-backup-{}", std::process::id()));
-    if backup_dir.exists() {
-        fs::remove_dir_all(&backup_dir).map_err(|error| error.to_string())?;
+/// Fail closed on any interrupted sync, including a PID reused after a previous
+/// Launcher exit. These folders may contain the only copies of pre-sync JARs.
+fn ensure_no_interrupted_sync_backups(mods_dir: &Path) -> Result<(), String> {
+    for entry in fs::read_dir(mods_dir).map_err(|error| error.to_string())? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with(".lazybuilder-sync-backup-") {
+            return Err(format!(
+                "Client Sync found preserved rollback data ({}) in the selected profile. Sync was blocked to prevent loss of the previous client components.",
+                name.to_string_lossy()
+            ));
+        }
     }
-    fs::create_dir_all(&backup_dir)
-        .map_err(|error| format!("Could not create Client Sync rollback area: {error}"))?;
+    Ok(())
+}
 
-    let cleanup = |mods_dir: &Path, backup_dir: &Path| {
+fn transactional_sync(mods_dir: &Path, sources: &[(ClientModSpec, PathBuf)]) -> Result<(), String> {
+    ensure_no_interrupted_sync_backups(mods_dir)?;
+    let backup_dir = mods_dir.join(format!(".lazybuilder-sync-backup-{}", std::process::id()));
+    // create_dir is exclusive: concurrent sync calls cannot share a rollback area.
+    fs::create_dir(&backup_dir)
+        .map_err(|error| format!("Could not reserve Client Sync rollback area: {error}"))?;
+
+    let cleanup_incoming = || {
         for spec in MODS {
             let _ = fs::remove_file(mods_dir.join(format!("{}.incoming", spec.file_name)));
         }
-        let _ = fs::remove_dir_all(backup_dir);
+    };
+    let cleanup = || {
+        cleanup_incoming();
+        let _ = fs::remove_dir_all(&backup_dir);
     };
 
-    for (spec, source) in sources {
-        let incoming = mods_dir.join(format!("{}.incoming", spec.file_name));
-        let _ = fs::remove_file(&incoming);
-        if let Err(error) = fs::copy(source, &incoming) {
-            cleanup(mods_dir, &backup_dir);
-            return Err(format!("Could not stage {}: {error}", spec.display_name));
-        }
-        if !files_equal(source, &incoming)? {
-            cleanup(mods_dir, &backup_dir);
-            return Err(format!("Staged {} failed verification.", spec.display_name));
-        }
-    }
-
-    let mut backups = Vec::<(PathBuf, PathBuf)>::new();
-    for spec in MODS {
-        for installed in owned_mod_paths(mods_dir, spec)? {
-            let file_name = installed
-                .file_name()
-                .ok_or_else(|| "Installed LazyBuilder mod has no filename.".to_string())?;
-            let backup = backup_dir.join(file_name);
-            fs::copy(&installed, &backup)
-                .map_err(|error| format!("Could not create rollback backup for {}: {error}", installed.display()))?;
-            if !files_equal(&installed, &backup)? {
-                cleanup(mods_dir, &backup_dir);
-                return Err(format!("Rollback backup verification failed for {}", installed.display()));
+    // Neither staging nor backup preparation mutates installed client JARs.
+    // On failure before publish it is safe to discard this operation's copies.
+    let prepared = (|| -> Result<Vec<(PathBuf, PathBuf)>, String> {
+        for (spec, source) in sources {
+            let incoming = mods_dir.join(format!("{}.incoming", spec.file_name));
+            if incoming.exists() {
+                fs::remove_file(&incoming)
+                    .map_err(|error| format!("Could not clear stale {} staging: {error}", spec.display_name))?;
             }
-            backups.push((installed, backup));
+            fs::copy(source, &incoming)
+                .map_err(|error| format!("Could not stage {}: {error}", spec.display_name))?;
+            if !files_equal(source, &incoming)? {
+                return Err(format!("Staged {} failed verification.", spec.display_name));
+            }
         }
-    }
+
+        let mut backups = Vec::<(PathBuf, PathBuf)>::new();
+        for spec in MODS {
+            for installed in owned_mod_paths(mods_dir, spec)? {
+                let file_name = installed.file_name()
+                    .ok_or_else(|| "Installed LazyBuilder mod has no filename.".to_string())?;
+                let backup = backup_dir.join(file_name);
+                fs::copy(&installed, &backup)
+                    .map_err(|error| format!("Could not create rollback backup for {}: {error}", installed.display()))?;
+                if !files_equal(&installed, &backup)? {
+                    return Err(format!("Rollback backup verification failed for {}", installed.display()));
+                }
+                backups.push((installed, backup));
+            }
+        }
+        Ok(backups)
+    })();
+
+    let backups = match prepared {
+        Ok(backups) => backups,
+        Err(error) => {
+            cleanup();
+            return Err(error);
+        }
+    };
 
     let publish = (|| -> Result<(), String> {
         for (spec, _) in sources {
@@ -246,15 +275,20 @@ fn transactional_sync(mods_dir: &Path, sources: &[(ClientModSpec, PathBuf)]) -> 
                 rollback_errors.push(format!("Could not restore {}: {rollback_error}", target.display()));
             }
         }
-        cleanup(mods_dir, &backup_dir);
-        return if rollback_errors.is_empty() {
-            Err(format!("Client Sync failed and previous LazyBuilder mods were restored: {error}"))
-        } else {
-            Err(format!("Client Sync failed: {error}; rollback also reported: {}", rollback_errors.join("; ")))
-        };
+        if rollback_errors.is_empty() {
+            cleanup();
+            return Err(format!("Client Sync failed and previous LazyBuilder mods were restored: {error}"));
+        }
+        // Never delete the only previous-valid copies after an incomplete rollback.
+        // No heuristic recovery is performed without verified ownership/completeness.
+        cleanup_incoming();
+        return Err(format!(
+            "Client Sync failed: {error}; rollback also reported: {}. Original rollback files were preserved and further syncing is blocked until recovery is resolved.",
+            rollback_errors.join("; ")
+        ));
     }
 
-    cleanup(mods_dir, &backup_dir);
+    cleanup();
     Ok(())
 }
 
@@ -698,6 +732,42 @@ mod client_profile_compatibility_tests {
             compatible: false,
             selected: true,
         }
+    }
+
+    #[test]
+    fn existing_sync_backup_is_preserved_and_prevents_new_publication() {
+        let root = std::env::temp_dir().join(format!(
+            "lazybuilder-sync-preservation-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let mods = root.join("mods");
+        let prior = mods.join(format!(
+            ".lazybuilder-sync-backup-{}",
+            std::process::id().saturating_add(1)
+        ));
+        fs::create_dir_all(&prior).unwrap();
+        fs::write(prior.join("old-client.jar"), b"previous-valid").unwrap();
+
+        let result = super::transactional_sync(&mods, &[]);
+        assert!(result.unwrap_err().contains("preserved rollback data"));
+        assert_eq!(fs::read(prior.join("old-client.jar")).unwrap(), b"previous-valid");
+        assert!(!mods.join(format!(".lazybuilder-sync-backup-{}", std::process::id())).exists());
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn unrelated_mod_files_do_not_trigger_interrupted_sync_detection() {
+        let root = std::env::temp_dir().join(format!(
+            "lazybuilder-sync-unrelated-test-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("other-mod.jar"), b"unrelated").unwrap();
+        assert!(super::ensure_no_interrupted_sync_backups(&root).is_ok());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
