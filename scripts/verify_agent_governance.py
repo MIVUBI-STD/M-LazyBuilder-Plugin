@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 from agent_preflight import evaluate, path_matches, path_owner, permitted, safe_path
@@ -246,6 +247,9 @@ def verify_agent_governance(root: Path, errors: list[str]) -> None:
         if pattern in seen_patterns:
             errors.append(f"duplicate preflight path rule: {pattern}")
         seen_patterns.add(pattern)
+        anchor = pattern[:-3] if is_prefix else pattern
+        if safe_path(anchor) and not (root / anchor).exists():
+            errors.append(f"stale preflight path rule with no owned source: {pattern}")
 
     architecture = (root / "docs/04-system/module-boundaries.md").read_text(encoding="utf-8")
     for source_root, owner in {
@@ -291,6 +295,47 @@ def verify_agent_governance(root: Path, errors: list[str]) -> None:
         errors.append("preflight fixture corpus must exercise allow, ask and deny")
     if not all(path_matches("mods/map-manager/src/main/java/X.java", p) for p in ["mods/map-manager/**"]):
         errors.append("preflight path prefix matching regressed")
+
+    # One cheap Git index read verifies *all tracked paths* have a canonical
+    # permission owner; no source files are read and no generated folders
+    # are scanned. Source-only ZIPs have no Git index, so their evidence
+    # ceiling is limited to the explicit owner and fixture checks above.
+    if (root / ".git").exists():
+        try:
+            result = subprocess.run(
+                ["git", "ls-files", "--cached", "-z"],
+                cwd=root, capture_output=True, check=False, timeout=15,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append(f"cannot audit tracked path ownership: {exc}")
+        else:
+            if result.returncode != 0:
+                errors.append(
+                    "Git tracked-path audit failed: "
+                    + result.stderr.decode("utf-8", "replace").strip()[:300]
+                )
+            else:
+                tracked = result.stdout.split(b"\0")
+                unowned: list[str] = []
+                checked = 0
+                for raw in tracked:
+                    if not raw:
+                        continue
+                    checked += 1
+                    try:
+                        relative = raw.decode("utf-8")
+                    except UnicodeDecodeError:
+                        errors.append("non-UTF-8 tracked repository path")
+                        continue
+                    if not safe_path(relative) or path_owner(relative, path_catalog) is None:
+                        unowned.append(relative)
+                if checked == 0:
+                    errors.append("Git tracked-path audit found no repository files")
+                if unowned:
+                    errors.append(
+                        f"{len(unowned)} tracked repository paths have no safe canonical "
+                        f"permission owner: {', '.join(unowned[:12])}"
+                    )
 
     # Referenced procedures are agent input too; scanning only SKILL.md misses
     # a network-to-shell instruction supplied by a nested reference.

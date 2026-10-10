@@ -551,6 +551,216 @@
         ]
       },
       "decision": "deny"
+    },
+    {
+      "id": "governance-root-readme",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "repository-governance",
+        "path": "README.md",
+        "approved_paths": [
+          "README.md"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "governance-contributing",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "repository-governance",
+        "path": "CONTRIBUTING.md",
+        "approved_paths": [
+          "CONTRIBUTING.md"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "governance-security",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "repository-governance",
+        "path": "SECURITY.md",
+        "approved_paths": [
+          "SECURITY.md"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "governance-gitignore",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "repository-governance",
+        "path": ".gitignore",
+        "approved_paths": [
+          ".gitignore"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "governance-editorconfig",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "repository-governance",
+        "path": ".editorconfig",
+        "approved_paths": [
+          ".editorconfig"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "development-node-pin",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "development-tooling",
+        "path": ".node-version",
+        "approved_paths": [
+          ".node-version"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "development-rust-pin",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "development-tooling",
+        "path": "rust-toolchain.toml",
+        "approved_paths": [
+          "rust-toolchain.toml"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "development-version",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "development-tooling",
+        "path": "VERSION",
+        "approved_paths": [
+          "VERSION"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "desktop-launcher-document",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "desktop-runtime",
+        "path": "docs/launcher/PRODUCTION_OWNERSHIP.md",
+        "approved_paths": [
+          "docs/launcher/PRODUCTION_OWNERSHIP.md"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "desktop-launcher-contract",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "desktop-runtime",
+        "path": "docs/launcher-scalability-contract.json",
+        "approved_paths": [
+          "docs/launcher-scalability-contract.json"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "fabric-umbrella-document",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "repository-governance",
+        "path": "mods/README.md",
+        "approved_paths": [
+          "mods/README.md"
+        ]
+      },
+      "decision": "allow"
+    },
+    {
+      "id": "governance-root-wrong-owner",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "desktop-runtime",
+        "path": "README.md",
+        "approved_paths": [
+          "README.md"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "desktop-launcher-no-approval",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": false,
+        "owner": "desktop-runtime",
+        "path": "docs/launcher/SELF_UPDATE.md",
+        "approved_paths": [
+          "docs/launcher/SELF_UPDATE.md"
+        ]
+      },
+      "decision": "ask"
+    },
+    {
+      "id": "future-unowned-root",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": "Local",
+        "scope_approved": true,
+        "owner": "repository-governance",
+        "path": "RANDOM-README-NEW.md",
+        "approved_paths": [
+          "RANDOM-README-NEW.md"
+        ]
+      },
+      "decision": "deny"
     }
   ]
 }

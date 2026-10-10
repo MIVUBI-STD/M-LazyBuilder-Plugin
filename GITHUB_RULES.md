@@ -14,6 +14,8 @@ Before a material write, know:
 
 `Local` is the normal development authority. Never silently fall back to `main`. Pin the current HEAD SHA before a material write and use an expected-HEAD fast-forward ref update; never force-push to resolve a stale or conflicted write.
 
+Every tracked file must resolve to one canonical path-access owner through `.agents/permissions/path-access.json`. The existing `scripts/verify_agent_governance.py` checks tracked-path coverage through Git's index when available. An unlisted path is **deny** until a justified owner/scope is assigned; do not add a catch-all writable rule. Path ownership is not user authorization.
+
 ## 2. Read minimum
 
 Prefer direct reads of known owners. Search only when the owner/path is unknown. Do not broad-scan the repository for reassurance.

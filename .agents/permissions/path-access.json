@@ -121,6 +121,62 @@
     {
       "path": "toolchain.json",
       "owner": "development-tooling"
+    },
+    {
+      "path": ".editorconfig",
+      "owner": "repository-governance"
+    },
+    {
+      "path": ".gitattributes",
+      "owner": "repository-governance"
+    },
+    {
+      "path": ".gitignore",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "README.md",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "SECURITY.md",
+      "owner": "repository-governance"
+    },
+    {
+      "path": "mods/README.md",
+      "owner": "repository-governance"
+    },
+    {
+      "path": ".node-version",
+      "owner": "development-tooling"
+    },
+    {
+      "path": "VERSION",
+      "owner": "development-tooling"
+    },
+    {
+      "path": "rust-toolchain.toml",
+      "owner": "development-tooling"
+    },
+    {
+      "path": "docs/launcher-data-preservation.md",
+      "owner": "desktop-runtime"
+    },
+    {
+      "path": "docs/launcher-failure-matrix.json",
+      "owner": "desktop-runtime"
+    },
+    {
+      "path": "docs/launcher-scalability-contract.json",
+      "owner": "desktop-runtime"
+    },
+    {
+      "path": "docs/launcher/**",
+      "owner": "desktop-runtime"
     }
   ]
 }
