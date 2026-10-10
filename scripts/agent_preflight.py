@@ -82,6 +82,8 @@ def evaluate(request: object, policy: dict, catalog: dict) -> dict[str, str]:
 
     if not isinstance(request, dict):
         return result("deny", "Request must be an object.")
+    if not isinstance(policy, dict) or not isinstance(catalog, dict):
+        return result("deny", "Policy and path catalog must be objects.")
     mode, action = request.get("mode"), request.get("action")
     modes = policy.get("modes", {})
     if not isinstance(modes, dict) or not isinstance(mode, str) or mode not in modes:
@@ -101,7 +103,7 @@ def evaluate(request: object, policy: dict, catalog: dict) -> dict[str, str]:
     if path is not None and not safe_path(path):
         return result("deny", "Unsafe or sensitive repository path.")
     branch = request.get("branch")
-    if branch not in {"Local", "main"}:
+    if not isinstance(branch, str) or branch not in {"Local", "main"}:
         return result("deny", "Branch authority must be explicit and recognized.")
 
     if action == "read":

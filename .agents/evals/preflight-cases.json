@@ -487,6 +487,70 @@
         "release_change_approved": true
       },
       "decision": "allow"
+    },
+    {
+      "id": "invalid-branch-array",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": [],
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "invalid-branch-object",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": {
+          "branch": "Local"
+        },
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "invalid-branch-array-value",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": [
+          "Local"
+        ],
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
+    },
+    {
+      "id": "invalid-branch-mapping",
+      "request": {
+        "mode": "DEVELOP",
+        "action": "write",
+        "branch": {},
+        "owner": "fabric-map",
+        "path": "mods/map-manager/src/main/java/a.java",
+        "scope_approved": true,
+        "approved_paths": [
+          "mods/map-manager/**"
+        ]
+      },
+      "decision": "deny"
     }
   ]
 }

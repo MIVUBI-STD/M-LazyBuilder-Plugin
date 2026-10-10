@@ -65,8 +65,9 @@ if f"feature_releases/{java_major}/ga" not in java_runtime:
 if f'join("java-{java_major}")' not in java_runtime:
     errors.append("Managed Java runtime directory does not match canonical Java major")
 
-# Fabric client compatibility.
-for manager in ("map-manager", "utility-manager", "performance-manager"):
+# Fabric target compatibility covers all four source modules. Builder Utilities
+# remains a separate Axiom-first extension, not a fourth core Client Setup mod.
+for manager in ("map-manager", "utility-manager", "performance-manager", "builder-utilities"):
     root = ROOT / "mods" / manager
     props = (root / "gradle.properties").read_text(encoding="utf-8")
     fail(f"{manager} minecraft_version", gradle_property(props, "minecraft_version"), minecraft)
