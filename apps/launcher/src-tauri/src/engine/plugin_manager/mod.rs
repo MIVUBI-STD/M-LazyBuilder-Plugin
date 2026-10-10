@@ -101,7 +101,7 @@ impl PluginManagerState {
                 ),
             ));
         }
-        if let Some(problem) = dependency_problem(&workspace, &incoming, None)? {
+        if let Some(problem) = dependency_problem(&workspace, &incoming)? {
             return Ok(failed_result(incoming.id, problem));
         }
 
@@ -135,7 +135,7 @@ impl PluginManagerState {
         if existing.len() > 1 {
             return Ok(failed_result(canonical_id, "Duplicate plugin versions must be resolved before updating."));
         }
-        if let Some(problem) = dependency_problem(&workspace, &incoming, Some(&canonical_id))? {
+        if let Some(problem) = dependency_problem(&workspace, &incoming)? {
             return Ok(failed_result(canonical_id, problem));
         }
 
@@ -206,7 +206,7 @@ impl PluginManagerState {
                     "Installed plugin metadata became unavailable before enable: {}",
                     existing.path.display()
                 ))?;
-            if let Some(problem) = dependency_problem(&workspace, metadata, Some(&canonical_id))? {
+            if let Some(problem) = dependency_problem(&workspace, metadata)? {
                 return Err(problem);
             }
         } else {
@@ -370,14 +370,6 @@ fn workspace() -> Result<PathBuf, String> {
 
 fn list_plugins_inner(workspace: &Path) -> Result<Vec<PluginSummary>, String> {
     let scanned = scan_all(workspace)?;
-    let valid_ids: HashSet<String> = scanned.iter()
-        .filter_map(|item| item.metadata.as_ref().map(|meta| meta.id.clone()))
-        .collect();
-    let enabled_ids: HashSet<String> = scanned.iter()
-        .filter(|item| item.enabled)
-        .filter_map(|item| item.metadata.as_ref().map(|meta| meta.id.clone()))
-        .collect();
-
     let mut groups: BTreeMap<String, Vec<&ScannedPlugin>> = BTreeMap::new();
     for item in &scanned {
         let Some(metadata) = item.metadata.as_ref() else {
@@ -404,17 +396,9 @@ fn list_plugins_inner(workspace: &Path) -> Result<Vec<PluginSummary>, String> {
             problem = Some(format!("Duplicate plugin JARs detected: {}", files.join(", ")));
             candidate_files = Some(files);
         } else if primary.enabled {
-            let missing = metadata.dependencies.iter()
-                .filter(|dep| !valid_ids.contains(*dep)).cloned().collect::<Vec<_>>();
-            let disabled = metadata.dependencies.iter()
-                .filter(|dep| valid_ids.contains(*dep) && !enabled_ids.contains(*dep))
-                .cloned().collect::<Vec<_>>();
-            if !missing.is_empty() {
+            if let Some(reason) = dependency_problem_from_scan(&scanned, metadata) {
                 state = "Problem".into();
-                problem = Some(format!("Missing required dependencies: {}", missing.join(", ")));
-            } else if !disabled.is_empty() {
-                state = "Problem".into();
-                problem = Some(format!("Required dependencies are disabled: {}", disabled.join(", ")));
+                problem = Some(reason);
             }
         }
 
@@ -632,19 +616,48 @@ fn require_single_plugin(workspace: &Path, canonical_id: &str, duplicate_message
     Ok(existing.remove(0))
 }
 
-fn dependency_problem(
-    workspace: &Path,
-    metadata: &PluginMetadata,
-    self_id: Option<&str>,
-) -> Result<Option<String>, String> {
-    for dependency in &metadata.dependencies {
-        if self_id.map(|value| dependency.eq_ignore_ascii_case(value)).unwrap_or(false) { continue; }
-        let candidates = find_all_by_id(workspace, dependency)?;
-        if candidates.is_empty() { return Ok(Some(format!("Missing required dependency: {dependency}."))); }
-        if candidates.len() > 1 { return Ok(Some(format!("Required dependency {dependency} has duplicate JARs."))); }
-        if !candidates[0].enabled { return Ok(Some(format!("Required dependency {dependency} is disabled."))); }
+fn dependency_problem(workspace: &Path, metadata: &PluginMetadata) -> Result<Option<String>, String> {
+    let scanned = scan_all(workspace)?;
+    Ok(dependency_problem_from_scan(&scanned, metadata))
+}
+
+/// Inspect the required dependency closure using the same authoritative scan for
+/// presentation and mutation admission. This does not resolve plugin versions or
+/// invent load ordering for Paper's BEFORE/AFTER/OMIT dependency rules.
+fn dependency_problem_from_scan(scanned: &[ScannedPlugin], metadata: &PluginMetadata) -> Option<String> {
+    if metadata.dependencies.iter().any(|dependency| dependency == &metadata.id) {
+        return Some(format!("Plugin {} declares itself as a required dependency.", metadata.name));
     }
-    Ok(None)
+
+    let mut visited = HashSet::from([metadata.id.clone()]);
+    let mut pending = metadata.dependencies.iter().rev()
+        .map(|dependency| (metadata.name.clone(), dependency.clone()))
+        .collect::<Vec<_>>();
+
+    while let Some((parent, dependency)) = pending.pop() {
+        if !visited.insert(dependency.clone()) {
+            // A dependency already visited requires no second disk/metadata scan.
+            // Cyclic Paper load ordering needs separate, version-specific evidence.
+            continue;
+        }
+        let mut candidates = scanned.iter().filter(|plugin| {
+            plugin.metadata.as_ref().is_some_and(|value| value.id == dependency)
+        });
+        let Some(installed) = candidates.next() else {
+            return Some(format!("Missing required dependency {dependency} (required by {parent})."));
+        };
+        if candidates.next().is_some() {
+            return Some(format!("Required dependency {dependency} has duplicate JARs (required by {parent})."));
+        }
+        if !installed.enabled {
+            return Some(format!("Required dependency {dependency} is disabled (required by {parent})."));
+        }
+        if let Some(required) = installed.metadata.as_ref() {
+            pending.extend(required.dependencies.iter().rev()
+                .map(|nested| (required.name.clone(), nested.clone())));
+        }
+    }
+    None
 }
 
 fn ensure_no_enabled_dependents(workspace: &Path, canonical_id: &str) -> Result<(), String> {
@@ -874,12 +887,73 @@ fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstall
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_paper_dependencies, read_metadata, MAX_PLUGIN_METADATA_BYTES};
-    use std::fs;
+    use super::{
+        dependency_problem_from_scan, parse_paper_dependencies, read_metadata,
+        PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
+    };
+    use std::{fs, path::PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(1);
     use serde_yaml::Value;
+
+    fn scanned(id: &str, enabled: bool, required: &[&str]) -> ScannedPlugin {
+        ScannedPlugin {
+            path: PathBuf::from(format!("{id}.jar")),
+            metadata: Some(PluginMetadata {
+                id: id.to_string(),
+                name: id.to_string(),
+                version: "1.0".into(),
+                api_version: "1.21".into(),
+                dependencies: required.iter().map(|value| value.to_string()).collect(),
+            }),
+            enabled,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn direct_self_dependency_is_never_satisfied_by_an_installed_version() {
+        let plugins = vec![scanned("alpha", true, &["alpha"])];
+        let problem = dependency_problem_from_scan(&plugins, plugins[0].metadata.as_ref().unwrap());
+        assert!(problem.unwrap().contains("itself"));
+    }
+
+    #[test]
+    fn missing_transitive_dependency_is_reported_to_caller() {
+        let plugins = vec![
+            scanned("alpha", true, &["beta"]),
+            scanned("beta", true, &["gamma"]),
+        ];
+        let problem = dependency_problem_from_scan(&plugins, plugins[0].metadata.as_ref().unwrap());
+        assert!(problem.unwrap().contains("gamma"));
+    }
+
+    #[test]
+    fn disabled_or_duplicate_transitive_dependencies_are_rejected() {
+        let plugins = vec![
+            scanned("alpha", true, &["beta"]),
+            scanned("beta", true, &["gamma"]),
+            scanned("gamma", false, &[]),
+        ];
+        assert!(dependency_problem_from_scan(&plugins, plugins[0].metadata.as_ref().unwrap())
+            .unwrap().contains("disabled"));
+        let mut duplicated = plugins;
+        duplicated[2] = scanned("gamma", true, &[]);
+        duplicated.push(scanned("gamma", true, &[]));
+        assert!(dependency_problem_from_scan(&duplicated, duplicated[0].metadata.as_ref().unwrap())
+            .unwrap().contains("duplicate"));
+    }
+
+    #[test]
+    fn complete_dependency_closure_is_accepted_without_extra_metadata_authority() {
+        let plugins = vec![
+            scanned("alpha", true, &["beta"]),
+            scanned("beta", true, &["gamma"]),
+            scanned("gamma", true, &[]),
+        ];
+        assert!(dependency_problem_from_scan(&plugins, plugins[0].metadata.as_ref().unwrap()).is_none());
+    }
 
     #[test]
     fn plugin_metadata_limit_is_bounded() {
