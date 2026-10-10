@@ -275,6 +275,36 @@ for owner, paths in module_java.items():
                         f"import from foreign package {target}: {sorted(foreign)}"
                     )
 
+# Guard the actual decoder ordering: reject lengths before array allocation.
+# JUnit tests exercise each size boundary; this focused source check ensures
+# the decoder invokes the guard before allocating from untrusted readableBytes.
+fabric_payload_codecs = (
+    "mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/net/MapPayload.java",
+    "mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/net/WorldPayload.java",
+    "mods/map-manager/src/main/java/com/halokaryamedia/lazybuilder/client/net/TransferPayload.java",
+    "mods/builder-utilities/src/main/java/com/halokaryamedia/lazybuilder/builder/net/BuilderExtensionPayload.java",
+    "mods/utility-manager/src/main/java/com/halokaryamedia/lazybuilder/utility/net/UtilityTelemetryPayload.java",
+)
+for relative in fabric_payload_codecs:
+    source = (ROOT / relative).read_text(encoding="utf-8")
+    decoder_order = re.search(
+        r"buf\s*->\s*\{\s*int length = buf\.readableBytes\(\);\s*"
+        r"requireValidPayloadLength\(length\);\s*"
+        r"byte\[\] bytes = new byte\[length\];\s*"
+        r"buf\.readBytes\(bytes\);",
+        source,
+    )
+    if decoder_order is None:
+        errors.append(f"{relative}: client decoder must validate length before byte array allocation")
+    constructor_order = re.search(
+        r"Objects\.requireNonNull\(bytes, \"bytes\"\);\s*"
+        r"requireValidPayloadLength\(bytes\.length\);\s*"
+        r"bytes = Arrays\.copyOf\(bytes, bytes\.length\);",
+        source,
+    )
+    if constructor_order is None:
+        errors.append(f"{relative}: client payload constructor must validate before defensive copy")
+
 if errors:
     print("Compatibility contract failed:")
     for error in errors:

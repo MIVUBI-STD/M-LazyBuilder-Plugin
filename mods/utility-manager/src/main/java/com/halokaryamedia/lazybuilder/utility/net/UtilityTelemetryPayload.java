@@ -25,8 +25,9 @@ public record UtilityTelemetryPayload(byte[] bytes) implements CustomPayload {
     );
 
     public UtilityTelemetryPayload {
-        bytes = Arrays.copyOf(Objects.requireNonNull(bytes, "bytes"), bytes.length);
+        Objects.requireNonNull(bytes, "bytes");
         requireValidPayloadLength(bytes.length);
+        bytes = Arrays.copyOf(bytes, bytes.length);
     }
 
     static void requireValidPayloadLength(int length) {

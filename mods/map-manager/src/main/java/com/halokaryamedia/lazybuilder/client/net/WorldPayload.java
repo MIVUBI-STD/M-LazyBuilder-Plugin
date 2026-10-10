@@ -14,15 +14,23 @@ public record WorldPayload(byte[] bytes) implements CustomPayload {
     public static final PacketCodec<RegistryByteBuf, WorldPayload> CODEC = PacketCodec.ofStatic(
             (buf, payload) -> buf.writeBytes(payload.bytes),
             buf -> {
-                byte[] bytes = new byte[buf.readableBytes()];
+                int length = buf.readableBytes();
+                requireValidPayloadLength(length);
+                byte[] bytes = new byte[length];
                 buf.readBytes(bytes);
                 return new WorldPayload(bytes);
             }
     );
 
     public WorldPayload {
-        bytes = Arrays.copyOf(Objects.requireNonNull(bytes, "bytes"), bytes.length);
-        if (bytes.length < 1 || bytes.length > WorldControlWireProtocol.MAX_MESSAGE_BYTES) {
+        Objects.requireNonNull(bytes, "bytes");
+        requireValidPayloadLength(bytes.length);
+        bytes = Arrays.copyOf(bytes, bytes.length);
+    }
+
+    /** Enforced before decoder allocation and before defensive copying. */
+    static void requireValidPayloadLength(int length) {
+        if (length < 1 || length > WorldControlWireProtocol.MAX_MESSAGE_BYTES) {
             throw new IllegalArgumentException("Invalid LazyBuilder world-control payload size");
         }
     }

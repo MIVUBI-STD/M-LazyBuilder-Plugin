@@ -18,16 +18,23 @@ public record BuilderExtensionPayload(byte[] bytes) implements CustomPayload {
             PacketCodec.ofStatic(
                     (buf, payload) -> buf.writeBytes(payload.bytes),
                     buf -> {
-                        byte[] bytes = new byte[buf.readableBytes()];
-                        buf.readBytes(bytes);
+                        int length = buf.readableBytes();
+                requireValidPayloadLength(length);
+                byte[] bytes = new byte[length];
+                buf.readBytes(bytes);
                         return new BuilderExtensionPayload(bytes);
                     }
             );
 
     public BuilderExtensionPayload {
-        bytes = Arrays.copyOf(Objects.requireNonNull(bytes, "bytes"), bytes.length);
-        if (bytes.length < 2
-                || bytes.length > BuilderExtensionTransport.MAX_PLUGIN_MESSAGE_BYTES) {
+        Objects.requireNonNull(bytes, "bytes");
+        requireValidPayloadLength(bytes.length);
+        bytes = Arrays.copyOf(bytes, bytes.length);
+    }
+
+    /** Enforced before decoder allocation and before defensive copying. */
+    static void requireValidPayloadLength(int length) {
+        if (length < 2 || length > BuilderExtensionTransport.MAX_PLUGIN_MESSAGE_BYTES) {
             throw new IllegalArgumentException("invalid Builder extension payload size");
         }
     }
