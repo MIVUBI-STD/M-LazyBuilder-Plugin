@@ -135,6 +135,47 @@ class WorldImportServiceTest {
     }
 
     @Test
+    void globalCleanupCannotDeleteClaimedActiveImportSource() {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        FakeFiles files = new FakeFiles(tempDir);
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        FakeStore runtimeStore = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> { throw new AssertionError("must not convert"); };
+        WorldImportService service = new WorldImportService(registry, persistence, files, imports,
+                runtimeStore, updates(runtimeStore, converter), converter, new ConversionJobCoordinator());
+        WorldImportService.ImportTask task = service.prepare("Held.zip", "HeldWorld", "Held");
+        imports.cleanupMarkers.add("Held.zip");
+
+        service.recoverPendingCommittedArtifactCleanup();
+        assertFalse(imports.deletedArtifacts.contains("Held.zip"));
+        assertEquals(1, service.pendingCommittedArtifactCleanupCount());
+
+        service.finish(task);
+        service.retryPendingCommittedArtifactCleanup();
+        assertTrue(imports.deletedArtifacts.contains("Held.zip"));
+    }
+
+    @Test
+    void pendingCommittedCleanupBlocksAnotherImportOfSameSource() {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        FakeFiles files = new FakeFiles(tempDir);
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        imports.cleanupMarkers.add("Committed.zip");
+        imports.deleteFailuresRemaining = 1;
+        FakeStore runtimeStore = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> { throw new AssertionError("must not convert"); };
+        WorldImportService service = new WorldImportService(registry, persistence, files, imports,
+                runtimeStore, updates(runtimeStore, converter), converter, new ConversionJobCoordinator());
+
+        service.recoverPendingCommittedArtifactCleanup();
+        assertThrows(IllegalStateException.class,
+                () -> service.prepare("Committed.zip", "Fresh", "Fresh"));
+        assertEquals(0, registry.all().size());
+    }
+
+    @Test
     void failedInspectionDiscardsUnusableUploadedArtifact() {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();

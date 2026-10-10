@@ -100,6 +100,9 @@ public final class WorldImportService {
         reserveArtifact(artifactName, operationId);
         try {
             retryPendingCommittedArtifactCleanup();
+            if (pendingCommittedArtifactCleanup.contains(artifactName)) {
+                throw new IllegalStateException("Import upload has pending committed cleanup: " + artifactName);
+            }
             WorldRecord destination = new WorldRecord(
                     WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
                     WorldLifecycle.ACTIVE
@@ -228,7 +231,16 @@ public final class WorldImportService {
 
     public void retryPendingCommittedArtifactCleanup() {
         for (String artifactName : Set.copyOf(pendingCommittedArtifactCleanup)) {
-            retryCommittedArtifactCleanup(artifactName);
+            // The cleanup pass must not delete an active import/inspection source.
+            // Use the same operation-token map rather than a second lock owner.
+            UUID cleanupId = UUID.randomUUID();
+            String key = artifactKey(artifactName);
+            if (activeArtifactOperations.putIfAbsent(key, cleanupId) != null) continue;
+            try {
+                retryCommittedArtifactCleanup(artifactName);
+            } finally {
+                activeArtifactOperations.remove(key, cleanupId);
+            }
         }
     }
 
