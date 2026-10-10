@@ -112,13 +112,11 @@ public final class BuildPerformanceController implements Listener {
     }
 
     @EventHandler
-    public void onEntitiesLoad    @EventHandler
     public void onEntitiesLoad(EntitiesLoadEvent event) {
         reconcileBatch(event.getEntities(), isEnabledManagedWorld(event.getWorld()), "entity load");
     }
 
     @EventHandler
-    public void onEntitiesUnload    @EventHandler
     public void onEntitiesUnload(EntitiesUnloadEvent event) {
         // Attempt owned AI restoration before serialization. A failed entity
         // retains its PDC marker for the next load/recovery attempt.
@@ -126,7 +124,6 @@ public final class BuildPerformanceController implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onBreed    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onBreed(EntityBreedEvent event) {
         if (breedingSuppression && isEnabledManagedWorld(event.getEntity().getWorld())) {
             event.setCancelled(true);
