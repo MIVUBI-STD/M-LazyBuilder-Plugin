@@ -80,14 +80,12 @@ public final class WorldBackupService {
                 try {
                     files.deleteWorkspace(staged);
                 } catch (IOException cleanupFailure) {
+                    // Keep the same request-owned cleanup debt for both success
+                    // and failure. finish() can retry without waiting for
+                    // startup transient-workspace recovery.
+                    task.cleanupWorkspace = staged;
+                    task.cleanupFailure = cleanupFailure;
                     if (primaryFailure != null) primaryFailure.addSuppressed(cleanupFailure);
-                    else if (!task.committed) {
-                        throw new IllegalStateException(
-                                "Failed to clean backup workspace for " + task.world.displayName(), cleanupFailure);
-                    } else {
-                        task.cleanupWorkspace = staged;
-                        task.cleanupFailure = cleanupFailure;
-                    }
                 }
             }
         }
@@ -102,7 +100,7 @@ public final class WorldBackupService {
             try { restoreSourceIfStillActive(task); }
             catch (RuntimeException exception) { failure = exception; }
         }
-        if (task.committed && task.cleanupWorkspace != null) {
+        if (task.cleanupWorkspace != null) {
             try {
                 files.deleteWorkspace(task.cleanupWorkspace);
                 task.cleanupWorkspace = null;

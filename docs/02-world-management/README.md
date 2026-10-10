@@ -308,7 +308,7 @@ Internal folder identity is not required from the builder merely for confirmatio
 
 Backup uses the same snapshot/quiesce safety model and one existing backup store. It is not exposed as a second world lifecycle.
 
-Occupied worlds are blocked if the backup path requires consistent unload/snapshot semantics.
+Occupied worlds are blocked if the backup path requires consistent unload/snapshot semantics. A staging deletion failure retains request-owned cleanup evidence and is retried during `finish()` whether packaging committed or failed. If cleanup still fails, the existing safe transient-workspace startup recovery remains the last-resort path; the backup outcome is never falsely promoted by a cleanup failure.
 
 ## Import / Export / conversion
 

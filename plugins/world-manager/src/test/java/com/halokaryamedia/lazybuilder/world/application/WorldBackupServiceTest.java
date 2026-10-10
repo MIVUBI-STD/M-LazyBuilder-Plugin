@@ -82,6 +82,32 @@ class WorldBackupServiceTest {
     }
 
     @Test
+    void failedBackupRetriesTransientStagingCleanupBeforeWaitingForRestart() throws Exception {
+        Fixture fixture = fixture(true, true);
+        fixture.files.failNextDelete = true;
+
+        WorldBackupService.BackupTask task = fixture.service.prepare(fixture.world.id());
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> fixture.service.executeFilePhase(task));
+
+        assertTrue(failure.getSuppressed().length > 0,
+                "original package error must retain first cleanup failure evidence");
+        assertFalse(task.committed());
+        assertTrue(task.cleanupFailure() != null,
+                "failed backup must retain staging cleanup debt until finish");
+        assertEquals(1, fixture.files.deleteWorkspaceCalls);
+        assertFalse(fixture.runtime.loaded);
+
+        fixture.service.finish(task);
+
+        assertEquals(2, fixture.files.deleteWorkspaceCalls,
+                "failed backup should retry staging cleanup once during finish");
+        assertTrue(task.cleanupFailure() == null);
+        assertTrue(fixture.runtime.loaded);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
     void finishDoesNotReloadSourceAfterLifecycleStopsBeingActive() throws Exception {
         Fixture fixture = fixture(true);
         WorldBackupService.BackupTask task = fixture.service.prepare(fixture.world.id());
