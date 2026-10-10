@@ -100,6 +100,13 @@ public final class WorldImportService {
         reserveArtifact(artifactName, operationId);
         try {
             retryPendingCommittedArtifactCleanup();
+            // The persisted cleanup marker is authoritative after a restart,
+            // even if startup recovery has not yet populated the in-memory set.
+            try {
+                pendingCommittedArtifactCleanup.addAll(imports.pendingCommittedCleanupArtifacts());
+            } catch (IOException exception) {
+                throw new IllegalStateException("Could not verify pending committed import cleanup", exception);
+            }
             if (pendingCommittedArtifactCleanup.contains(artifactName)) {
                 throw new IllegalStateException("Import upload has pending committed cleanup: " + artifactName);
             }

@@ -176,6 +176,24 @@ class WorldImportServiceTest {
     }
 
     @Test
+    void prepareReadsDurableCommittedCleanupMarkersEvenWithoutStartupRecovery() {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        FakeFiles files = new FakeFiles(tempDir);
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        imports.cleanupMarkers.add("Stale.zip");
+        FakeStore runtimeStore = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> { throw new AssertionError("conversion not expected"); };
+        WorldImportService service = new WorldImportService(registry, persistence, files, imports,
+                runtimeStore, updates(runtimeStore, converter), converter, new ConversionJobCoordinator());
+
+        assertThrows(IllegalStateException.class,
+                () -> service.prepare("Stale.zip", "NewWorld", "New World"));
+        assertEquals(0, registry.all().size(), "committed source must not publish a second world");
+        assertEquals(1, service.pendingCommittedArtifactCleanupCount());
+    }
+
+    @Test
     void failedInspectionDiscardsUnusableUploadedArtifact() {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
