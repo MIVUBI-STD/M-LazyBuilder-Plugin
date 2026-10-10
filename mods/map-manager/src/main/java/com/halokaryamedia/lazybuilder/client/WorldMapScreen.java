@@ -264,13 +264,16 @@ public final class WorldMapScreen extends Screen {
         }
 
         String dimension = world.getRegistryKey().getValue().toString();
-        String scope = current.worldId() + "|" + dimension;
+        String localScope = current.worldId() + "|" + dimension;
+        // Raster identity must match the server-qualified persistent terrain cache.
+        // Otherwise identical world UUIDs across servers can reuse stale GPU pixels.
+        String scope = ClientServerIdentity.mapScope(localScope);
         Path storage = client.runDirectory.toPath().resolve("lazybuilder").resolve("maps");
 
         if (!scope.equals(rasterState.scope) && !rasterState.scope.isBlank()) {
             rasterState.resetContent();
         }
-        SURFACE.useScope(scope, storage);
+        SURFACE.useScope(localScope, storage);
         if (SURFACE.processPending(world, SAMPLE_BUDGET_PER_TICK) > 0) rasterState.contentDirty = true;
 
         int pixel = mapPixelSize();

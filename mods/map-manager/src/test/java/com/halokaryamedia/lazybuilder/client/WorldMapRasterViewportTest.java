@@ -44,6 +44,36 @@ class WorldMapRasterViewportTest {
     }
 
     @Test
+    void rasterViewportAndTerrainScopeRemainIsolatedAcrossServers() {
+        String worldAndDimension = "01234567-89ab-cdef-0123-456789abcdef|minecraft:overworld";
+        String serverA = ClientServerIdentity.mapScope(
+                ClientServerIdentity.encode("a.example:25565"), worldAndDimension);
+        String serverB = ClientServerIdentity.mapScope(
+                ClientServerIdentity.encode("b.example:25565"), worldAndDimension);
+
+        // These are the same canonical identities used by ClientMapSurfaceCache.
+        // A retained raster must not be reusable for a different server.
+        assertNotEquals(serverA, serverB);
+        var rasterA = WorldMapRasterViewport.resolve(
+                serverA, 0, 0, 800, 600, 2, 8.0, 100.0, 200.0);
+        var rasterB = WorldMapRasterViewport.resolve(
+                serverB, 0, 0, 800, 600, 2, 8.0, 100.0, 200.0);
+        assertNotEquals(rasterA.key(), rasterB.key());
+
+        MapRasterPresentationState retained = new MapRasterPresentationState();
+        retained.scope = serverA;
+        retained.colors = new int[] {0xFF112233};
+        retained.columns = 1;
+        retained.rows = 1;
+        retained.contentDirty = false;
+        if (!serverB.equals(retained.scope) && !retained.scope.isBlank()) {
+            retained.resetContent();
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(retained.hasImage());
+        org.junit.jupiter.api.Assertions.assertTrue(retained.contentDirty);
+    }
+
+    @Test
     void rejectsInvalidViewportInputs() {
         assertThrows(IllegalArgumentException.class,
                 () -> WorldMapRasterViewport.resolve("scope", 0, 0, 0, 10, 1, 2.0, 0.0, 0.0));
