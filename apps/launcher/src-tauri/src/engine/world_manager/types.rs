@@ -50,6 +50,7 @@ pub struct ExportWorldRequest {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportWorldRequest {
+    pub request_id: String,
     pub artifact_name: String,
     pub destination_folder: String,
     pub display_name: String,

@@ -288,6 +288,9 @@ def main() -> int:
     if world_contract.get("reattachFromTaskList") is not True:
         errors.append("World task UI must reattach from backend task list")
     require(errors, "Worlds UI", worlds, "runtimeProduct.worlds.tasks()", "recoverActiveTask", "while (pageActive)")
+    for token in ("pendingImportRequestId ?? crypto.randomUUID()", "pendingImportRequestId = requestId;", "requestId,"):
+        require(errors, "Worlds import request replay", worlds, token)
+
     # On task admission failure reuse the already completed server-owned upload;
     # reuploading the same filename would otherwise deterministically conflict.
     for required in (

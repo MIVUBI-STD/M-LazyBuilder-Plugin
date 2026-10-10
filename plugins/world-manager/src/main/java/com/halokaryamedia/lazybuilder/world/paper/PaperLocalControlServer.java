@@ -28,7 +28,9 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -64,6 +66,8 @@ public final class PaperLocalControlServer {
     private HttpServer server;
     private ExecutorService executor;
     private final AtomicBoolean stopping = new AtomicBoolean(true);
+    private static final int MAX_IMPORT_ADMISSIONS = WorldTaskRegistry.DEFAULT_HISTORY_LIMIT;
+    private final Map<UUID, ImportAdmission> importAdmissions = new LinkedHashMap<>();
 
     public PaperLocalControlServer(
             JavaPlugin plugin,
@@ -360,13 +364,39 @@ public final class PaperLocalControlServer {
         sendJson(exchange, 202, taskResponse(queued));
     }
 
-    private void handleImportTaskStart(HttpExchange exchange) throws Exception {
+    private synchronized void handleImportTaskStart(HttpExchange exchange) throws Exception {
         ImportTaskStartRequest request = readJson(exchange, ImportTaskStartRequest.class);
+        UUID requestId = UUID.fromString(requireNonBlank(request.requestId(), "requestId"));
         String artifactName = requireNonBlank(request.artifactName(), "artifactName");
         String destinationFolder = requireNonBlank(request.destinationFolder(), "destinationFolder");
         String displayName = request.displayName() == null || request.displayName().isBlank()
                 ? destinationFolder
                 : request.displayName().trim();
+        ImportAdmission previous = importAdmissions.get(requestId);
+        if (previous != null) {
+            if (!previous.artifactName().equals(artifactName)
+                    || !previous.destinationFolder().equals(destinationFolder)
+                    || !previous.displayName().equals(displayName)) {
+                throw new IllegalStateException("Import request ID reused with different parameters");
+            }
+            WorldTaskSnapshot replay = tasks.find(previous.taskId()).orElseThrow(() ->
+                    new IllegalStateException("Import task history expired; reconcile before another submission"));
+            sendJson(exchange, 202, taskResponse(replay));
+            return;
+        }
+        if (importAdmissions.size() >= MAX_IMPORT_ADMISSIONS) {
+            UUID removable = null;
+            for (Map.Entry<UUID, ImportAdmission> entry : importAdmissions.entrySet()) {
+                WorldTaskSnapshot prior = tasks.find(entry.getValue().taskId()).orElse(null);
+                if (prior == null || prior.state() == com.halokaryamedia.lazybuilder.world.task.WorldTaskState.SUCCEEDED
+                        || prior.state() == com.halokaryamedia.lazybuilder.world.task.WorldTaskState.FAILED) {
+                    removable = entry.getKey();
+                    break;
+                }
+            }
+            if (removable == null) throw new IllegalStateException("Import task admission history is full");
+            importAdmissions.remove(removable);
+        }
         if (!importUploads.claimForImport(artifactName)) {
             throw new IllegalStateException("Desktop import artifact is missing or already claimed");
         }
@@ -394,6 +424,7 @@ public final class PaperLocalControlServer {
             importUploads.returnForRetry(artifactName);
             throw rejected;
         }
+        importAdmissions.put(requestId, new ImportAdmission(artifactName, destinationFolder, displayName, queued.taskId()));
         sendJson(exchange, 202, taskResponse(queued));
     }
 
@@ -641,7 +672,8 @@ public final class PaperLocalControlServer {
     private record TaskStartRequest(String worldId) {}
     private record DuplicateTaskStartRequest(String worldId, String destinationFolder, String displayName) {}
     private record ExportTaskStartRequest(String worldId, String targetFormat, String artifactName) {}
-    private record ImportTaskStartRequest(String artifactName, String destinationFolder, String displayName) {}
+    private record ImportTaskStartRequest(String requestId, String artifactName, String destinationFolder, String displayName) {}
+    private record ImportAdmission(String artifactName, String destinationFolder, String displayName, UUID taskId) {}
     private record DeleteTaskStartRequest(String worldId, String typedDisplayName) {}
     private record CreateWorldRequest(String folderName, String displayName, String kind) {}
     private record UpdateWorldSettingsRequest(String defaultGameMode, Long timeOfDayTicks,
