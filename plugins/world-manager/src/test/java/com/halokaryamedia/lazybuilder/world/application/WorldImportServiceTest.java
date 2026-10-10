@@ -399,6 +399,30 @@ class WorldImportServiceTest {
     }
 
     @Test
+    void committedWorldSurvivesPostCommitCleanupRuntimeFailure() throws Exception {
+        WorldRegistry registry = new WorldRegistry();
+        MemoryPersistence persistence = new MemoryPersistence();
+        FakeFiles files = new FakeFiles(tempDir);
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        FakeStore runtimeStore = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> { throw new AssertionError("native import should not convert"); };
+        WorldImportService service = new WorldImportService(
+                registry, persistence, files, imports,
+                runtimeStore, updates(runtimeStore, converter), converter, new ConversionJobCoordinator());
+
+        // Fault injection after persistence has accepted the imported world.
+        imports.failCommittedMarkerRuntime = true;
+        WorldImportService.ImportTask task = service.prepare("Build.zip", "CommittedWorld", "Committed World");
+        assertThrows(IllegalStateException.class, () -> service.executeFilePhase(task));
+        service.finish(task);
+
+        assertTrue(task.completed(), "world commit must not be downgraded to an uncommitted operation");
+        assertEquals(1, registry.all().size());
+        assertTrue(Files.exists(tempDir.resolve("CommittedWorld")),
+                "a committed world must never be rolled back by post-commit failure");
+    }
+
+    @Test
     void persistenceFailureRollsBackPublishedWorldAndKeepsArtifactForRetry() throws Exception {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
@@ -490,6 +514,7 @@ class WorldImportServiceTest {
         private final Set<String> cleanupMarkers = new HashSet<>();
         private boolean failInspection;
         private boolean failCleanupMarkerRead;
+        private boolean failCommittedMarkerRuntime;
         private int deleteFailuresRemaining;
         private int deleteAttempts;
 
@@ -518,7 +543,10 @@ class WorldImportServiceTest {
             }
             deletedArtifacts.add(artifactName);
         }
-        @Override public void markCommittedCleanupPending(String artifactName) { cleanupMarkers.add(artifactName); }
+        @Override public void markCommittedCleanupPending(String artifactName) {
+            if (failCommittedMarkerRuntime) throw new IllegalStateException("injected post-commit marker failure");
+            cleanupMarkers.add(artifactName);
+        }
         @Override public void clearCommittedCleanupPending(String artifactName) { cleanupMarkers.remove(artifactName); }
         @Override public List<String> pendingCommittedCleanupArtifacts() throws IOException {
             if (failCleanupMarkerRead) throw new IOException("marker read failed");

@@ -186,7 +186,9 @@ public final class WorldImportService {
             }
             return task.destination;
         } catch (IOException | RuntimeException exception) {
-            if (published) {
+            // A durable registry commit is the point of no return. Post-commit
+            // cleanup failure must not delete the world referenced by registry.
+            if (published && !task.completed) {
                 try { files.deleteWorld(task.destination); }
                 catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
             }
