@@ -291,6 +291,91 @@ class TransferSessionServiceTest {
     }
 
     @Test
+    void admittedDigestSurvivesRestartAndRejectsChangedBytesBeforeRetry() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        Path exports = tempDir.resolve("exports");
+        Path transfer = tempDir.resolve("transfer");
+        TransferPolicy policy = new TransferPolicy(4, 1024, 1, 1);
+        TransferSessionService initial = new TransferSessionService(imports, exports, transfer, policy);
+        UUID owner = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        byte[] original = {1, 2, 3, 4};
+        TransferDescriptor upload = initial.beginUpload(owner, "pinned.zip", 4, sha256(original));
+        initial.acceptUploadChunk(owner, upload.sessionId(), 0, original);
+        initial.finishUpload(owner, upload.sessionId());
+        assertTrue(initial.claimCompletedUploadForImport(owner, "pinned.zip", requestId, "Pin", "Pinned"));
+        initial.verifyClaimedImport(owner, "pinned.zip", requestId);
+
+        TransferSessionService recovered = new TransferSessionService(imports, exports, transfer, policy);
+        assertTrue(recovered.claimCompletedUploadForImport(owner, "pinned.zip", requestId, "Pin", "Pinned"));
+        recovered.verifyClaimedImport(owner, "pinned.zip", requestId);
+        Files.write(imports.resolve("pinned.zip"), new byte[]{4, 3, 2, 1});
+        assertThrows(IllegalStateException.class,
+                () -> recovered.verifyClaimedImport(owner, "pinned.zip", requestId));
+        assertTrue(recovered.returnCompletedUploadToOwner(owner, "pinned.zip"));
+        assertThrows(IllegalStateException.class,
+                () -> recovered.claimCompletedUploadForImport(owner, "pinned.zip", requestId, "Pin", "Pinned"));
+        assertFalse(recovered.discardUnclaimedCompletedUpload(owner, "pinned.zip"));
+        assertTrue(Files.exists(imports.resolve("pinned.zip")), "mismatch must preserve recovery evidence");
+    }
+
+    @Test
+    void legacyUnclaimedUploadCanBePinnedButLegacyAdmissionFailsClosed() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        Path transfers = tempDir.resolve("transfer");
+        Path markers = transfers.resolve(".completed-uploads");
+        Files.createDirectories(imports);
+        Files.createDirectories(markers);
+        UUID owner = UUID.randomUUID();
+        UUID oldRequest = UUID.randomUUID();
+        byte[] bytes = {1, 2, 3, 4};
+        Files.write(imports.resolve("old-unclaimed.zip"), bytes);
+        Files.writeString(markers.resolve(java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("old-unclaimed.zip".getBytes(java.nio.charset.StandardCharsets.UTF_8)) + ".owner"),
+                owner.toString());
+        Files.write(imports.resolve("old-admitted.zip"), bytes);
+        Files.writeString(markers.resolve(java.util.Base64.getUrlEncoder().withoutPadding()
+                .encodeToString("old-admitted.zip".getBytes(java.nio.charset.StandardCharsets.UTF_8)) + ".owner"),
+                owner + "\n" + oldRequest + "\n"
+                        + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                                "OldWorld".getBytes(java.nio.charset.StandardCharsets.UTF_8)) + "\n"
+                        + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                                "Old World".getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        TransferPolicy policy = new TransferPolicy(4, 1024, 1, 1);
+        TransferSessionService recovered = new TransferSessionService(
+                imports, tempDir.resolve("exports"), transfers, policy);
+        assertTrue(recovered.claimCompletedUploadForImport(owner, "old-unclaimed.zip",
+                UUID.randomUUID(), "Fresh", "Fresh"), "new admission pins the surviving bytes");
+        assertThrows(IllegalStateException.class, () -> recovered.claimCompletedUploadForImport(
+                owner, "old-admitted.zip", oldRequest, "OldWorld", "Old World"));
+        assertFalse(recovered.discardUnclaimedCompletedUpload(owner, "old-admitted.zip"));
+        assertTrue(Files.exists(imports.resolve("old-admitted.zip")));
+    }
+
+    @Test
+    void rejectedSubmissionRetainsDigestForLaterOriginalSourceVerification() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        Path transfers = tempDir.resolve("transfers");
+        TransferPolicy policy = new TransferPolicy(4, 1024, 1, 1);
+        TransferSessionService service = new TransferSessionService(
+                imports, tempDir.resolve("exports"), transfers, policy);
+        UUID owner = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        byte[] original = {1, 2, 3, 4};
+        TransferDescriptor upload = service.beginUpload(owner, "rollback.zip", 4, sha256(original));
+        service.acceptUploadChunk(owner, upload.sessionId(), 0, original);
+        service.finishUpload(owner, upload.sessionId());
+        assertTrue(service.claimCompletedUploadForImport(owner, "rollback.zip", requestId, "Dest", "Dest"));
+        assertTrue(service.cancelUnacceptedImport(owner, "rollback.zip", requestId));
+        Files.write(imports.resolve("rollback.zip"), new byte[]{9, 8, 7, 6});
+        TransferSessionService recovered = new TransferSessionService(
+                imports, tempDir.resolve("exports"), transfers, policy);
+        assertThrows(IllegalStateException.class, () -> recovered.claimCompletedUploadForImport(
+                owner, "rollback.zip", UUID.randomUUID(), "Dest", "Dest"));
+    }
+
+    @Test
     void downloadIsExplicitSequentialAndBoundToOwner() throws Exception {
         Path exports = tempDir.resolve("exports");
         Files.createDirectories(exports);

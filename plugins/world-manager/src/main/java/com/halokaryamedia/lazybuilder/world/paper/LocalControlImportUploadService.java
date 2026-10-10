@@ -66,6 +66,10 @@ public final class LocalControlImportUploadService {
         return transfers.claimCompletedUploadForImport(DESKTOP_OWNER, fileName, requestId, folder, display);
     }
 
+    public void verifyClaim(String fileName, UUID requestId) throws IOException {
+        transfers.verifyClaimedImport(DESKTOP_OWNER, fileName, requestId);
+    }
+
     public boolean cancelUnacceptedImport(String fileName, UUID requestId) throws IOException {
         return transfers.cancelUnacceptedImport(DESKTOP_OWNER, fileName, requestId);
     }

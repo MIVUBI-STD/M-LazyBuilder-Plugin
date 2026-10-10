@@ -472,6 +472,9 @@ public final class PaperLocalControlServer {
                     progress -> {
                         boolean committed = false;
                         try {
+                            // Verify the pinned source bytes immediately before staging.
+                            // A valid request ID alone is not permission to import changed bytes.
+                            importUploads.verifyClaim(artifactName, requestId);
                             String result = heavyOperations.importWorld(
                                     artifactName, destinationFolder, displayName, requestId, progress::update).id().toString();
                             committed = true;
