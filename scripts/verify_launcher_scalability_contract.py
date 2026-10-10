@@ -288,6 +288,25 @@ def main() -> int:
     if world_contract.get("reattachFromTaskList") is not True:
         errors.append("World task UI must reattach from backend task list")
     require(errors, "Worlds UI", worlds, "runtimeProduct.worlds.tasks()", "recoverActiveTask", "while (pageActive)")
+    # On task admission failure reuse the already completed server-owned upload;
+    # reuploading the same filename would otherwise deterministically conflict.
+    for required in (
+        "let pendingImportArtifact:",
+        "pendingImportArtifact?.sourcePath === importPath",
+        "pendingImportArtifact = { sourcePath: importPath, artifactName };",
+        "pendingImportArtifact = null;",
+        "const submittedTask = await runtimeProduct.worlds.import({",
+    ):
+        require(errors, "Worlds import retry ownership", worlds, required)
+    import_flow = worlds.split("async function runImport() {", 1)[-1].split("async function pollTask(", 1)[0]
+    if not (
+        import_flow.index("pendingImportArtifact = { sourcePath: importPath, artifactName };")
+        < import_flow.index("const submittedTask = await runtimeProduct.worlds.import({")
+        < import_flow.index("pendingImportArtifact = null;")
+        < import_flow.index("if (!pageActive) return;")
+    ):
+        errors.append("Worlds import retry must retain upload until successful Paper task admission")
+
     # A completed Desktop upload must be handed to the existing Paper import
     # task even if Worlds.svelte unmounted during upload. Polling/UI is still
     # page-scoped, but task admission must not be.

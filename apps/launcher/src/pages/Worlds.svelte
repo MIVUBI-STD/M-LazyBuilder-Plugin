@@ -32,6 +32,9 @@
   let importPath = '';
   let importName = '';
   let importBusy = false;
+  // Keep the completed upload across a rejected task admission so retry does not
+  // attempt a conflicting second upload of the same server-owned archive.
+  let pendingImportArtifact: { sourcePath: string; artifactName: string } | null = null;
   let settings: WorldSettingsSnapshot | null = null;
   let settingsBusy = false;
   let duplicateSource: ManagedWorldSummary | null = null;
@@ -144,6 +147,7 @@
     try {
       const selected = await runtimeProduct.worlds.pickImport();
       if (!pageActive || !selected) return;
+      if (selected !== importPath) pendingImportArtifact = null;
       importPath = selected;
       const fileName = selected.split(/[\\/]/).pop() || 'Imported World';
       importName = fileName.replace(/\.(zip|mcworld)$/i, '').replace(/[-_]+/g, ' ').trim() || 'Imported World';
@@ -159,14 +163,18 @@
     importBusy = true;
     error = null;
     try {
-      const artifactName = await runtimeProduct.worlds.uploadImport(importPath);
-      // Upload ownership has passed to Paper. Navigating away must not leave
-      // that completed artifact without its intended import operation.
+      const artifactName = pendingImportArtifact?.sourcePath === importPath
+        ? pendingImportArtifact.artifactName
+        : await runtimeProduct.worlds.uploadImport(importPath);
+      pendingImportArtifact = { sourcePath: importPath, artifactName };
+      // A server-owned upload must be admitted to its Paper task regardless of
+      // page navigation. If task admission fails, retain its name for retry.
       const submittedTask = await runtimeProduct.worlds.import({
         artifactName,
         destinationFolder: folderName(displayName, 'imported-world'),
         displayName
       });
+      pendingImportArtifact = null;
       if (!pageActive) return;
       operationTask = submittedTask;
       importOpen = false;
