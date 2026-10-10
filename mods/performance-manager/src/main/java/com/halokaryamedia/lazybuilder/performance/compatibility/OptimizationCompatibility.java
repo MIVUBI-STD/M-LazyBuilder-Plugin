@@ -85,7 +85,9 @@ public final class OptimizationCompatibility {
         }
 
         public Decision decision(OptimizationDomain domain) {
-            return decisions.getOrDefault(domain, Decision.lazyBuilder());
+            // A partial/corrupt policy must not implicitly authorize first-party
+            // rendering hooks. Normal evaluate() populates every domain.
+            return decisions.getOrDefault(domain, Decision.external("policy-missing"));
         }
 
         public boolean owns(OptimizationDomain domain) {

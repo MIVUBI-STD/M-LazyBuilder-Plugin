@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.performance.compatibility;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.ENTITY_CULLING;
 import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.DYNAMIC_BUFFER_GROWTH;
@@ -11,6 +12,7 @@ import static com.halokaryamedia.lazybuilder.performance.compatibility.Optimizat
 import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.TERRAIN_BUILD;
 import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.TERRAIN_SUBMISSION;
 import static com.halokaryamedia.lazybuilder.performance.compatibility.OptimizationCompatibility.OptimizationDomain.TERRAIN_UPLOAD;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -80,6 +82,20 @@ final class OptimizationCompatibilityTest {
         assertTrue(policy.owns(TERRAIN_SUBMISSION));
         assertTrue(policy.owns(ENTITY_CULLING));
         assertTrue(policy.owns(BAKED_QUAD_MEMORY));
+    }
+
+    @Test
+    void missingPolicyDomainMustNotEnableAnUnownedRendererHook() {
+        var missing = new OptimizationCompatibility.Policy(Map.of());
+        for (var domain : OptimizationCompatibility.OptimizationDomain.values()) {
+            assertFalse(missing.owns(domain), domain + " must fail closed when policy is incomplete");
+            assertEquals("policy-missing", missing.decision(domain).owner());
+        }
+
+        var renderer = new RendererCompatibility.Snapshot(false, false, List.of());
+        var readiness = FirstPartyRendererReadiness.evaluate(renderer, missing);
+        assertFalse(readiness.ready(), "incomplete ownership cannot report first-party-ready");
+        assertTrue(readiness.blockers().stream().anyMatch(blocker -> blocker.contains("policy-missing")));
     }
 
     @Test

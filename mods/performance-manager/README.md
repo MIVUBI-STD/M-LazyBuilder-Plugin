@@ -12,6 +12,10 @@ The target is to replace the external performance stack gradually with independe
 
 Performance Manager owns client performance behavior only: frame timing/pressure, background FPS policy, conservative culling, immediate rendering efficiency, targeted memory reduction, chunk rebuild/mesh/render-region/upload/visibility/submission/buffer efficiency, and builder-render compatibility policy.
 
+## Compatibility fallback safety
+
+The optimization ownership policy is fail-closed for incomplete/missing domains: a domain not explicitly claimed by the policy is treated as externally owned, not automatically first-party. Likewise a mixin not registered in the existing domain mapping is refused by the mixin plugin. The packaged client mixin list is regression-checked against the declared domain map. These source guards do not establish Minecraft/driver runtime compatibility and do not change the user-selected rendering settings.
+
 ## Current renderer ownership
 
 The first-party renderer path includes conservative culling, rebuild coalescing, block-color and block-side caches, section visibility caching, terrain-layer membership/buffer lookup caches, block-layer allocator lookup caching, thread-local SectionBuilder lookup caching, toroidal BuiltChunk storage remapping, per-layer terrain submission indexing, upload batching/pacing, terrain GPU residency accounting, stale-buffer reclamation, live shared-region allocation modeling, offset-aware arena draw planning, mirrored physical shared VBO/EBO drawing, GPU-to-GPU arena relocation, explicit per-draw transform streaming, a guarded true multi-draw submission backend, writable GPU-buffer growth/reuse, buffer-pool pressure diagnostics, and translucent-sort coalescing.

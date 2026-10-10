@@ -63,7 +63,9 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
     @Override
     public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
         OptimizationDomain domain = domainFor(mixinClassName);
-        return domain == null || effectivePolicy().owns(domain);
+        // Never enable an unclassified future mixin by default. Only a
+        // positively classified first-party domain may apply its hook.
+        return domain != null && effectivePolicy().owns(domain);
     }
 
     private OptimizationCompatibility.Policy effectivePolicy() {
@@ -78,7 +80,7 @@ public final class PerformanceMixinPlugin implements IMixinConfigPlugin {
         );
     }
 
-    private static OptimizationDomain domainFor(String mixinClassName) {
+    static OptimizationDomain domainFor(String mixinClassName) {
         if (mixinClassName == null || !mixinClassName.startsWith(MIXIN_PACKAGE)) return null;
         return DOMAIN_BY_MIXIN.get(mixinClassName.substring(MIXIN_PACKAGE.length()));
     }
