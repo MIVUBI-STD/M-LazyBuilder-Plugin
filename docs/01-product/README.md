@@ -117,7 +117,21 @@ Custom Modrinth data directories are supported through manual profile selection.
 
 Other files in the selected profile `mods/` directory are never modified. Before Sync Client writes anything, the selected profile is revalidated, compatibility is rechecked, the derived mods directory must be writable, and all three bundled LazyBuilder client JARs must be available. There is no background watcher; status is refreshed when the Client Setup surface is opened/refreshed or Sync Client is requested.
 
-Runtime-ready Launcher packages bundle the three tested Fabric JARs from the same source revision as the desktop package. Current Modrinth instance metadata is not treated as a LazyBuilder authority: LazyBuilder avoids coupling to Modrinth's private database schema and verifies the selected profile from profile-local runtime evidence, with legacy `profile.json` support only as a compatibility fallback. The UI labels whether compatibility came from the last launch, legacy metadata, or remains unverified.
+Runtime-ready Launcher packages bundle the three tested Fabric JARs from the same source revision as the desktop package. Current Modrinth instance metadata is not treated as a LazyBuilder authority: LazyBuilder avoids coupling to Modrinth's private database schema and verifies the selected profile from bounded, profile-local `logs/latest.log` evidence. Recognized Fabric log identities may establish compatibility; a recognized incompatible loader/version is explicitly rejected and an unrecognized or missing log remains unverified. The current source does **not** use a `profile.json` fallback. An external `.mrpack` manifest describes a pack, **not** proof of a compatible installed/selected profile.
+
+
+### External modpack and custom-content boundary
+
+External Modrinth `.mrpack` archives can provide useful reference evidence: a declared Minecraft/loader target, dependency download hashes, `overrides/` content, and namespaced resource registrations. They are **not** executable inputs to LazyBuilder V1 and must not bypass the selected profile's runtime compatibility check, become Paper plugins, or enter the three-JAR Client Setup bundle.
+
+For future explicitly approved first-party content support, preserve these lessons without introducing a second content/runtime owner:
+
+- Treat namespaced registry/entity IDs as stable saved-world identities; separate their visual model, texture, and animation references from gameplay behavior.
+- Keep server/client registrations consistent with the actual loader/runtime, and validate resource references and dependency integrity at the owning packaging boundary.
+- A static visual catalog or successful model conversion is **not** proof that the original gameplay logic, interactions, movement, routes, or custom components were ported.
+- Third-party override/config data is untrusted. Never bundle or publish embedded authentication tokens, enabled administrative endpoints, or private runtime configuration as first-party defaults; sanitize and rotate exposed credentials at their actual owner.
+- NeoForge/KubeJS scripts and embedded Java mods are not directly usable as Fabric or Paper runtime modules. Builder Utilities/Axiom remains a separately paused extension, not a V1 prerequisite.
+
 
 ## Product Constraints
 
