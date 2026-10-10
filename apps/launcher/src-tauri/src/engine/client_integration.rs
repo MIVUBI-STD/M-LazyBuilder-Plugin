@@ -110,8 +110,8 @@ pub fn status(resource_dir: Option<&Path>) -> Result<ClientIntegrationStatus, St
         "No Modrinth profiles were found. Select the exact Modrinth profile folder manually.".into()
     } else if selected_profile.is_none() {
         "Choose a detected profile or select the exact Modrinth profile folder manually.".into()
-    } else if selected_profile.as_ref().is_some_and(|profile| !profile.compatible) {
-        format!("LazyBuilder could not verify Minecraft {TARGET_MINECRAFT_VERSION} + Fabric from this profile's latest launch. Launch the profile once in Modrinth, then refresh.")
+    } else if let Some(profile) = selected_profile.as_ref().filter(|profile| !profile.compatible) {
+        incompatible_profile_message(profile)
     } else if ready {
         "LazyBuilder client is ready in the selected Modrinth profile.".into()
     } else {
@@ -165,9 +165,7 @@ pub fn sync(resource_dir: Option<&Path>) -> Result<(), String> {
     let profile = inspect_profile(&profile_path, Some(&profile_path))?
         .ok_or_else(|| "The selected Modrinth profile is no longer available.".to_string())?;
     if !profile.compatible {
-        return Err(format!(
-            "LazyBuilder requires Minecraft {TARGET_MINECRAFT_VERSION} + Fabric. Launch this profile once in Modrinth, then refresh Client Setup before syncing."
-        ));
+        return Err(incompatible_profile_message(&profile));
     }
 
     ensure_profile_not_running(&profile_path)?;
@@ -406,17 +404,39 @@ fn runtime_identity_from_latest_log(profile_path: &Path) -> Result<Option<(Strin
     file.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
     let text = String::from_utf8_lossy(&bytes);
     for line in text.lines().rev() {
-        let Some((_, after_minecraft)) = line.split_once("Loading Minecraft ") else {
-            continue;
-        };
-        let Some((version, after_version)) = after_minecraft.split_once(" with Fabric Loader ") else {
-            continue;
-        };
-        if !version.trim().is_empty() && !after_version.trim().is_empty() {
-            return Ok(Some((version.trim().to_string(), "fabric".into())));
+        if let Some(identity) = runtime_identity_from_log_line(line) {
+            return Ok(Some(identity));
         }
     }
     Ok(None)
+}
+
+/// Recognize only explicit loader/version evidence from the latest launch.
+/// A modpack filename or third-party metadata never authorizes Client Setup.
+fn runtime_identity_from_log_line(line: &str) -> Option<(String, String)> {
+    let (_, after_minecraft) = line.split_once("Loading Minecraft ")?;
+    for (marker, loader) in [
+        (" with Fabric Loader ", "fabric"),
+        (" with NeoForge ", "neoforge"),
+    ] {
+        if let Some((version, loader_version)) = after_minecraft.split_once(marker) {
+            if !version.trim().is_empty() && !loader_version.trim().is_empty() {
+                return Some((version.trim().to_string(), loader.into()));
+            }
+        }
+    }
+    None
+}
+
+fn incompatible_profile_message(profile: &ClientProfileSummary) -> String {
+    match (profile.game_version.as_deref(), profile.loader.as_deref()) {
+        (Some(version), Some(loader)) => format!(
+            "Selected profile last ran Minecraft {version} with {loader}. LazyBuilder requires Minecraft {TARGET_MINECRAFT_VERSION} + Fabric. Select a compatible Modrinth Fabric profile before syncing."
+        ),
+        _ => format!(
+            "LazyBuilder could not verify Minecraft {TARGET_MINECRAFT_VERSION} + Fabric from this profile's latest launch. Launch the intended Fabric profile once in Modrinth, then refresh Client Setup."
+        ),
+    }
 }
 
 fn profile_roots(custom_profiles_root: Option<&str>) -> Vec<PathBuf> {
@@ -660,4 +680,52 @@ fn read_config(path: &Path) -> Result<ClientIntegrationConfig, String> {
 fn save_config(config: &ClientIntegrationConfig) -> Result<(), String> {
     let path = config_path()?;
     persistence::write_json_atomically(&path, config, CLIENT_CONFIG_LABEL)
+}
+
+#[cfg(test)]
+mod client_profile_compatibility_tests {
+    use super::*;
+
+    fn sample_profile(version: Option<&str>, loader: Option<&str>) -> ClientProfileSummary {
+        ClientProfileSummary {
+            name: "Selected profile".into(),
+            path: "profiles/selected".into(),
+            modrinth_root: "profiles".into(),
+            mods_path: "profiles/selected/mods".into(),
+            game_version: version.map(str::to_string),
+            loader: loader.map(str::to_string),
+            verification: "Last launch".into(),
+            compatible: false,
+            selected: true,
+        }
+    }
+
+    #[test]
+    fn fabric_log_identity_remains_recognized() {
+        let line = "[main/INFO]: Loading Minecraft 1.21.4 with Fabric Loader 0.16.0";
+        assert_eq!(runtime_identity_from_log_line(line), Some(("1.21.4".into(), "fabric".into())));
+    }
+
+    #[test]
+    fn explicit_neoforge_log_identity_cannot_be_mistaken_for_fabric() {
+        let line = "[main/INFO]: Loading Minecraft 1.21.1 with NeoForge 21.1.252";
+        assert_eq!(runtime_identity_from_log_line(line), Some(("1.21.1".into(), "neoforge".into())));
+        let profile = sample_profile(Some("1.21.1"), Some("neoforge"));
+        assert!(incompatible_profile_message(&profile).contains("Minecraft 1.21.1 with neoforge"));
+        assert!(incompatible_profile_message(&profile).contains("Minecraft 1.21.4 + Fabric"));
+    }
+
+    #[test]
+    fn unknown_or_unsupported_log_identity_stays_unverified() {
+        assert_eq!(runtime_identity_from_log_line("Loaded NeoForge mods"), None);
+        assert_eq!(runtime_identity_from_log_line("Loading Minecraft 1.21.1 with NeoForge "), None);
+        let profile = sample_profile(None, None);
+        assert!(incompatible_profile_message(&profile).contains("could not verify"));
+    }
+
+    #[test]
+    fn known_incompatible_fabric_version_is_reported_not_treated_as_unverified() {
+        let profile = sample_profile(Some("1.21.1"), Some("fabric"));
+        assert!(incompatible_profile_message(&profile).contains("Minecraft 1.21.1 with fabric"));
+    }
 }
