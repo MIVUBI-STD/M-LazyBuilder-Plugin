@@ -32,6 +32,8 @@ public final class ClientWorldController {
     private boolean worldListPending;
     private boolean teleportPending;
     private boolean exportPending;
+    private String pendingImportFolder;
+    private String completedImportFolder;
     private String lastError;
     private String activityMessage;
     private long revision;
@@ -121,9 +123,22 @@ public final class ClientWorldController {
     }
 
     public void importWorld(String artifactName, String destinationFolder, String displayName) {
+        if (pendingImportFolder != null) {
+            throw new IllegalStateException("An import request is already waiting for a server result");
+        }
+        pendingImportFolder = Objects.requireNonNull(destinationFolder, "destinationFolder");
+        completedImportFolder = null;
         discardWhenInspected.remove(artifactName);
         beginActivity("Validating and importing world…");
-        send(new WorldControlWireProtocol.ImportWorld(artifactName, destinationFolder, displayName));
+        try {
+            send(new WorldControlWireProtocol.ImportWorld(artifactName, destinationFolder, displayName));
+        } catch (RuntimeException exception) {
+            pendingImportFolder = null;
+            activityMessage = null;
+            lastError = "Could not send world import request";
+            revision++;
+            throw exception;
+        }
     }
 
     /** Teleport owns any required world load; manual load/unload is intentionally not a client action. */
@@ -169,9 +184,19 @@ public final class ClientWorldController {
                     remove(changed.world().worldId());
                     settings.remove(changed.world().worldId());
                 } else replace(changed.world());
-                if ("IMPORT".equals(changed.action())) importInspection = null;
-                lastError = null;
-                activityMessage = null;
+                if ("IMPORT".equals(changed.action())
+                        && Objects.equals(pendingImportFolder, changed.world().folderName())) {
+                    importInspection = null;
+                    completedImportFolder = pendingImportFolder;
+                    pendingImportFolder = null;
+                } else if ("IMPORT".equals(changed.action()) && pendingImportFolder == null) {
+                    importInspection = null;
+                }
+                // A different world operation cannot acknowledge an in-flight Import.
+                if (pendingImportFolder == null) {
+                    lastError = null;
+                    activityMessage = null;
+                }
                 revision++;
                 LazyBuilderClientNetworking.notifyPlayer(
                         "World " + changed.action().toLowerCase() + ": " + changed.world().displayName());
@@ -179,7 +204,7 @@ public final class ClientWorldController {
             case WorldControlWireProtocol.TeleportOk ok -> {
                 replace(ok.world());
                 teleportPending = false;
-                activityMessage = null;
+                if (pendingImportFolder == null) activityMessage = null;
                 lastError = null;
                 revision++;
             }
@@ -192,7 +217,7 @@ public final class ClientWorldController {
             case WorldControlWireProtocol.ExportReady export -> {
                 exportPending = false;
                 lastError = null;
-                activityMessage = null;
+                if (pendingImportFolder == null) activityMessage = null;
                 revision++;
                 LazyBuilderClientNetworking.notifyPlayer("Export ready: " + export.artifactName());
                 completedExportHandler.accept(export.artifactName());
@@ -204,7 +229,7 @@ public final class ClientWorldController {
             }
             case WorldControlWireProtocol.ImportInspection inspection -> {
                 lastError = null;
-                activityMessage = null;
+                if (pendingImportFolder == null) activityMessage = null;
                 if (discardWhenInspected.remove(inspection.artifactName())) {
                     importInspection = null;
                     send(new WorldControlWireProtocol.DiscardImport(inspection.artifactName()));
@@ -217,6 +242,8 @@ public final class ClientWorldController {
                 if (worldListPending) worldListPending = false;
                 teleportPending = false;
                 exportPending = false;
+                pendingImportFolder = null;
+                completedImportFolder = null;
                 discardWhenInspected.clear();
                 lastError = error.message();
                 activityMessage = null;
@@ -238,6 +265,8 @@ public final class ClientWorldController {
         worldListPending = false;
         teleportPending = false;
         exportPending = false;
+        pendingImportFolder = null;
+        completedImportFolder = null;
         lastError = null;
         activityMessage = null;
         revision++;
@@ -251,6 +280,10 @@ public final class ClientWorldController {
     public boolean worldListPending() { return worldListPending; }
     public boolean teleportPending() { return teleportPending; }
     public boolean exportPending() { return exportPending; }
+    public boolean importPending() { return pendingImportFolder != null; }
+    public boolean importCompletedFor(String folder) {
+        return folder != null && folder.equals(completedImportFolder);
+    }
     public WorldControlWireProtocol.SettingsSnapshot settings(UUID worldId) { return settings.get(worldId); }
     public WorldControlWireProtocol.ImportInspection importInspection() { return importInspection; }
     public String lastError() { return lastError; }

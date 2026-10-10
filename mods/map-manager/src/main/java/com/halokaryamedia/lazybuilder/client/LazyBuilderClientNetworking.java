@@ -132,6 +132,6 @@ public final class LazyBuilderClientNetworking {
 
     public static void notifyPlayer(String message) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client.player != null) client.player.sendMessage(Text.literal(message), false);
+        if (client != null && client.player != null) client.player.sendMessage(Text.literal(message), false);
     }
 }

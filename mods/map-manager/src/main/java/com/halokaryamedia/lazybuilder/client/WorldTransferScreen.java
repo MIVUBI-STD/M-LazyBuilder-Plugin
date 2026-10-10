@@ -39,6 +39,7 @@ public final class WorldTransferScreen extends Screen {
     private boolean choosing;
     private boolean inspectingImport;
     private boolean processingImport;
+    private String submittedImportFolder;
     private boolean abandonImportReview;
     private boolean exporting;
     private boolean exportTransferStarted;
@@ -323,12 +324,14 @@ public final class WorldTransferScreen extends Screen {
         validation = null;
         abandonImportReview = false;
         processingImport = true;
+        submittedImportFolder = folder;
         try {
             worlds.importWorld(importInspection.artifactName(), folder, display);
             observedWorldRevision = worlds.revision();
             clearAndInit();
         } catch (RuntimeException exception) {
             processingImport = false;
+            submittedImportFolder = null;
             validation = friendlyFailure(exception.getMessage());
             clearAndInit();
         }
@@ -406,8 +409,10 @@ public final class WorldTransferScreen extends Screen {
             processingImport = false;
             validation = friendlyFailure(worlds.lastError());
             clearAndInit();
-        } else if (worlds.activityMessage() == null) {
+        } else if (worlds.importCompletedFor(submittedImportFolder)) {
+            // Only the matching authoritative IMPORT result completes this screen.
             processingImport = false;
+            submittedImportFolder = null;
             importArtifactName = null;
             importInspection = null;
             if (client != null && client.currentScreen == this) client.setScreen(parent);
