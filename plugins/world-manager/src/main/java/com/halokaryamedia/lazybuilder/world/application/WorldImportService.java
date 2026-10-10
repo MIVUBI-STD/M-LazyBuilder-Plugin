@@ -173,15 +173,18 @@ public final class WorldImportService {
             pendingCommittedArtifactCleanup.add(task.artifactName);
             try {
                 imports.markCommittedCleanupPending(task.artifactName);
-            } catch (IOException markerFailure) {
-                task.artifactCleanupFailure = markerFailure;
+            } catch (IOException | RuntimeException markerFailure) {
+                // Publication already committed: cleanup is a warning, not a
+                // failed import. Retain pending cleanup for a later attempt.
+                task.artifactCleanupFailure = markerFailure instanceof IOException io
+                        ? io : new IOException("Could not persist committed import cleanup marker", markerFailure);
             }
             IOException cleanupFailure = retryCommittedArtifactCleanup(task.artifactName);
-            if (cleanupFailure == null) {
+            if (cleanupFailure == null && task.artifactCleanupFailure == null) {
                 task.artifactCleanupFailure = null;
-            } else if (task.artifactCleanupFailure == null) {
+            } else if (cleanupFailure != null && task.artifactCleanupFailure == null) {
                 task.artifactCleanupFailure = cleanupFailure;
-            } else {
+            } else if (cleanupFailure != null) {
                 task.artifactCleanupFailure.addSuppressed(cleanupFailure);
             }
             return task.destination;

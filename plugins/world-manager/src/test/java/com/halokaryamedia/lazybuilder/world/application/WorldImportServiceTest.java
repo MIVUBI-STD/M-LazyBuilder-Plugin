@@ -413,7 +413,10 @@ class WorldImportServiceTest {
         // Fault injection after persistence has accepted the imported world.
         imports.failCommittedMarkerRuntime = true;
         WorldImportService.ImportTask task = service.prepare("Build.zip", "CommittedWorld", "Committed World");
-        assertThrows(IllegalStateException.class, () -> service.executeFilePhase(task));
+        WorldRecord committed = service.executeFilePhase(task);
+        assertEquals("CommittedWorld", committed.folderName());
+        assertTrue(task.artifactCleanupFailure() != null,
+                "post-commit marker failure must be reported as a warning");
         service.finish(task);
 
         assertTrue(task.completed(), "world commit must not be downgraded to an uncommitted operation");
