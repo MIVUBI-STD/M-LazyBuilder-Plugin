@@ -48,8 +48,8 @@ The current product model does not expose manual world Load/Unload or per-world 
 The Fabric Map Manager uses the existing Minecraft play connection:
 
 ```text
-lazybuilder:world     → World Control V5
-lazybuilder:map       → Map Action V2
+lazybuilder:world     → World Control V7
+lazybuilder:map       → Map Action V5
 lazybuilder:transfer  → bounded file-transfer protocol
 ```
 

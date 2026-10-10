@@ -82,6 +82,16 @@ mods/
 
 The three core Fabric Managers do not import one another's implementation packages. Builder Utilities also must not import core Manager implementation packages merely for convenience.
 
+## Verifiable dependency boundaries
+
+The canonical dependency graph above is also a checkable build/source contract:
+
+- Paper `world-manager` and `utilities-manager` depend on `shared/protocol` for neutral messages; neither Paper plugin depends on the other plugin's implementation.
+- Fabric `map-manager`, `utility-manager`, and `builder-utilities` may compile only their own sources and the explicitly selected neutral shared-protocol sources. `performance-manager` remains independent.
+- Neutral `shared/protocol` must not import Bukkit/Paper, Fabric/Minecraft implementation, Launcher, or component-specific implementation classes.
+- Current protocol/source versions and canonical documentation must match. The source-owned World Control and Map Action constants, not copied documentation values, determine compatibility.
+- `scripts/verify_compatibility.py` checks the bounded Maven/Gradle dependency direction, neutral protocol dependencies, channel wiring, and canonical protocol versions. It is a static architectural guard, **not** a compiler, link-time analysis, or real Paper/Fabric interoperability test.
+
 ## Versioning model
 
 ```text

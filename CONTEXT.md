@@ -245,7 +245,10 @@ Required status does not permit cross-manager implementation dependencies or dup
 lazybuilder:world     World Control V7
 lazybuilder:map       Map Action V5
 lazybuilder:transfer  bounded file bytes only
+lazybuilder:builder_ext Builder Extension V1 (optional, Builder Utilities ↔ Utilities Manager)
 ```
+
+The Builder extension channel uses the existing Minecraft connection and neutral `shared/protocol` framing. It does not change World Manager authority, the required three-Manager Client Setup bundle, or Axiom's primary editor ownership.
 
 Desktop ↔ Paper local control is a separate authenticated loopback contract currently at protocol version 2. Client Setup is local desktop/filesystem integration and does not add another Minecraft network protocol.
 

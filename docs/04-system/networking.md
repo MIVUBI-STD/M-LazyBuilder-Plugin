@@ -13,7 +13,8 @@ LazyBuilder Fabric Client
         │
         ├── lazybuilder:world
         ├── lazybuilder:map
-        └── lazybuilder:transfer
+        ├── lazybuilder:transfer
+        └── lazybuilder:builder_ext (independent Builder extension)
                     │
                     ▼
            LazyBuilder Paper Plugin
@@ -38,7 +39,7 @@ A transport/provider must never become semantic authority for worlds, permission
 
 General managed-world/product intents.
 
-Current shared contract is **World Control V5**.
+Current shared contract is **World Control V7**.
 
 Includes:
 
@@ -102,6 +103,22 @@ Map payloads do not own general world settings/lifecycle or file bytes.
 File bytes only.
 
 Import/export UI and world semantics do not create a second transfer implementation.
+
+### `lazybuilder:builder_ext` — Builder Extension V1
+
+This is a **separate optional Builder Utilities/Axiom-first extension channel**, not another World Manager or file-transfer implementation. It uses the existing Minecraft connection; no separate socket, third-party network, or duplicate world authority is introduced.
+
+```text
+Fabric Builder Utilities
+→ bounded BuilderExtensionPayload
+→ shared/protocol BuilderExtensionTransport + BuilderExtensionWireProtocol (V1)
+→ Utilities Manager PaperBuilderExtensionPayloadAdapter
+→ permission/capability checks and server-authoritative operations
+```
+
+Its canonical channel is `lazybuilder:builder_ext`, with version `1` in `BuilderExtensionWireProtocol.VERSION`. The shared wire format limits a complete message to 512 KiB; the transport additionally bounds each plugin-message fragment to 32,000 bytes and reassembly to a bounded session. Paper authorizes Builder-specific actions independently; the client may not promote its own capability/proposal into server authority.
+
+Builder-specific biome, entity and block-entity operations are not World Control, Map Action, or generic file-transfer messages. Keep semantic ownership in Builder Utilities and corresponding Paper Utilities adapter, with neutral bytes/framing in `shared/protocol`. Do not move the behavior into `plugins/world-manager` merely because it crosses the Minecraft connection.
 
 ## Transport independence
 
@@ -246,7 +263,7 @@ Third-party changes should be absorbed at adapter boundaries whenever the LazyBu
 Source/static review can prove codecs, bounds, ownership, cleanup paths, and version alignment. Fresh local/live proof is still required for current `Local`:
 
 ```text
-World Control V5 Paper/Fabric interoperability
+World Control V7 Paper/Fabric interoperability
 Import upload → inspection → review → explicit import
 Import review close / tab switch / choose-different cleanup
 Upload complete → disconnect before inspection cleanup

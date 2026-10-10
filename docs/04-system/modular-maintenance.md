@@ -1,37 +1,11 @@
-# Modular maintenance rules
+# Modular Maintenance — Canonical Routing
 
-LazyBuilder is maintained as independently evolving components.
+This former maintenance summary is retained solely as a navigation entry; it is **not** a separate architecture, release-version, source-layout, or status authority.
 
-## Module ownership
+- [Module boundaries](module-boundaries.md): component ownership, dependency direction, shared-contract rules and modular maintenance decisions.
+- [Repository layout](repository-layout.md): actual Launcher, Paper, Fabric and shared source locations.
+- [Development discipline](development-discipline.md): diagnosis, minimum change, proof and STOP.
+- [Development operations](development-operations.md): build, packaging, manual verification and release boundaries.
+- [Current validation](../05-operations/current-verification.md): evidence types and explicit native-proof residue.
 
-- `modules/world-manager` owns world lifecycle, import/export, archive/restore, settings, conversion, transfer, and map/world control.
-- `modules/utilities-manager` owns builder convenience features only.
-- `client/fabric` owns in-game Fabric presentation and transport clients.
-- `EngineData/Frontend/RustApp` is the canonical desktop app and owns Server-Manager and Plugin-Manager desktop responsibilities plus presentation/control of World-Manager through its explicit bridge.
-
-## Change rules
-
-1. A feature is changed in its owning module only.
-2. Modules must not import another module's implementation packages.
-3. Cross-module contracts must stay narrow and versioned.
-4. Each Paper module owns its own plugin metadata, configuration, tests, artifact name, and version.
-5. A module update must not require unrelated modules to change unless a shared contract actually changes.
-6. Feature packages inside Utilities-Manager have independent lifecycle registration and configuration keys.
-7. Background workers are forbidden unless the owning feature has a demonstrated continuous-work requirement.
-8. Paper APIs are preferred over NMS and custom runtime layers.
-9. CI must compile/test Paper modules, compile the Fabric client, and check the Tauri/Svelte/Rust desktop before a structural migration is accepted.
-10. Legacy duplicate source trees must be removed once the canonical owner passes CI; compatibility storage fallbacks may remain only where they protect existing user data.
-11. Runtime folders are created only when an active owner uses them. Do not create placeholder storage for lifecycle states that are metadata-only.
-
-## Release model
-
-Components may evolve independently, for example:
-
-```text
-World-Manager       0.4.x
-Utilities-Manager   0.2.x
-Fabric Client       0.3.x
-LazyBuilder Desktop 0.1.x
-```
-
-The suite version is a product/release label, not a requirement that every component share the same implementation version.
+Read the relevant canonical owner and current source; do not reconstruct retired `modules/`, `client/fabric`, `EngineData/` or version examples from historical documentation. Git history holds superseded layout decisions.

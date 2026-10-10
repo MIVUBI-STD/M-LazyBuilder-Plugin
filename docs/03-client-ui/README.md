@@ -136,7 +136,7 @@ Import is file-first. Upload is followed by bounded server inspection/review; fi
 
 ## Permissions and world protocol
 
-`lazybuilder:world` uses **World Control V5**.
+`lazybuilder:world` uses **World Control V7**.
 
 The server may provide presentation capabilities such as:
 
@@ -147,7 +147,7 @@ canTeleport
 
 The client uses them only to shape UI. Paper remains final authorization authority for every request.
 
-World Control V5 includes the current Import inspection/review/discard contract and excludes manual Load/Unload and autoLoad/runtimeState product machinery.
+World Control V7 includes the current Import inspection/review/discard contract and excludes manual Load/Unload and autoLoad/runtimeState product machinery.
 
 ## Transfer
 

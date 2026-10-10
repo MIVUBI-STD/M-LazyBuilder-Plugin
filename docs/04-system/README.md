@@ -185,10 +185,12 @@ Do not reintroduce manual Load/Unload, per-world autoLoad, or Clone terminology.
 ## Networking boundaries
 
 ```text
-lazybuilder:world     → World Control V5
-lazybuilder:map       → Map Action V2
+lazybuilder:world     → World Control V7
+lazybuilder:map       → Map Action V5
 lazybuilder:transfer  → bounded file bytes only
 ```
+
+Separate Builder extension channel: `lazybuilder:builder_ext` — Builder Extension V1. The bounded shared wire contract is in `shared/protocol`; its Fabric adapter is Builder Utilities and its server adapter is Utilities Manager. It does not change World Manager ownership or the three core Client Setup artifacts.
 
 Desktop ↔ Paper uses a separate authenticated loopback protocol currently at version 2. In the multi-server runtime, each active workspace receives a distinct loopback control endpoint; no two concurrent servers may share the same World Manager control port.
 
