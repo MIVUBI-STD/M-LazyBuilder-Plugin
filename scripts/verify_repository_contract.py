@@ -38,6 +38,7 @@ REQUIRED_FILES = [
     ".agents/evals/permission-cases.json",
     ".agents/evals/preflight-cases.json",
     "docs/05-operations/current-verification.md",
+    "docs/05-operations/project-map.md",
     "docs/05-operations/README.md",
     "docs/05-operations/deployment-v1.md",
     "docs/05-operations/client-implementation-proof-handoff.md",
@@ -282,6 +283,8 @@ def main() -> int:
     system_doc = read_text("docs/04-system/README.md", errors)
     verification_doc = read_text("docs/05-operations/current-verification.md", errors)
     operations_readme = read_text("docs/05-operations/README.md", errors)
+    project_map = read_text("docs/05-operations/project-map.md", errors)
+    root_readme = read_text("README.md", errors)
     deployment_guide = read_text("docs/05-operations/deployment-v1.md", errors)
     client_proof_guide = read_text("docs/05-operations/client-implementation-proof-handoff.md", errors)
     launcher_guide = read_text("apps/launcher/README.md", errors)
@@ -464,6 +467,40 @@ def main() -> int:
         fail(errors, "CONTEXT.md must not duplicate current operations/work-state authority")
     if "ChatGPT source-work boundary" not in verification_doc:
         fail(errors, "verification authority must distinguish remote source completion from native acceptance")
+
+    # The overview is one derived graph, not a second phase/status database.
+    for label, content, link in (
+        ("root README", root_readme, "docs/05-operations/project-map.md"),
+        ("documentation entry", docs_entry, "05-operations/project-map.md"),
+        ("operations entry", operations_readme, "(project-map.md)"),
+    ):
+        if link not in content:
+            fail(errors, f"{label} does not link the single canonical project map")
+    if project_map.count("```mermaid") != 2:
+        fail(errors, "project map requires exactly two product/dependency graphs")
+    for marker in (
+        "## 1. Product topology",
+        "## 2. Work breakdown structure (WBS)",
+        "## 3. Dependency graph",
+        "## 4. What does",
+        "## 5. Standard progress answer",
+        "G0", "S1", "S2", "S3", "S4", "V1", "V2", "G1", "A1", "R1", "F0",
+        "PAUSED", "UNKNOWN / NOT EXECUTED", "current-verification.md",
+    ):
+        if marker not in project_map:
+            fail(errors, f"project map lost required owner/gate marker: {marker}")
+    if re.search(r"(?m)^- \[[ xX]\]", project_map):
+        fail(errors, "project map must not become a second mutable checklist")
+    if re.search(r"(?i)\b[0-9a-f]{40}\b", project_map):
+        fail(errors, "project map must not pin the supposedly current SHA")
+    map_folder = ROOT / "docs" / "05-operations"
+    for destination in re.findall(r"\[[^\]]+\]\(([^)]+)\)", project_map):
+        link = destination.split("#", 1)[0]
+        if not link or "://" in link:
+            continue
+        target = (map_folder / link).resolve()
+        if not target.is_relative_to(ROOT.resolve()) or not target.is_file():
+            fail(errors, f"project map link does not resolve: {destination}")
 
     # Current guides are required to agree with their implementation owners.
     # Historical snapshots are not rewritten and cannot override these contracts.
@@ -816,11 +853,11 @@ def main() -> int:
 
     for marker in (
         "task.cleanupWorkspace = staged",
-        "task.committed && task.cleanupWorkspace != null",
+        "if (task.cleanupWorkspace != null)",
         "files.deleteWorkspace(task.cleanupWorkspace)",
     ):
         if marker not in world_backup_service:
-            fail(errors, f"Backup post-commit cleanup retry contract missing marker: {marker}")
+            fail(errors, f"Backup failure/commit cleanup retry contract missing marker: {marker}")
 
     skills_root = ROOT / ".agents" / "skills"
     if not skills_root.is_dir():

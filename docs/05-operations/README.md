@@ -2,6 +2,10 @@
 
 This directory owns current continuation, verification, distribution proof, and Local PC acceptance routing.
 
+## Project overview
+
+[Project Map — WBS, topology and dependency graph](project-map.md) explains all workstreams and delivery gates. Resolve current status and blockers from [Current Verification](current-verification.md) and the current `Local` source; the map does not hold separate mutable progress flags.
+
 ## Current authority
 
 ```text

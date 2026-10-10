@@ -2,6 +2,8 @@
 
 Single entry point for human and AI documentation discovery.
 
+For the whole project, open the [Project Map — workstreams, dependencies and proof gates](05-operations/project-map.md). This is navigation, not a duplicate live status database.
+
 ## Current next action
 
 The current repository phase is **source remediation and synchronization**, not Local PC acceptance and not architecture expansion.

@@ -21,6 +21,8 @@ LazyBuilder
     └── Protocol
 ```
 
+**Project map:** [LazyBuilder WBS + dependency graph](docs/05-operations/project-map.md) shows the full workstreams, proof gates and order to release. It is a navigation view; [Current Verification](docs/05-operations/current-verification.md) remains the owner of active progress and readiness.
+
 ## Current phase: source remediation and synchronization
 
 Installed Local PC testing on 15 September 2026 exposed several cross-boundary defects. The repository is therefore back in **source remediation**. Do not start another Local PC acceptance pass until the remediation handoff has no unresolved source-side P0/P1 item and the exact current `Local` candidate passes the required local/remote verification gates.
