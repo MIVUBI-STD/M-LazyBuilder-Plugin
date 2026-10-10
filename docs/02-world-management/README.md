@@ -2,6 +2,8 @@
 
 Canonical owner for LazyBuilder managed-world lifecycle, Paper runtime coordination, settings, filesystem operations, and import/export behavior.
 
+**WM-01 goal:** Give builders one reliable, low-friction workspace to enter, organize, protect and transfer worlds, without turning World Manager into a server administration panel, world editor, gameplay engine or replacement for Axiom/WorldEdit. Safety of existing/imported worlds takes priority over silent optimization. Daily controls show builder decisions; internal folder/runtime/lease/converter details remain with their source owners. [Detailed lifecycle rules](manage-world.md) and [conversion contract](conversion.md) specialize this goal.
+
 ## Ownership
 
 LazyBuilder World Manager is the native managed-world authority for the required builder workflow. It talks directly to Paper/Bukkit APIs; Multiverse is not part of the target runtime architecture.

@@ -289,6 +289,13 @@ def main() -> int:
     client_proof_guide = read_text("docs/05-operations/client-implementation-proof-handoff.md", errors)
     launcher_guide = read_text("apps/launcher/README.md", errors)
     paper_world_guide = read_text("plugins/world-manager/README.md", errors)
+    world_lifecycle_guide = read_text("docs/02-world-management/manage-world.md", errors)
+    world_conversion_guide = read_text("docs/02-world-management/conversion.md", errors)
+    world_product_guide = read_text("docs/02-world-management/README.md", errors)
+    world_delete_service = read_text(
+        "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/application/WorldDeleteService.java",
+        errors,
+    )
     conversion_update_policy = read_text(
         "plugins/world-manager/src/main/java/com/halokaryamedia/lazybuilder/world/conversion/ConversionRuntimePolicy.java",
         errors,
@@ -530,6 +537,29 @@ def main() -> int:
         fail(errors, "World-Manager guide conversion default differs from current source")
     if "enabled-worlds: []" not in mob_config or "enabled-worlds: []" not in paper_world_guide:
         fail(errors, "Aggressive mob policy must remain visibly opt-in per managed world")
+
+    # Keep canonical World Manager product semantics and detailed contract in
+    # lockstep with current service owners, rather than relying on stale terms.
+    for marker in ("## Product goal and scope (WM-01)", "## Duplicate", "## Delete", "## Archive / Restore"):
+        if marker not in world_lifecycle_guide:
+            fail(errors, f"World lifecycle guide missing current owner: {marker}")
+    for retired in ("## Clone", "acquire CLONE lease", "autoLoad=false", "Auto Load OFF"):
+        if retired in world_lifecycle_guide:
+            fail(errors, f"World lifecycle guide retains retired contract: {retired}")
+    if 'world.displayName().equals(typedDisplayName)' not in world_delete_service:
+        fail(errors, "Delete confirmation semantics changed; reconcile World Manager contract")
+    if "visible world display name" not in world_lifecycle_guide:
+        fail(errors, "Delete guide must require the canonical display name, not folder identity")
+    if "WM-01 goal" not in world_product_guide:
+        fail(errors, "World Manager product goal must remain explicit in its owning README")
+    if default_conversion:
+        mode = default_conversion.group(1)
+        if f"`{mode}`" not in world_conversion_guide:
+            fail(errors, "Detailed conversion guide disagrees with source default")
+        if mode == "AUTOMATIC_STABLE" and "mode             = notify only" in world_conversion_guide:
+            fail(errors, "Detailed conversion guide retains obsolete notify-only default")
+    if "WorldImportService" not in world_conversion_guide or "source uploaded artifact" not in world_conversion_guide:
+        fail(errors, "Conversion guide must retain current shared import artifact ownership")
 
     try:
         maximum_servers = json.loads(scalability_contract)["maxConcurrentServers"]

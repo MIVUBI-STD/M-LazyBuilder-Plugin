@@ -1,76 +1,83 @@
 # Manage World Lifecycle
 
-This file is the canonical detailed contract for `Clone`, `Archive / Restore`, and `Delete` inside World Manager. Runtime load state remains owned by `WorldRuntimeService`; filesystem paths remain owned by `WorldFileRepository`; operation conflict exclusion remains owned by `WorldOperationCoordinator`.
+Detailed World Manager contract for **Duplicate**, **Archive / Restore**, and **Delete**. The canonical product model and safety rules are in [World Management](README.md). Paper runtime loading is owned by `WorldRuntimeService`; paths and staging by `WorldFileRepository`; operation conflicts by `WorldOperationCoordinator`.
+
+## Product goal and scope (WM-01)
+
+World Manager is a builder-facing workspace for safely organizing, entering, preserving, duplicating and transferring managed Minecraft worlds. It is **not** a generic server administration panel, world editor, gameplay engine or replacement for Axiom/WorldEdit.
+
+- Builder decisions are displayed as actions on worlds; backend load/unload, folder identity, operation leases and conversion worker details remain internal.
+- Persistent lifecycle is only `ACTIVE` and `ARCHIVED`. Paper-loaded state is transient, never persisted as `autoLoad`.
+- Imported worlds keep their validated gameplay/settings where supported. The BUILD_READY profile applies to newly created worlds or explicit Reset Builder Defaults only.
+- Destructive/file operations must fail closed on active players, unsafe paths, ownership ambiguity, or conflicting world operations; do not silently evacuate players.
+- Source/Paper/Fabric/Desktop and runtime acceptance remain separate proof layers. Source implementation alone is not a release gate.
 
 ## Archive / Restore
 
-Archive is metadata lifecycle, not a filesystem move or ZIP operation.
+Archive changes durable lifecycle metadata; it does not move the world into a ZIP/archive folder. Builders inside a world block archive. The active fallback/default world cannot be archived.
 
 ```text
 ACTIVE
-→ unload safely
-→ Auto Load OFF
-→ lifecycle ARCHIVED
+→ acquire ARCHIVE operation lease
+→ verify no players are inside; unload safely when loaded
+→ persist ARCHIVED
+→ omit archived worlds from normal daily list
+
+ARCHIVED
+→ acquire RESTORE operation lease
+→ persist ACTIVE
+→ remain eligible for automatic loading on later Teleport
 ```
 
-Restore changes `ARCHIVED → ACTIVE` while keeping the world `UNLOADED` with Auto Load OFF. Teleport may load it later through the normal runtime service.
+When registry persistence fails after archive's runtime unload, reload an originally loaded world where safe. There is no user-facing `Auto Load`, `Load` or `Unload` world operation in the normal builder workflow.
 
-## Clone
+## Duplicate
 
-Clone is phased so Paper lifecycle work and heavy filesystem work do not share one execution lane.
+The user-facing and backend operation is **Duplicate**, not Clone. A duplicate has a fresh `WorldId`, retains the source `WorldKind` and durable default-game-mode preference, and does not inherit user-scoped Pinned/Recent navigation preferences.
 
 ```text
-prepare (Paper/main)
-→ validate ACTIVE source and destination identity
-→ acquire CLONE lease
-→ remember previous source load state
-→ unload source safely for a consistent V1 snapshot
+prepare (Paper main thread)
+→ require ACTIVE source with no builders inside
+→ reserve destination folder and acquire DUPLICATE lease
+→ remember source loaded state; unload for consistent snapshot
 
-file phase (request worker)
-→ sanitized CLONE copy into owned workspace
-→ omit session.lock, uid.dat, playerdata, advancements, stats
-→ publish destination folder
-→ register fresh WorldId
-→ initialize destination UNLOADED
-→ persist registry
+file phase (request-scoped worker)
+→ stage sanitized DUPLICATE copy of source plus managed dimensions
+→ exclude session.lock, uid.dat, playerdata, advancements, stats
+→ publish independent destination folder and fresh WorldId
+→ persist registry with ACTIVE lifecycle
 
-finish (Paper/main)
-→ restore source load state when it was previously loaded
-→ release lease
+finish (Paper main thread)
+→ restore previous loaded source when needed
+→ release source operation lease and destination reservation
 ```
 
-The clone inherits the source `WorldKind` and Default Game Mode preference but receives a fresh `WorldId` and `autoLoad=false`. The destination is never force-loaded or force-teleported.
-
-V1 deliberately unloads the source while its filesystem snapshot is copied. This favors consistency over uninterrupted access. A future snapshot-capable implementation may shorten that unavailable window without changing the application contract.
+The destination is not automatically loaded or teleported into; its loaded/unloaded condition is Paper runtime truth, not persistent world metadata. If publication/registry commit fails, filesystem and metadata rollback follow the existing transaction/restart-recovery path.
 
 ## Delete
 
-Delete is permanent and requires an exact typed match of the canonical world folder name.
+Delete requires an exact typed match of the **visible world display name** (not internal folder name), together with immutable `WorldId` authorization. It rejects fallback/default world deletion and a world occupied by builders.
 
 ```text
-prepare (Paper/main)
+prepare (Paper main thread)
+→ validate confirmation and protection/player guards
 → acquire DELETE lease
-→ safely unload target
+→ remember loaded state and unload safely
 
 file phase (request worker)
-→ atomically move owned world folder into owned workspace when supported
-→ persist registry without target
-→ remove in-memory registry/runtime ownership
-→ recursively delete staged workspace
+→ stage owned world family in a reversible delete workspace
+→ remove durable registry entry using WorldRegistryTransactions
+→ delete staged data only after durable removal commits
 
-finish (Paper/main)
-→ if commit failed and world previously loaded, reload restored target
-→ release lease
+finish (Paper main thread)
+→ if uncommitted and originally loaded, attempt source runtime restore
+→ release operation lease
 ```
 
-The staged move makes pre-commit deletion reversible. If registry persistence fails before commit, the staged directory is moved back to its canonical world folder and registry ownership remains intact. Registry metadata is removed only after filesystem staging succeeds and durable registry removal succeeds.
+A pre-commit failure should restore the staged world and previous registry state. A post-commit cleanup error **does not resurrect** the deleted world; cleanup debt is retained for retry/restart reconciliation. World-folder names are internal identifiers, not user-visible confirmation tokens.
 
-If final workspace cleanup fails after registry removal commits, the managed world is still deleted; the remaining workspace is an explicit cleanup failure, not a restored world. No background cleanup daemon is started.
+## Execution and proof rules
 
-## Execution Rules
-
-- Paper load/unload/player evacuation stays on the primary server thread.
-- Copy, recursive cleanup, and destructive filesystem work run only when requested and are intended for a request-scoped worker.
-- No permanent clone/delete worker, scheduler, filesystem watcher, or polling loop exists.
-- All world/workspace paths are resolved from canonical owned roots; user input is never treated as a recursive-delete path.
-- One world can hold only one conflicting operation lease at a time.
+- Paper/Bukkit world and player operations run on the main thread; heavy copy/extraction/recursive cleanup run only as scoped worker operations.
+- Operations affecting one world are mutually exclusive through the existing canonical lease owner. Do not add a second world registry, watcher or scheduler.
+- Source may establish the above contracts, but real snapshot consistency, world families, interrupted delete/duplicate, player presence and restart reconciliation still require matching executable/integration/runtime evidence.

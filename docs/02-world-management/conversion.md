@@ -233,7 +233,7 @@ duplicate during destructive operation
 simultaneous conversion jobs competing for the same output
 ```
 
-Import has no source managed world, so it uses a request-bound import slot. Conversion remains separately guarded by `ConversionJobCoordinator`.
+Import has no source managed world, so the existing `WorldImportService` reserves the source uploaded artifact across inspection, discard, and full import (including case-only filename aliases) and reserves the destination world folder. Conversion remains separately guarded by `ConversionJobCoordinator`. There is no duplicate import manager or global world lifecycle state.
 
 Only one active conversion job is allowed in V1 to keep CPU, memory, disk I/O, and progress semantics bounded.
 
@@ -278,7 +278,7 @@ Converter updates remain internal and fail-safe.
 Default policy:
 
 ```text
-mode             = notify only
+mode             = automatic stable (explicit/request-scoped checks only)
 channel          = stable only
 idle polling     = none
 normal check     = at most once per 24h when a verified runtime exists
@@ -290,7 +290,7 @@ retained runtime = current + previous
 server restart   = not required
 ```
 
-`NOTIFY_ONLY` deliberately prevents an upstream stable release from being silently promoted before LazyBuilder has runtime evidence for it. Automatic promotion should be enabled only when compatibility validation proves more than metadata/version probing.
+Current source defaults to `AUTOMATIC_STABLE` in `ConversionRuntimePolicy.defaults()`. A missing verified runtime can be bootstrapped on an explicit conversion/capability request; a newer stable candidate is promoted only after the configured checksum and CLI compatibility probe, with staging and rollback protection. This is **not** a background update daemon, nor does SHA-256 plus a probe establish lossless cross-edition conversion quality. `NOTIFY_ONLY` remains a configurable policy enum value, not the default.
 
 Same-version Java import/export bypasses updater/network work when conversion is not required.
 
