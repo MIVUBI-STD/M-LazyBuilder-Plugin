@@ -288,6 +288,20 @@ def main() -> int:
     if world_contract.get("reattachFromTaskList") is not True:
         errors.append("World task UI must reattach from backend task list")
     require(errors, "Worlds UI", worlds, "runtimeProduct.worlds.tasks()", "recoverActiveTask", "while (pageActive)")
+    # A completed Desktop upload must be handed to the existing Paper import
+    # task even if Worlds.svelte unmounted during upload. Polling/UI is still
+    # page-scoped, but task admission must not be.
+    import_entry = worlds.split("async function runImport() {", 1)
+    if len(import_entry) != 2:
+        errors.append("Worlds UI import entrypoint is missing")
+    else:
+        import_body = import_entry[1].split("async function pollTask(", 1)[0]
+        upload_pos = import_body.find("const artifactName = await runtimeProduct.worlds.uploadImport(importPath);")
+        admission_pos = import_body.find("const submittedTask = await runtimeProduct.worlds.import({")
+        inactive_pos = import_body.find("if (!pageActive) return;")
+        if upload_pos < 0 or admission_pos < 0 or inactive_pos < 0 or not (upload_pos < admission_pos < inactive_pos):
+            errors.append("Completed Desktop import upload must enter Paper task before page-inactive exit")
+
     forbid(errors, "Worlds UI", worlds, "TASK_TIMEOUT_MS", "taking unusually long")
 
     numeric_checks = [

@@ -160,14 +160,17 @@
     error = null;
     try {
       const artifactName = await runtimeProduct.worlds.uploadImport(importPath);
-      if (!pageActive) return;
-      operationTask = await runtimeProduct.worlds.import({
+      // Upload ownership has passed to Paper. Navigating away must not leave
+      // that completed artifact without its intended import operation.
+      const submittedTask = await runtimeProduct.worlds.import({
         artifactName,
         destinationFolder: folderName(displayName, 'imported-world'),
         displayName
       });
+      if (!pageActive) return;
+      operationTask = submittedTask;
       importOpen = false;
-      const completedHere = await pollTask(operationTask.taskId);
+      const completedHere = await pollTask(submittedTask.taskId);
       if (!completedHere || !pageActive) return;
       importPath = '';
       importName = '';
