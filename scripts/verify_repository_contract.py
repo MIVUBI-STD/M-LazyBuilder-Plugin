@@ -563,6 +563,23 @@ def main() -> int:
         fail(errors, "Import admission capacity must fail closed until reconciliation")
     if "importAdmissions.values().stream()" not in paper_local_control:
         fail(errors, "Desktop discard must consult the accepted-import ownership history")
+    if "private synchronized void handleImportTaskStart(" not in paper_local_control:
+        fail(errors, "Desktop import admission must remain serialized against discard")
+    if "synchronized (this)" not in paper_local_control or "importUploads.discardUnclaimed(artifactName)" not in paper_local_control:
+        fail(errors, "Desktop discard must serialize the ownership check with the transfer discard")
+    replay_at = paper_local_control_import.find("ImportAdmission previous = importAdmissions.get(requestId);")
+    claim_at = paper_local_control_import.find("importUploads.claimForImport(artifactName)")
+    submit_at = paper_local_control_import.find("queued = taskRunner.submit(")
+    retain_at = paper_local_control_import.find("importAdmissions.put(requestId,")
+    if min(replay_at, claim_at, submit_at, retain_at) < 0 or not (replay_at < claim_at < submit_at < retain_at):
+        fail(errors, "Import admission must replay before claim and record only accepted tasks")
+    if "MAX_IMPORT_ADMISSIONS = WorldTaskRegistry.DEFAULT_HISTORY_LIMIT" not in paper_local_control:
+        fail(errors, "Import admission capacity must remain bounded to the canonical task history")
+    if "Import request ID reused with different parameters" not in paper_local_control_import:
+        fail(errors, "Import request replay must reject mismatched parameters")
+    if "importUploads.returnForRetry(artifactName)" not in paper_local_control_import:
+        fail(errors, "Import task rejection/failure must retain retry ownership")
+
 
     if default_conversion:
         mode = default_conversion.group(1)
