@@ -115,6 +115,48 @@ class TransferSessionServiceTest {
     }
 
     @Test
+    void discardCompletedUploadRejectsForeignAndClaimedArtifacts() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        TransferSessionService service = new TransferSessionService(
+                imports, tempDir.resolve("exports"), tempDir.resolve("transfer"),
+                new TransferPolicy(4, 1024, 1, 1));
+        UUID owner = UUID.randomUUID();
+        UUID foreign = UUID.randomUUID();
+        byte[] content = new byte[]{10,11,12,13};
+
+        TransferDescriptor first = service.beginUpload(owner, "owned.zip", content.length, sha256(content));
+        service.acceptUploadChunk(owner, first.sessionId(), 0, content);
+        service.finishUpload(owner, first.sessionId());
+
+        assertFalse(service.discardUnclaimedCompletedUpload(foreign, "owned.zip"));
+        assertTrue(Files.isRegularFile(imports.resolve("owned.zip")));
+        assertTrue(service.claimCompletedUpload(owner, "owned.zip"));
+        assertFalse(service.discardUnclaimedCompletedUpload(owner, "owned.zip"),
+                "active review or imported task must retain ownership");
+        assertTrue(Files.isRegularFile(imports.resolve("owned.zip")));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.discardUnclaimedCompletedUpload(owner, "../owned.zip"));
+    }
+
+    @Test
+    void discardUnclaimedCompletedUploadIsIdempotentAndRemovesItsOwnedFile() throws Exception {
+        Path imports = tempDir.resolve("imports");
+        TransferSessionService service = new TransferSessionService(
+                imports, tempDir.resolve("exports"), tempDir.resolve("transfer"),
+                new TransferPolicy(4, 1024, 1, 1));
+        UUID owner = UUID.randomUUID();
+        byte[] content = new byte[]{1,2,3,4};
+        TransferDescriptor upload = service.beginUpload(owner, "unused.mcworld", content.length, sha256(content));
+        service.acceptUploadChunk(owner, upload.sessionId(), 0, content);
+        service.finishUpload(owner, upload.sessionId());
+
+        assertTrue(service.discardUnclaimedCompletedUpload(owner, "unused.mcworld"));
+        assertFalse(Files.exists(imports.resolve("unused.mcworld")));
+        assertFalse(service.ownsCompletedUpload(owner, "unused.mcworld"));
+        assertFalse(service.discardUnclaimedCompletedUpload(owner, "unused.mcworld"));
+    }
+
+    @Test
     void downloadIsExplicitSequentialAndBoundToOwner() throws Exception {
         Path exports = tempDir.resolve("exports");
         Files.createDirectories(exports);

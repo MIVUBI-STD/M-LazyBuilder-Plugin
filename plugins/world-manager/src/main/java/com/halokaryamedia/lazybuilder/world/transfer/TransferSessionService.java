@@ -205,6 +205,28 @@ public final class TransferSessionService {
         }
     }
 
+    /**
+     * Discard only an unclaimed, completed upload owned by this caller.
+     * Claim and discard use the same monitor: a concurrent review/task claim
+     * cannot race a deletion. Never unlink an arbitrary inbox filename.
+     * Failed filesystem deletion retains the ownership marker for retry.
+     */
+    public boolean discardUnclaimedCompletedUpload(UUID ownerId, String fileName) throws IOException {
+        Objects.requireNonNull(ownerId, "ownerId");
+        String safeName = validateImportFileName(fileName);
+        synchronized (completedUploads) {
+            CompletedUploadOwnership ownership = completedUploads.get(safeName);
+            if (ownership == null || !ownership.ownerId().equals(ownerId)
+                    || ownership.claimedForReview()) {
+                return false;
+            }
+            Files.deleteIfExists(directChild(importsRoot, safeName));
+            Files.deleteIfExists(ownershipMarkerPath(safeName));
+            completedUploads.remove(safeName, ownership);
+            return true;
+        }
+    }
+
     /** Release the transient ownership claim after discard or successful import. */
     public void releaseCompletedUpload(UUID ownerId, String fileName) {
         Objects.requireNonNull(ownerId, "ownerId");
