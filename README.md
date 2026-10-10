@@ -48,7 +48,9 @@ Required order now:
 10. only then reopen Local PC acceptance testing
 ```
 
-A green compile is necessary but not sufficient. Local PC testing is blocked while the remediation handoff still marks a source-side P0/P1 as open.
+A green compile is necessary but not sufficient for product/runtime acceptance. Local PC testing is blocked while the remediation handoff still marks a source-side P0/P1 as open.
+
+The sequence above governs an installer/native acceptance candidate, **not ordinary ChatGPT repository work**. ChatGPT completes independently verifiable source and governance work directly on GitHub `Local` without requesting `DEV.cmd`, checkout, or tests on the user's PC. Unavailable executable/native proof is explicitly marked `UNKNOWN / NOT EXECUTED` for that claim.
 
 ## Developer operations
 

@@ -43,25 +43,22 @@ runtime-only uncertainty -> LIVE_SERVER proof owner
 
 Do not redesign the system to fix a bounded defect.
 
-## 4. GitHub-first partition
+## 4. GitHub-first partition and ChatGPT no-local-PC invariant
 
-Complete everything safely verifiable in GitHub before handing off local/server residue.
+For ChatGPT-owned `M-LazyBuilder-Plugin` work, `Local` means the remote GitHub branch, **not** a checkout or folder on the user's PC. Normal source development, repository governance, commits, and recoverable continuity are **ChatGPT + GitHub/cloud-only**. Never ask the user to clone/download source, install developer tools, run `DEV.cmd`/npm/Gradle/Maven, provide PC paths or data, operate Minecraft, or perform local verification as a prerequisite or workaround for ChatGPT-owned GitHub source work.
+
+Use the strongest authorized capability actually available:
 
 ```text
-REMOTE_GITHUB
--> source changes
--> static checks/tests that CI can execute
--> CI configuration
--> deterministic test fixtures
-
-LOCAL_CODE residue
--> local dependency/toolchain/filesystem execution that CI cannot provide
-
-LIVE_SERVER residue
--> actual Paper/Minecraft lifecycle and gameplay behavior
+exact GitHub Local source + canonical owner
+→ scoped source/static reasoning and authorized repository mutation
+→ existing exact-SHA cloud/CI evidence when available and material
+→ specific unverified claim remains UNKNOWN / NOT EXECUTED
 ```
 
-Hand off only the minimum residue. Never claim higher-context proof from a lower context.
+`REMOTE_GITHUB` may finish the independently provable source task without executable tooling. Source tests/fixtures may be prepared remotely without representing them as executed. Never make CI registration, manual dispatch, a shell, or runtime access a blanket prerequisite for source work.
+
+`LOCAL_CODE`, `LIVE_SERVER`, and target Windows native acceptance are valid proof contexts for claims that genuinely require them, not an automatic ChatGPT-to-user handoff. If unavailable through an authorized ChatGPT/cloud route, finish the GitHub-valid partitions, state only the precise remaining proof residue, and STOP. Human/Codex local development and separately authorized installer/native acceptance keep the existing `DEV.cmd` and release contracts; they do not make the user PC a ChatGPT dependency.
 
 ## 5. Write once
 
@@ -84,7 +81,7 @@ Do not create checkpoint/retry commits or temporary files solely to transfer wor
 
 ### Commit-based continuity (no duplicate status database)
 
-For material work, include the relevant fields in the logical commit body when their values are known:
+For every material, independently valid logical commit, include `Work`, `State`, and `Proof` in its body. Add `Decision`, `Unresolved`, and `Next` when applicable; never invent unavailable evidence:
 
 ```text
 Work: <domain / outcome>
@@ -96,6 +93,14 @@ Next: <one next action, when incomplete>
 ```
 
 Current source and `docs/05-operations/` remain the canonical continuation/proof owner where those documents already apply. Git history captures previous work and decisions; it is **not** an automatic instruction to execute the next commit. Do not add a second TODO, session memory, checkpoint, status tracker, or roadmap to duplicate them. A clean, complete work item may finish with `State: DONE` and no new task.
+
+### Short-prompt repository startup and topic-based recovery
+
+A repository/branch URL with "amati" is a read-only INSPECT request. Pin the exact `Local` HEAD, read current `AGENTS.md` and `GITHUB_RULES.md`, then resolve the smallest current semantic owner. Report confirmed state, scoped unfinished work, proof limits, and one justified next step; do not commit.
+
+For "lanjutkan" or a new chat, recover by the named work topic, not merely the last repository commit. Reconcile relevant `Work` / `State` / `Proof` / `Unresolved` / `Next` history with subsequent changes to affected source. Distinguish `PAUSED`, `BLOCKED`, completed logical units and unresolved claims. A historical `Next` is never stand-alone authorization. If topic/scope genuinely cannot be distinguished, mark that ambiguity rather than creating a speculative task.
+
+Prior chat contents, chat titles, sidebar names and Project settings do not replace GitHub state or require a naming convention. A Project bootstrap, if used, points to the current `Local` root rules instead of copying them. No parallel continuation file, progress tracker, chat-memory store, or second authority may be created.
 
 ## 6. Integrity rules
 

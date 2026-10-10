@@ -37,6 +37,7 @@ REQUIRED_FILES = [
     ".agents/evals/permission-cases.json",
     ".agents/evals/preflight-cases.json",
     "docs/05-operations/current-verification.md",
+    "docs/05-operations/README.md",
     ".github/workflows/verify.yml",
     ".github/workflows/builder-verify.yml",
     ".github/workflows/builder-benchmark.yml",
@@ -91,6 +92,9 @@ REQUIRED_AGENT_PHRASES = [
     "Evidence Opt-In Rule",
     "Historical/supporting documents are **not default context**",
     "Work-Lane Permission Preflight",
+    "ChatGPT-GitHub Work Continuity",
+    "Short-prompt repository startup",
+    "ChatGPT + GitHub/cloud-only",
 ]
 
 REQUIRED_GITHUB_RULE_PHRASES = [
@@ -100,6 +104,9 @@ REQUIRED_GITHUB_RULE_PHRASES = [
     "timeout-minutes",
     "contents: read",
     "manual-only",
+    "ChatGPT no-local-PC invariant",
+    "Short-prompt repository startup",
+    "ChatGPT + GitHub/cloud-only",
 ]
 
 REQUIRED_DOC_ENTRY_PHRASES = [
@@ -137,6 +144,7 @@ REQUIRED_OPERATIONS_PHRASES = [
     "Operation",
     "Evidence",
     "Recovery",
+    "ChatGPT repository source work",
 ]
 
 REQUIRED_DEV_FAILURE_MARKERS = [
@@ -268,6 +276,7 @@ def main() -> int:
     docs_entry = read_text("docs/README.md", errors)
     system_doc = read_text("docs/04-system/README.md", errors)
     verification_doc = read_text("docs/05-operations/current-verification.md", errors)
+    operations_readme = read_text("docs/05-operations/README.md", errors)
     layout_doc = read_text("docs/04-system/repository-layout.md", errors)
     product_doc = read_text("docs/01-product/README.md", errors)
     module_boundaries = read_text("docs/04-system/module-boundaries.md", errors)
@@ -424,6 +433,18 @@ def main() -> int:
     for phrase in REQUIRED_OPERATIONS_PHRASES:
         if phrase not in operations:
             fail(errors, f"development operations missing canonical marker: {phrase}")
+
+    # Active operations must route through the existing developer shim.
+    # Retired names remain historical Git records, not current instructions.
+    if "DEV.cmd" not in operations_readme or "tooling/windows-toolchain/dev.ps1" not in operations_readme:
+        fail(errors, "current operations must route developer commands through DEV.cmd")
+    for retired in ("CHECK-DEV.cmd", "SETUP-DEV.cmd", "BUILD-LAUNCHER.cmd", "UPDATE-LAUNCHER.cmd"):
+        if retired in operations_readme:
+            fail(errors, f"current operations still advertises retired command: {retired}")
+    if "## Current continuation phase" in stable_context:
+        fail(errors, "CONTEXT.md must not duplicate current operations/work-state authority")
+    if "ChatGPT source-work boundary" not in verification_doc:
+        fail(errors, "verification authority must distinguish remote source completion from native acceptance")
 
     for marker in REQUIRED_DEV_FAILURE_MARKERS:
         if marker not in dev_orchestrator:

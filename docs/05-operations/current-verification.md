@@ -21,6 +21,12 @@ Current remediation authority:
 
 Local PC acceptance is currently closed. It reopens only after the exact current `Local` revision passes all relevant source/remote gates and the remediation authority has no unresolved source-side P0/P1 contradiction.
 
+## ChatGPT source-work boundary
+
+For ChatGPT-owned development, `Local` is the remote GitHub source authority. A bounded source or governance change can finish with honest exact-head `STATIC_SOURCE` proof even if the `Verify` workflow is not registered on `main`, native Windows tooling is unavailable, or a live Minecraft client/server cannot be exercised. Do not ask the user to run `DEV.cmd`, clone the repository, or provide PC data to compensate. Record only the specific executable, package, or native acceptance claim as `UNKNOWN / NOT EXECUTED`.
+
+The stronger gates below still apply to an **explicit installer/release/native candidate**. Source completion is not equivalent to production readiness or a green exact-head `Verify`.
+
 ## Verification layers
 
 LazyBuilder separates fast development from independent final verification.

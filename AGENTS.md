@@ -11,6 +11,14 @@ User-authorized work proceeds through verified checkpoints; never claim proof ab
 - Canonical minimum-flow and diagnosis discipline is `docs/04-system/development-discipline.md`.
 - Current readiness is resolved from current `Local` source plus `docs/05-operations/` only when continuation/proof is material.
 
+## ChatGPT-GitHub Work Continuity
+
+For ChatGPT-owned LazyBuilder repository work, `Local` is the **remote GitHub development branch**, not the user's computer. The normal ChatGPT route is **ChatGPT + GitHub/cloud-only**: complete source-verifiable work against the exact remote ref without requiring a local checkout, `DEV.cmd`, Java/Node/Rust installation, PC data, or user-operated Minecraft. Human/Codex local workflows and separately authorized native release acceptance remain supported but are not automatic ChatGPT handoffs.
+
+**Short-prompt repository startup.** A repo/`Local` URL with "amati repo" or "ikuti aturan" selects INSPECT, never implicit write authorization. Fetch a fresh `Local` HEAD; read `AGENTS.md` and `GITHUB_RULES.md` completely, then only the relevant canonical owner/Skill. A "lanjutkan" request retains its identifiable topic and user scope; an unrelated latest commit or historical `Next` is not permission to start other work.
+
+For cross-chat continuity, recover the topic using current source, relevant commits, and their `Work` / `State` / `Proof` / `Unresolved` / `Next` fields. Distinguish current truth from historical decisions and unproven claims; honor `PAUSED` / `BLOCKED` unless the current user explicitly resumes the task. Chat titles, memory, and Project settings are orientation only. If GitHub cannot be read, report the current state as UNKNOWN; do not invent a recovered plan, duplicate memory log, or status registry. Any ChatGPT Project instruction should be only a short pointer to the current `Local` rules, not another policy authority.
+
 ## Dual-consumer contract
 
 These repository instructions and Skills are first-class inputs for **both ChatGPT and Codex**. Neither consumer is the semantic authority over the other.

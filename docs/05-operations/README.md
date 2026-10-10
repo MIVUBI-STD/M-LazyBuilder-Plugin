@@ -11,6 +11,8 @@ main  = stable / release authority
 
 All current implementation work stays on `Local`. Do not create a parallel build/distribution branch or a second packaging system.
 
+ChatGPT-owned source work uses the GitHub/cloud-only route in `GITHUB_RULES.md`. The native packaging and Local PC procedures below describe an independently authorized product-acceptance route, not an instruction to transfer remote source development to the user's PC.
+
 ## Current phase
 
 The 15 September 2026 installed Local PC pass exposed reproducible defects. The repository is therefore in **source remediation and synchronization**, not Local PC acceptance.
@@ -80,14 +82,20 @@ Maven and Gradle are repository-owned through `mvnw.cmd` and `gradlew.bat`. They
 
 Repository wrappers must use the LazyBuilder-owned Windows runtime temp policy rather than relying on arbitrary inherited TEMP/TMP paths.
 
-Developer entrypoints:
+Developer entrypoint (optional Windows-local development and native candidate preparation):
 
 ```text
-CHECK-DEV.cmd
-SETUP-DEV.cmd
-BUILD-LAUNCHER.cmd
-UPDATE-LAUNCHER.cmd
+DEV.cmd setup
+DEV.cmd check
+DEV.cmd verify paper
+DEV.cmd verify fabric
+DEV.cmd verify launcher
+DEV.cmd build
+DEV.cmd test
+DEV.cmd finalize-local
 ```
+
+`DEV.cmd` delegates to `tooling/windows-toolchain/dev.ps1`. Historical root CMD aliases are retired; do not document or resurrect them as active entrypoints.
 
 ### LocalTest/end-user machine
 

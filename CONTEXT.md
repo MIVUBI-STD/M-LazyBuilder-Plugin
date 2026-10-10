@@ -30,39 +30,9 @@ main  = stable / release authority
 
 Do not silently fall back to `main`. Do not create side development branches unless explicitly requested.
 
-## Current continuation phase
+## Operational state routing
 
-Installed Local PC testing on 15 September 2026 exposed reproducible cross-boundary defects. The current canonical phase is therefore **source remediation and synchronization**.
-
-Current handoff:
-
-```text
-docs/05-operations/local-pc-remediation-2026-09-15.md
-```
-
-Current order:
-
-```text
-Local PC findings
-→ source remediation
-→ runtime/build/product synchronization
-→ regression coverage
-→ local finalization when applicable
-→ integrated exact-head Verify
-→ canonical installer/provenance proof
-→ final source/repository audit
-→ explicit decision to reopen Local PC acceptance
-```
-
-Focused Launcher/Paper/visual workflows may provide additional evidence when requested, but they are not parallel readiness authorities.
-
-Do not move directly to target-machine acceptance while source-side P0/P1 remediation or synchronization contradictions remain.
-
-The later acceptance procedure is:
-
-```text
-docs/05-operations/local-pc-validation-plan.md
-```
+`CONTEXT.md` owns stable product and repository facts only; it does not own the currently active remediation phase, verification outcome, or next task. Resolve current work and evidence from the exact `Local` source, relevant commit history, and `docs/05-operations/` (especially `current-verification.md` and the applicable canonical handoff). Historical test findings remain evidence, not default current-state authority.
 
 ## Repository organization
 
@@ -99,9 +69,9 @@ Canonical execution discipline: `docs/04-system/development-discipline.md`.
 Canonical specialist routing: `docs/04-system/skill-routing.md`.
 Advisory action/path preflight: `scripts/agent_preflight.py` consuming `.agents/permissions/work-lanes.json` and `.agents/permissions/path-access.json` (semantic authority remains in the canonical docs).
 Canonical developer/deployment operations: `docs/04-system/development-operations.md`.
-Current remediation authority: `docs/05-operations/local-pc-remediation-2026-09-15.md`.
-Current proof authority: `docs/05-operations/current-verification.md`.
-Later Local PC handoff: `docs/05-operations/local-pc-validation-plan.md`.
+Current continuation/proof routing: `docs/05-operations/README.md` and `docs/05-operations/current-verification.md`.
+Relevant remediation evidence (only when material): `docs/05-operations/local-pc-remediation-2026-09-15.md`.
+Separate approved native acceptance procedure: `docs/05-operations/local-pc-validation-plan.md`.
 
 ## Component ownership
 

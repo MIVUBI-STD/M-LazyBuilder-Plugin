@@ -20,6 +20,7 @@ same requirement
 Rules:
 
 - inspect actual tool/context capability before choosing execution steps;
+- for ChatGPT-owned GitHub source work, never require the user's PC, toolchain installation, local checkout, `DEV.cmd`, or user-executed Minecraft as a workaround for missing capabilities; finish independently provable remote work and mark unavailable higher-context proof `UNKNOWN / NOT EXECUTED`;
 - never assume a local checkout, shell, GitHub write access, CI control, browser, or live server;
 - if a required proof cannot be produced in the current consumer/context, finish all lower-context work and state the exact remaining residue;
 - never convert unavailable execution into a simulated PASS;

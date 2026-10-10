@@ -9,9 +9,15 @@ main  -> stable/release
 
 Normal work targets `Local`. Promotion to `main` is a deliberate release action.
 
+## Execution routes
+
+ChatGPT repository source work is GitHub/cloud-only on the exact `Local` ref: use current owners, bounded edits, and appropriate source/static proof without requiring access to the user's PC. Unavailable runtime/packaging evidence is `UNKNOWN / NOT EXECUTED` for that claim, not a request that the user execute commands. `GITHUB_RULES.md` owns the detailed contract.
+
+The Windows tooling below is an optional developer/Codex-local convenience and remains required only where a separately authorized build, native validation, or release claim genuinely needs it.
+
 ## Developer command surface
 
-Use the repository-root developer CLI rather than calling internal scripts directly for normal integrated operations:
+For intentional Windows-local developer operations, use the repository-root CLI rather than calling internal scripts directly:
 
 ```text
 DEV.cmd setup
@@ -23,7 +29,7 @@ DEV.cmd finalize-local
 
 `DEV.cmd` delegates to `tooling/windows-toolchain/dev.ps1`. Internal scripts remain implementation owners for their domains, but new root-level developer shortcuts should not be added.
 
-Normal `Local` commits do not automatically run full CI. Use targeted local/module proof during development and `DEV.cmd finalize-local` before requesting the integrated final `Verify` pass for a coherent checkpoint.
+Normal `Local` commits do not automatically run full CI. Use the cheapest scoped proof actually available. `DEV.cmd finalize-local` and integrated `Verify` are separate candidate/release checkpoints when applicable; they are not prerequisites for a ChatGPT-owned GitHub source change.
 
 ## Before coding
 

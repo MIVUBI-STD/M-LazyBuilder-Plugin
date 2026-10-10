@@ -86,7 +86,19 @@ Do not duplicate version numbers in multiple bootstrap scripts when they can be 
 
 ## Development loop
 
-Normal development should be cheap and local:
+ChatGPT repository source work uses `REMOTE_GITHUB` and the exact `Local` ref as the normal development route:
+
+```text
+pin current GitHub source / semantic owner
+→ smallest complete source/docs/fixture change
+→ targeted source/static proof actually available
+→ one logical, recoverable commit
+→ STOP; identify only truly unavailable executable/native proof
+```
+
+Do not ask the user to operate their PC, provide local checkout paths or data, install toolchains, or run `DEV.cmd` as a prerequisite for GitHub-verifiable ChatGPT work. An unavailable runner or manual workflow registration does not convert otherwise complete source work into a required local handoff.
+
+Intentional human/Codex Windows-local development continues to use the existing single command surface:
 
 ```text
 edit
@@ -97,7 +109,7 @@ edit
 → commit
 ```
 
-Do not run full repository CI on every `Local` commit merely for reassurance.
+`DEV.cmd finalize-local` and manual integrated `Verify` belong to a separately approved final candidate/installer-release gate. Use the least-cost proof that can falsify each claim, and never run full CI for every `Local` commit merely for reassurance.
 
 ## Targeted verification
 
