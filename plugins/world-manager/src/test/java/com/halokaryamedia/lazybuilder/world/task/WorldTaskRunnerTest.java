@@ -187,6 +187,81 @@ class WorldTaskRunnerTest {
         }
     }
 
+    @Test
+    void queuedImportReleasesOwnershipExactlyOnceWhenShutdownDropsItsTask() throws Exception {
+        WorldTaskRegistry registry = new WorldTaskRegistry();
+        CountDownLatch runningStarted = new CountDownLatch(1);
+        CountDownLatch holdRunning = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger releases = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger importRuns = new java.util.concurrent.atomic.AtomicInteger();
+        WorldTaskRunner runner = new WorldTaskRunner(registry, 1, 2, Duration.ofMillis(25));
+        try {
+            runner.submit(WorldTaskType.BACKUP, WorldId.create(), "running", progress -> {
+                runningStarted.countDown();
+                holdRunning.await();
+                return "done";
+            });
+            assertTrue(runningStarted.await(2, TimeUnit.SECONDS));
+            WorldTaskSnapshot queued = runner.submit(
+                    WorldTaskType.IMPORT, null, "import queued",
+                    progress -> {
+                        importRuns.incrementAndGet();
+                        return "unexpected";
+                    },
+                    releases::incrementAndGet
+            );
+
+            runner.close();
+            assertEquals(0, importRuns.get(), "dropped import worker must never execute");
+            assertEquals(1, releases.get(), "admitted-but-never-started task releases its claim exactly once");
+            assertEquals(WorldTaskState.FAILED, registry.find(queued.taskId()).orElseThrow().state());
+        } finally {
+            holdRunning.countDown();
+            runner.close();
+        }
+    }
+
+    @Test
+    void completedImportNeverRunsNotStartedCleanup() throws Exception {
+        WorldTaskRegistry registry = new WorldTaskRegistry();
+        java.util.concurrent.atomic.AtomicInteger releases = new java.util.concurrent.atomic.AtomicInteger();
+        try (WorldTaskRunner runner = new WorldTaskRunner(registry, 1, Duration.ofSeconds(1))) {
+            WorldTaskSnapshot task = runner.submit(
+                    WorldTaskType.IMPORT, null, "import queued",
+                    progress -> "world-id", releases::incrementAndGet);
+            assertEquals(WorldTaskState.SUCCEEDED, waitForTerminal(registry, task).state());
+        }
+        assertEquals(0, releases.get(), "worker success owns cleanup, not queue-drop callback");
+    }
+
+    @Test
+    void failingQueueDropCleanupDoesNotPreventOtherTasksFromBeingCancelled() throws Exception {
+        WorldTaskRegistry registry = new WorldTaskRegistry();
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch hold = new CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger following = new java.util.concurrent.atomic.AtomicInteger();
+        WorldTaskRunner runner = new WorldTaskRunner(registry, 1, 3, Duration.ofMillis(25));
+        try {
+            runner.submit(WorldTaskType.BACKUP, WorldId.create(), "running", progress -> {
+                started.countDown();
+                hold.await();
+                return "done";
+            });
+            assertTrue(started.await(2, TimeUnit.SECONDS));
+            WorldTaskSnapshot first = runner.submit(WorldTaskType.IMPORT, null, "first",
+                    progress -> "unexpected", () -> { throw new IllegalStateException("cleanup failed"); });
+            WorldTaskSnapshot second = runner.submit(WorldTaskType.IMPORT, null, "second",
+                    progress -> "unexpected", following::incrementAndGet);
+            runner.close();
+            assertEquals(WorldTaskState.FAILED, registry.find(first.taskId()).orElseThrow().state());
+            assertEquals(WorldTaskState.FAILED, registry.find(second.taskId()).orElseThrow().state());
+            assertEquals(1, following.get());
+        } finally {
+            hold.countDown();
+            runner.close();
+        }
+    }
+
     private static WorldTaskSnapshot waitForTerminal(WorldTaskRegistry registry, WorldTaskSnapshot queued) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         WorldTaskSnapshot current = queued;
