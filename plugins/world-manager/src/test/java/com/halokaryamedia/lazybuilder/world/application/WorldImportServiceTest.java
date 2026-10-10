@@ -174,6 +174,85 @@ class WorldImportServiceTest {
     }
 
     @Test
+    void sameSourceArchiveCannotEnterTwoImportsEvenWithDifferentDestinationFolders() {
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        WorldImportService service = nativeService(new WorldRegistry(), imports);
+
+        WorldImportService.ImportTask first = service.prepare("Build.zip", "FirstWorld", "First World");
+        try {
+            IllegalStateException duplicate = assertThrows(IllegalStateException.class,
+                    () -> service.prepare("Build.zip", "SecondWorld", "Second World"));
+            assertTrue(duplicate.getMessage().contains("already in use"));
+            assertThrows(IllegalStateException.class,
+                    () -> service.prepare("build.ZIP", "ThirdWorld", "Third World"),
+                    "case-only aliases must not bypass source exclusivity on Windows");
+            assertTrue(imports.deletedArtifacts.isEmpty());
+        } finally {
+            service.finish(first);
+        }
+
+        WorldImportService.ImportTask next = service.prepare("Build.zip", "SecondWorld", "Second World");
+        service.finish(next);
+    }
+
+    @Test
+    void inspectingAndDiscardingClaimedImportCannotDeleteItsInput() {
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        WorldImportService service = nativeService(new WorldRegistry(), imports);
+        WorldImportService.ImportTask task = service.prepare("Build.zip", "Destination", "Destination");
+
+        assertThrows(IllegalStateException.class, () -> service.inspect("Build.zip"));
+        assertThrows(IllegalStateException.class, () -> service.discard("BUILD.ZIP"));
+        assertTrue(imports.deletedArtifacts.isEmpty(), "claimed import must keep its archive");
+
+        service.finish(task);
+        service.discard("Build.zip");
+        assertEquals(List.of("Build.zip"), imports.deletedArtifacts);
+    }
+
+    @Test
+    void rejectedDestinationAndFailedInspectionReleaseArchiveClaims() {
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        WorldRegistry registry = new WorldRegistry();
+        WorldImportService service = nativeService(registry, imports);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.prepare("Build.zip", "", "Invalid destination"));
+        WorldImportService.ImportTask first = service.prepare("Build.zip", "Reserved", "Reserved");
+        try {
+            assertThrows(IllegalStateException.class,
+                    () -> service.prepare("Other.zip", "Reserved", "Conflicting folder"));
+            WorldImportService.ImportTask other = service.prepare("Other.zip", "Other", "Other");
+            service.finish(other);
+        } finally {
+            service.finish(first);
+        }
+
+        imports.failInspection = true;
+        assertThrows(IllegalStateException.class, () -> service.inspect("Invalid.zip"));
+        imports.failInspection = false;
+        WorldImportService.ImportTask retry = service.prepare("Invalid.zip", "Retry", "Retry");
+        service.finish(retry);
+    }
+
+    @Test
+    void finishingOldImportAgainCannotReleaseNewImportClaim() {
+        FakeImports imports = new FakeImports(WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        WorldImportService service = nativeService(new WorldRegistry(), imports);
+
+        WorldImportService.ImportTask old = service.prepare("Build.zip", "Old", "Old");
+        service.finish(old);
+        WorldImportService.ImportTask current = service.prepare("Build.zip", "Current", "Current");
+        service.finish(old);
+        assertThrows(IllegalStateException.class,
+                () -> service.prepare("Build.zip", "Unexpected", "Unexpected"),
+                "old completion must not unlock the current source owner");
+        service.finish(current);
+        WorldImportService.ImportTask next = service.prepare("Build.zip", "Next", "Next");
+        service.finish(next);
+    }
+
+    @Test
     void failedConversionCleansEveryOwnedWorkspaceButKeepsArtifactForRetry() throws Exception {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
@@ -250,6 +329,17 @@ class WorldImportServiceTest {
         assertFalse(Files.exists(tempDir.resolve("ImportedBuild")), "published directory must be rolled back");
         assertTrue(imports.deletedArtifacts.isEmpty(), "source artifact must remain available for retry");
         assertTrue(imports.cleanupMarkers.isEmpty(), "uncommitted import must never gain committed-cleanup authority");
+    }
+
+    private WorldImportService nativeService(WorldRegistry registry, FakeImports imports) {
+        FakeStore store = new FakeStore();
+        ConverterAdapter converter = runtimeArtifact -> {
+            throw new AssertionError("native source reservation must not load the converter");
+        };
+        return new WorldImportService(
+                registry, new MemoryPersistence(), new FakeFiles(tempDir), imports,
+                store, updates(store, converter), converter, new ConversionJobCoordinator()
+        );
     }
 
     private ConversionUpdateService updates(FakeStore runtimeStore, ConverterAdapter converter) {

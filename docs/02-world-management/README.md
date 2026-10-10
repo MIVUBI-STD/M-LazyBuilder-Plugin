@@ -347,7 +347,9 @@ Chunker/converter runtime names are implementation details and must not become p
 - canonical managed target Java 1.21.4;
 - fresh WorldId;
 - lifecycle ACTIVE;
-- no silent overwrite of an existing world.
+- no silent overwrite of an existing world;
+- the source upload is reserved by the existing World Import service during inspection, discard, and prepared-to-finished import processing (across Desktop and Fabric); concurrent requests for the same archive, including case-only filename aliases, fail closed;
+- a rejected destination or completed/failed import releases its archive claim; old finish callbacks cannot release a newer operation's claim. No separate import scheduler, persistent source registry, or background cleanup daemon is introduced.
 
 ## Current capability surface
 

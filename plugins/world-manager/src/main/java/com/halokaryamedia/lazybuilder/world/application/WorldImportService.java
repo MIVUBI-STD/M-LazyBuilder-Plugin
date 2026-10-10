@@ -16,6 +16,8 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryTransactions;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
@@ -35,6 +37,9 @@ public final class WorldImportService {
     private final ConversionJobCoordinator conversionJobs;
     /** Successful imports whose source upload could not yet be deleted. Retried only on explicit lifecycle events. */
     private final Set<String> pendingCommittedArtifactCleanup = ConcurrentHashMap.newKeySet();
+    /** Single in-flight owner per source archive across Desktop and Fabric requests.
+     * This is request-scoped admission state, not a second filesystem registry. */
+    private final Map<String, UUID> activeArtifactOperations = new ConcurrentHashMap<>();
 
     public WorldImportService(
             WorldRegistry registry,
@@ -57,35 +62,56 @@ public final class WorldImportService {
     }
 
     public WorldImportArtifactStore.ImportInspection inspect(String artifactName) {
-        retryPendingCommittedArtifactCleanup();
+        UUID inspectionId = UUID.randomUUID();
+        reserveArtifact(artifactName, inspectionId);
         try {
-            return imports.inspectArtifact(artifactName);
-        } catch (IOException | RuntimeException exception) {
-            try { imports.deleteArtifact(artifactName); }
-            catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
-            throw new IllegalStateException("Could not inspect uploaded world", exception);
+            retryPendingCommittedArtifactCleanup();
+            try {
+                return imports.inspectArtifact(artifactName);
+            } catch (IOException | RuntimeException exception) {
+                try { imports.deleteArtifact(artifactName); }
+                catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
+                throw new IllegalStateException("Could not inspect uploaded world", exception);
+            }
+        } finally {
+            releaseArtifact(artifactName, inspectionId);
         }
     }
 
     public void discard(String artifactName) {
-        retryPendingCommittedArtifactCleanup();
+        UUID discardId = UUID.randomUUID();
+        reserveArtifact(artifactName, discardId);
         try {
-            imports.deleteArtifact(artifactName);
-            imports.clearCommittedCleanupPending(artifactName);
-            pendingCommittedArtifactCleanup.remove(artifactName);
-        } catch (IOException | RuntimeException exception) {
-            throw new IllegalStateException("Could not discard uploaded world", exception);
+            retryPendingCommittedArtifactCleanup();
+            try {
+                imports.deleteArtifact(artifactName);
+                imports.clearCommittedCleanupPending(artifactName);
+                pendingCommittedArtifactCleanup.remove(artifactName);
+            } catch (IOException | RuntimeException exception) {
+                throw new IllegalStateException("Could not discard uploaded world", exception);
+            }
+        } finally {
+            releaseArtifact(artifactName, discardId);
         }
     }
 
     public ImportTask prepare(String artifactName, String destinationFolder, String displayName) {
-        retryPendingCommittedArtifactCleanup();
-        WorldRecord destination = new WorldRecord(
-                WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
-                WorldLifecycle.ACTIVE
-        );
-        WorldRegistry.FolderReservation destinationReservation = registry.reserveFolder(destination.folderName());
-        return new ImportTask(UUID.randomUUID(), artifactName, destination, destinationReservation);
+        UUID operationId = UUID.randomUUID();
+        reserveArtifact(artifactName, operationId);
+        try {
+            retryPendingCommittedArtifactCleanup();
+            WorldRecord destination = new WorldRecord(
+                    WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
+                    WorldLifecycle.ACTIVE
+            );
+            WorldRegistry.FolderReservation destinationReservation =
+                    registry.reserveFolder(destination.folderName());
+            return new ImportTask(operationId, artifactName, destination, destinationReservation);
+        } catch (RuntimeException | Error failure) {
+            // A rejected folder/identity must never strand the source archive.
+            releaseArtifact(artifactName, operationId);
+            throw failure;
+        }
     }
 
     public WorldRecord executeFilePhase(ImportTask task) {
@@ -164,19 +190,31 @@ public final class WorldImportService {
 
     public void finish(ImportTask task) {
         Objects.requireNonNull(task, "task");
-        if (task.completed && task.publicationMarkerCleanupFailure != null) {
+        synchronized (task) {
+            if (task.closed) return;
             try {
-                files.markPublishedWorldCommitted(task.destination.folderName());
-                task.publicationMarkerCleanupFailure = null;
-            } catch (IOException ignored) {
-                // Startup publication reconciliation uses persisted registry truth.
+                if (task.completed && task.publicationMarkerCleanupFailure != null) {
+                    try {
+                        files.markPublishedWorldCommitted(task.destination.folderName());
+                        task.publicationMarkerCleanupFailure = null;
+                    } catch (IOException ignored) {
+                        // Startup publication reconciliation uses persisted registry truth.
+                    }
+                }
+                if (task.completed && task.artifactCleanupFailure != null) {
+                    IOException cleanupFailure = retryCommittedArtifactCleanup(task.artifactName);
+                    task.artifactCleanupFailure = cleanupFailure;
+                }
+            } finally {
+                try {
+                    task.close();
+                } finally {
+                    // Compare operation IDs: a repeated finish from an older
+                    // task must never release a newer claim on the same source.
+                    releaseArtifact(task.artifactName, task.operationId);
+                }
             }
         }
-        if (task.completed && task.artifactCleanupFailure != null) {
-            IOException cleanupFailure = retryCommittedArtifactCleanup(task.artifactName);
-            task.artifactCleanupFailure = cleanupFailure;
-        }
-        task.close();
     }
 
     public void recoverPendingCommittedArtifactCleanup() {
@@ -196,6 +234,28 @@ public final class WorldImportService {
 
     int pendingCommittedArtifactCleanupCount() {
         return pendingCommittedArtifactCleanup.size();
+    }
+
+    private void reserveArtifact(String artifactName, UUID operationId) {
+        String key = artifactKey(artifactName);
+        Objects.requireNonNull(operationId, "operationId");
+        if (activeArtifactOperations.putIfAbsent(key, operationId) != null) {
+            throw new IllegalStateException("Import artifact is already in use: " + artifactName);
+        }
+    }
+
+    private void releaseArtifact(String artifactName, UUID operationId) {
+        // Compare-and-remove prevents a stale operation from unlocking its successor.
+        activeArtifactOperations.remove(artifactKey(artifactName), operationId);
+    }
+
+    private static String artifactKey(String artifactName) {
+        if (artifactName == null || artifactName.isBlank()) {
+            throw new IllegalArgumentException("Import artifact name must not be blank");
+        }
+        // Reject portability aliases on case-insensitive Windows filesystems.
+        // The actual path validation still belongs to WorldImportArtifactStore.
+        return artifactName.toLowerCase(Locale.ROOT);
     }
 
     private IOException retryCommittedArtifactCleanup(String artifactName) {
