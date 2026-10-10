@@ -4,6 +4,7 @@ import java.io.BufferedOutputStream;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.FileVisitResult;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
@@ -88,7 +89,7 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
                     java.nio.file.StandardOpenOption.WRITE)) {
                 channel.force(true);
             }
-            moveIntoPlace(temporary, target);
+            publishIfAbsent(temporary, target);
             return target;
         } finally {
             Files.deleteIfExists(temporary);
@@ -144,6 +145,17 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
 
     private static String validateArtifactName(String value) {
         return SafeArtifactName.requirePortable(value, "artifactName");
+    }
+
+    /**
+     * Final publication is serialized for this World Manager export store.
+     * Different worlds may build ZIPs concurrently; only the last existence
+     * check and no-replace move are guarded against competing LazyBuilder
+     * requests. No new worker, queue, or global export manager is created.
+     */
+    synchronized void publishIfAbsent(Path staged, Path target) throws IOException {
+        if (Files.exists(target)) throw new FileAlreadyExistsException(target.toString());
+        moveIntoPlace(staged, target);
     }
 
     /**

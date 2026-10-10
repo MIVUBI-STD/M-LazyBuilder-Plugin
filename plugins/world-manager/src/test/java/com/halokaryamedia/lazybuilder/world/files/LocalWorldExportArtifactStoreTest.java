@@ -6,6 +6,10 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.ZipFile;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -54,6 +58,37 @@ class LocalWorldExportArtifactStoreTest {
         assertEquals("previously committed", Files.readString(published));
         assertEquals("new candidate", Files.readString(staged),
                 "caller still owns temporary file for finally cleanup");
+    }
+
+    @Test
+    void parallelPublishersCannotReplaceAnotherCompletedExport() throws Exception {
+        Path exports = Files.createDirectory(tempDir.resolve("parallel-exports"));
+        LocalWorldExportArtifactStore store = new LocalWorldExportArtifactStore(exports);
+        Path target = exports.resolve("Build.zip");
+        Path first = exports.resolve("first.tmp");
+        Path second = exports.resolve("second.tmp");
+        Files.writeString(first, "first-complete");
+        Files.writeString(second, "second-complete");
+        CountDownLatch go = new CountDownLatch(1);
+        Callable<Boolean> firstPublisher = () -> {
+            go.await();
+            try { store.publishIfAbsent(first, target); return true; }
+            catch (FileAlreadyExistsException collision) { return false; }
+        };
+        Callable<Boolean> secondPublisher = () -> {
+            go.await();
+            try { store.publishIfAbsent(second, target); return true; }
+            catch (FileAlreadyExistsException collision) { return false; }
+        };
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            var resultA = workers.submit(firstPublisher);
+            var resultB = workers.submit(secondPublisher);
+            go.countDown();
+            boolean firstWon = resultA.get(3, TimeUnit.SECONDS);
+            boolean secondWon = resultB.get(3, TimeUnit.SECONDS);
+            assertTrue(firstWon != secondWon, "exactly one final export may publish");
+            assertEquals(firstWon ? "first-complete" : "second-complete", Files.readString(target));
+        }
     }
 
     @Test

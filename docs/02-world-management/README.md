@@ -335,7 +335,7 @@ Chunker/converter runtime names are implementation details and must not become p
 - whole-world and Map Export Area reuse `WorldExportService`;
 - selected map rectangle is transient request context and is server-bounded before export work starts;
 - extension is derived by target (`.zip` Java, `.mcworld` Bedrock);
-- export publication never replaces an existing completed artifact, even if another export creates it after the initial existence check. A collision returns a failure while keeping the previous artifact and cleaning this operation's staging. The existing world operation lease remains the owner; no new export manager is introduced;
+- export publication never replaces an existing completed artifact, even if another export creates it after the initial existence check. A collision returns a failure while keeping the previous artifact and cleaning this operation's staging. The current export store serializes only the final no-clobber decision between simultaneous LazyBuilder exports; ZIP packaging stays concurrent. The existing world operation lease remains the owner; no new export manager is introduced;
 - snapshot source is restored as soon as the consistent snapshot is secured;
 - when an ACTIVE source is loaded with builders inside, export uses the managed live-snapshot window: Paper saves player/world state, temporarily pauses autosave while the filesystem snapshot is captured, then restores the prior save policy on the primary thread;
 - live export never silently evacuates builders; source runtime restoration and save-policy restoration remain part of the export task cleanup contract.
