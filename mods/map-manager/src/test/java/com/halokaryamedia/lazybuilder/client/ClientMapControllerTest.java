@@ -247,6 +247,62 @@ class ClientMapControllerTest {
     }
 
     @Test
+    void repeatedExportCompletionDoesNotOpenAnotherDownloadAfterSameServerReconnect() {
+        Harness harness = new Harness();
+        WorldId worldId = WorldId.create();
+        harness.controller.useExportCompletionServerScope("server-a");
+
+        harness.controller.exportArea(worldId, "minecraft:overworld", 0, 0, 15, 15,
+                "JAVA_1_21_4", "area", ExportSettingsWire.Settings.inherit());
+        long requestId = harness.controller.activeExportRequestId();
+        var completion = new MapActionWireProtocol.ExportComplete(
+                requestId, worldId, "area.zip", "JAVA_1_21_4");
+
+        harness.controller.accept(completion);
+        harness.controller.reset();
+        harness.controller.useExportCompletionServerScope("server-a");
+        harness.controller.accept(completion);
+
+        assertEquals(List.of("area.zip"), harness.completed);
+        assertEquals(List.of("Export ready: area.zip"), harness.notifications);
+        assertFalse(harness.controller.exportBusy());
+    }
+
+    @Test
+    void reconnectOrphanIsDeliveredOnceButAnotherRequestIsNotSuppressed() {
+        Harness harness = new Harness();
+        WorldId worldId = WorldId.create();
+        harness.controller.useExportCompletionServerScope("server-a");
+        var pending = new MapActionWireProtocol.ExportComplete(42L, worldId,
+                "pending.zip", "JAVA_1_21_4");
+
+        harness.controller.accept(pending);
+        harness.controller.accept(pending);
+        harness.controller.accept(new MapActionWireProtocol.ExportComplete(
+                43L, worldId, "pending.zip", "JAVA_1_21_4"));
+
+        assertEquals(List.of("pending.zip", "pending.zip"), harness.completed,
+                "Different request IDs are distinct operations even with the same artifact name");
+        assertEquals(2, harness.notifications.size());
+    }
+
+    @Test
+    void reusedRequestIdOnAnotherServerIsNotSuppressed() {
+        Harness harness = new Harness();
+        WorldId worldId = WorldId.create();
+        var first = new MapActionWireProtocol.ExportComplete(44L, worldId, "one.zip", "JAVA_1_21_4");
+        harness.controller.useExportCompletionServerScope("server-a");
+        harness.controller.accept(first);
+        harness.controller.reset();
+
+        harness.controller.useExportCompletionServerScope("server-b");
+        harness.controller.accept(new MapActionWireProtocol.ExportComplete(
+                44L, worldId, "two.zip", "JAVA_1_21_4"));
+
+        assertEquals(List.of("one.zip", "two.zip"), harness.completed);
+    }
+
+    @Test
     void staleCurrentWorldResponseCannotOverwriteUnsolicitedPush() throws Exception {
         Harness harness = new Harness();
         WorldId oldWorld = WorldId.create();

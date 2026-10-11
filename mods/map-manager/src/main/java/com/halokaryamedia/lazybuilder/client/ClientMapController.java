@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.world.map.MapActionWireProtocol;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import net.minecraft.client.MinecraftClient;
 
+import java.util.LinkedHashSet;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -13,6 +14,10 @@ import java.util.function.Consumer;
  * authority for managed-world identity, teleport resolution, and export work.
  */
 public final class ClientMapController {
+    private static final int MAX_HANDLED_EXPORT_COMPLETIONS = 64;
+
+    private final LinkedHashSet<Long> handledExportRequestIds = new LinkedHashSet<>();
+    private String completionServerScope = "";
     private final Consumer<String> completedExportHandler;
     private final Consumer<byte[]> mapSender;
     private final Consumer<String> notifier;
@@ -162,6 +167,10 @@ public final class ClientMapController {
                 notifier.accept("Export started.");
             }
             case MapActionWireProtocol.ExportComplete complete -> {
+                // Map Action V5 carries the originating positive request ID.
+                // An offline completion may be replayed after reconnect, but
+                // opening another save dialog for the same operation is unsafe.
+                if (handledExportRequestIds.contains(complete.requestId())) return;
                 if (exportRequestId != 0L) {
                     if (complete.requestId() != exportRequestId) return;
                     exportRequestId = 0L;
@@ -170,8 +179,11 @@ public final class ClientMapController {
                 } else if (complete.requestId() == 0L) {
                     return;
                 }
-                notifier.accept("Export ready: " + complete.fileName());
+                // Record only after the download controller accepts the handoff.
+                // A rejected/busy transfer must not become a falsely delivered ID.
                 completedExportHandler.accept(complete.fileName());
+                rememberExportCompletion(complete.requestId());
+                notifier.accept("Export ready: " + complete.fileName());
             }
             case MapActionWireProtocol.ErrorResponse error -> {
                 boolean matched = error.requestId() == 0L;
@@ -198,6 +210,25 @@ public final class ClientMapController {
                 }
                 notifier.accept("LazyBuilder: " + error.message());
             }
+        }
+    }
+
+    /**
+     * A request ID is unique only within the sender's server context.
+     * Retain recent completions across same-server reconnect, but never suppress
+     * a different server's legitimate completion with a coincidentally reused ID.
+     */
+    void useExportCompletionServerScope(String encodedServerIdentity) {
+        String nextScope = Objects.requireNonNullElse(encodedServerIdentity, "");
+        if (nextScope.equals(completionServerScope)) return;
+        completionServerScope = nextScope;
+        handledExportRequestIds.clear();
+    }
+
+    private void rememberExportCompletion(long requestId) {
+        handledExportRequestIds.add(requestId);
+        if (handledExportRequestIds.size() > MAX_HANDLED_EXPORT_COMPLETIONS) {
+            handledExportRequestIds.remove(handledExportRequestIds.iterator().next());
         }
     }
 

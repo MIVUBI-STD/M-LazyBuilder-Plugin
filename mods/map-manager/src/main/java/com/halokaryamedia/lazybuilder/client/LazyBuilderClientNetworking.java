@@ -62,6 +62,7 @@ public final class LazyBuilderClientNetworking {
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
             if (!sameConnection(handler, client.getNetworkHandler())) return;
+            mapController.useExportCompletionServerScope(ClientServerIdentity.encodedCurrent());
             observedWorldKey = currentWorldKey(client);
             refreshManagedContext();
         }));
