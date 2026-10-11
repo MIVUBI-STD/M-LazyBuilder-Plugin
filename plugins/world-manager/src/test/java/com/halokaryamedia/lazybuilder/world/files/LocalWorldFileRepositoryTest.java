@@ -377,6 +377,44 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void caseVariantDeleteStageCannotBeDiscardedWhileWorldIsRegistered() throws Exception {
+        Path worlds = tempDir.resolve("case-delete-worlds");
+        Path work = tempDir.resolve("case-delete-work");
+        WorldRecord capitalized = new WorldRecord(WorldId.create(), "Build", "Build",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        Files.createDirectories(worlds.resolve("Build"));
+        Files.writeString(worlds.resolve("Build/level.dat"), "USER WORLD");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        Path staged = repository.stageDelete(capitalized, UUID.randomUUID());
+
+        // Windows treats Build and build as the same filesystem identity.
+        WorldRecord differentCase = new WorldRecord(capitalized.id(), "build", "Build",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        WorldFileRepository.DeleteRecovery outcome =
+                repository.recoverDeleteWorkspaces(List.of(differentCase));
+
+        assertEquals(0, outcome.discarded());
+        assertEquals(1, outcome.restored());
+        assertEquals("USER WORLD", Files.readString(worlds.resolve("Build/level.dat")));
+        assertFalse(Files.exists(staged));
+    }
+
+    @Test
+    void caseVariantCreateMarkerMustBeTreatedAsRegisteredWorld() throws Exception {
+        Path worlds = tempDir.resolve("case-create-worlds");
+        Path work = tempDir.resolve("case-create-work");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        UUID transaction = UUID.randomUUID();
+        repository.markCreatePending(transaction, "Build");
+        WorldRecord registryRecord = new WorldRecord(WorldId.create(), "build", "Build",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        WorldFileRepository.CreateRecovery outcome =
+                repository.recoverCreateTransactions(List.of(registryRecord));
+        assertEquals(1, outcome.committed());
+        assertEquals(0, outcome.preserved());
+    }
+
+    @Test
     void interruptedCommittedDeleteDiscardsStagingWhenRegistryRecordIsGone() throws Exception {
         Path worldRoot = tempDir.resolve("worlds");
         Path workRoot = tempDir.resolve("work");

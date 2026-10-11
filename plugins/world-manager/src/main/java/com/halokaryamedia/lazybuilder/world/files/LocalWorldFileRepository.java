@@ -16,6 +16,7 @@ import java.util.Base64;
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -313,7 +314,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         requireSafeWorkspaceRoot();
 
         Set<String> managedFolders = new HashSet<>();
-        for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName());
+        for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName().toLowerCase(Locale.ROOT));
 
         int committed = 0;
         int rolledBack = 0;
@@ -333,7 +334,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
                 String folderName = identity.get().folderName();
                 Path world = worldPath(folderName);
-                if (managedFolders.contains(folderName)) {
+                if (managedFolders.contains(folderName.toLowerCase(Locale.ROOT))) {
                     Files.delete(marker);
                     committed++;
                     continue;
@@ -395,7 +396,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         requireSafeWorkspaceRoot();
 
         Set<String> managedFolders = new HashSet<>();
-        for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName());
+        for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName().toLowerCase(Locale.ROOT));
 
         int restored = 0;
         int discarded = 0;
@@ -414,7 +415,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 }
 
                 String folderName = identity.get().folderName();
-                if (managedFolders.contains(folderName)) {
+                if (managedFolders.contains(folderName.toLowerCase(Locale.ROOT))) {
                     Path destination = worldPath(folderName);
                     if (Files.exists(destination)) {
                         preserved++;
@@ -449,7 +450,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             throw new IOException("World container is unsafe");
         }
         Set<String> managedFolders = new HashSet<>();
-        for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName());
+        for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName().toLowerCase(Locale.ROOT));
         Set<String> finalizedFolders = new HashSet<>();
         Set<String> preservedFolders = new HashSet<>();
 
@@ -468,7 +469,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 }
                 String folderName = child.getFileName().toString();
                 PublishMarkerIdentity markerIdentity = readPublishMarker(marker, folderName);
-                if (managedFolders.contains(folderName)) {
+                if (managedFolders.contains(folderName.toLowerCase(Locale.ROOT))) {
                     if (!markerIdentity.valid()) {
                         // Registry identity alone does not justify deleting a
                         // malformed pending marker. Preserve for reconciliation.
