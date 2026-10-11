@@ -91,7 +91,7 @@ Historical names such as `LoadWorld`, `UnloadWorld`, `SetAutoLoad`, `autoLoad`, 
 
 ## Canonical contracts
 
-### World Control V5
+### World Control V7
 
 ```text
 ListWorlds + canManage/canTeleport

@@ -121,6 +121,7 @@ canonical_world_map_docs = (
     "docs/04-system/README.md",
     "docs/04-system/networking.md",
     "docs/04-system/world-control-bridge.md",
+    ".agents/skills/lazybuilder-protocol/SKILL.md",
 )
 for relative in canonical_world_map_docs:
     doc = (ROOT / relative).read_text(encoding="utf-8")
