@@ -1,6 +1,7 @@
-use crate::engine::{core_modules, paper_provider, workspace_registry};
+use crate::engine::{core_modules, paper_provider, persistence, workspace_registry};
 use serde::Serialize;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::Path;
 
 #[derive(Clone, Serialize)]
@@ -14,7 +15,14 @@ pub struct RuntimeUpdateStatus {
 pub fn status() -> Result<RuntimeUpdateStatus, String> {
     let workspace = workspace_registry::active_workspace()?;
     let release = paper_provider::latest_stable()?;
-    status_with_release(&workspace, &release)
+    let status = status_with_release(&workspace, &release)?;
+    if had_target {
+        // Only after both Paper publication and manifest persistence succeed.
+        let _ = persistence::safe_path::remove_regular_file_if_present(
+            &persistent_backup, "Paper update rollback backup"
+        );
+    }
+    Ok(status)
 }
 
 /// Update Paper while exposing real transaction boundaries to the Launcher operation
@@ -33,7 +41,10 @@ where
     let release = paper_provider::latest_stable()?;
     let target = workspace.join("server").join("paper.jar");
     let persistent_backup = workspace.join("server").join("paper.jar.previous");
-    let had_target = target.is_file();
+    let had_target = persistence::metadata_entry_exists(&target, "Paper runtime JAR")?;
+    if had_target {
+        persistence::safe_path::ensure_regular_file(&target, "Paper runtime JAR")?;
+    }
 
     on_stage(
         "backup",
@@ -41,8 +52,9 @@ where
         "Creating a rollback copy before publishing the replacement Paper runtime.",
     );
     if had_target {
-        let _ = fs::remove_file(&persistent_backup);
-        fs::copy(&target, &persistent_backup).map_err(|e| e.to_string())?;
+        // Never overwrite a prior attempt's rollback evidence.
+        // The newly created copy is synchronized and checked before update.
+        copy_verified_new(&target, &persistent_backup)?;
     }
 
     on_stage(
@@ -63,12 +75,23 @@ where
             "Rolling back Paper update",
             "The Paper runtime was published but its metadata could not be committed, so LazyBuilder is restoring the previous runtime.",
         );
-        return match rollback_paper(&target, &persistent_backup, had_target) {
-            Ok(()) => Err(format!(
-                "Paper metadata update failed and paper.jar was rolled back: {manifest_error}"
-            )),
+        if !had_target {
+            // There was no previous Paper runtime to restore. Keep the
+            // newly verified JAR rather than erasing an uncertain installation.
+            return Err(format!(
+                "Paper metadata update failed: {manifest_error}. Newly published paper.jar was preserved for reconciliation."
+            ));
+        }
+        return match rollback_paper(&target, &persistent_backup) {
+            Ok(()) => {
+                let _ = persistence::safe_path::remove_regular_file_if_present(
+                    &persistent_backup, "Paper update rollback backup"
+                );
+                Err(format!("Paper metadata update failed and prior Paper was restored: {manifest_error}"))
+            }
             Err(rollback_error) => Err(format!(
-                "Paper metadata update failed: {manifest_error}; paper.jar rollback also failed: {rollback_error}"
+                "Paper metadata update failed: {manifest_error}; Paper rollback also failed: {rollback_error}. Original backup remains at {}.",
+                persistent_backup.display()
             )),
         };
     }
@@ -120,21 +143,86 @@ fn status_with_release(
     })
 }
 
-fn rollback_paper(target: &Path, backup: &Path, had_target: bool) -> Result<(), String> {
-    if target.exists() {
-        fs::remove_file(target).map_err(|e| e.to_string())?;
+fn copy_verified_new(source: &Path, destination: &Path) -> Result<(), String> {
+    persistence::safe_path::ensure_regular_file(source, "Paper copy source")?;
+    let mut input = File::open(source).map_err(|e| e.to_string())?;
+    let mut output = OpenOptions::new().write(true).create_new(true).open(destination)
+        .map_err(|error| format!(
+            "Paper recovery destination {} is unavailable; existing evidence was preserved: {error}",
+            destination.display()
+        ))?;
+    let copied = (|| -> Result<(), String> {
+        std::io::copy(&mut input, &mut output).map_err(|e| e.to_string())?;
+        output.flush().map_err(|e| e.to_string())?;
+        output.sync_all().map_err(|e| e.to_string())
+    })();
+    drop(output);
+    if let Err(error) = copied {
+        let _ = fs::remove_file(destination);
+        return Err(error);
     }
-    if had_target {
-        if !backup.is_file() {
-            return Err(format!("Paper rollback backup is missing: {}", backup.display()));
-        }
-        fs::copy(backup, target).map_err(|e| e.to_string())?;
+    if paper_provider::sha256_file(source)? != paper_provider::sha256_file(destination)? {
+        // Even if verification fails, retain the source and preserve the
+        // untrusted copy for inspection instead of declaring it good.
+        return Err(format!(
+            "Paper copy verification failed; input and copy were preserved: {}",
+            destination.display()
+        ));
+    }
+    Ok(())
+}
+
+fn rollback_paper(target: &Path, backup: &Path) -> Result<(), String> {
+    persistence::safe_path::ensure_regular_file(backup, "Paper update rollback backup")?;
+    let staged = target.with_extension("jar.restore");
+    copy_verified_new(backup, &staged)?;
+    paper_provider::replace_file(&staged, target)?;
+    if paper_provider::sha256_file(target)? != paper_provider::sha256_file(backup)? {
+        return Err(format!(
+            "Restored Paper bytes do not match rollback backup; preserved at {}",
+            backup.display()
+        ));
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn test_root(label: &str) -> std::path::PathBuf {
+        let stamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        std::env::temp_dir().join(format!("lazybuilder-{label}-{}-{stamp}", std::process::id()))
+    }
+
+    #[test]
+    fn existing_paper_update_backup_cannot_be_overwritten() {
+        let root = test_root("paper-backup-collision");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("paper.jar");
+        let backup = root.join("paper.jar.previous");
+        fs::write(&source, b"new update candidate").unwrap();
+        fs::write(&backup, b"only valid rollback copy").unwrap();
+        assert!(copy_verified_new(&source, &backup).is_err());
+        assert_eq!(fs::read(&backup).unwrap(), b"only valid rollback copy");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn previous_paper_restored_from_verified_copy_without_consuming_backup() {
+        let root = test_root("paper-verified-restore");
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("paper.jar");
+        let backup = root.join("paper.jar.previous");
+        fs::write(&target, b"invalid candidate runtime").unwrap();
+        fs::write(&backup, b"verified previous runtime").unwrap();
+        rollback_paper(&target, &backup).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"verified previous runtime");
+        assert_eq!(fs::read(&backup).unwrap(), b"verified previous runtime");
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn paper_update_stage_contract_stays_transactional() {
         let stages = [

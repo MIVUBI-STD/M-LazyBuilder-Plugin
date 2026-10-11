@@ -127,7 +127,7 @@ fn download_verified(url: &str, expected: &str, destination: &Path) -> Result<()
     replace_file(&temp, destination)
 }
 
-fn sha256_file(path: &Path) -> Result<String, String> {
+pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
     ensure_regular_file(path, "Paper JAR")?;
     let mut file = fs::File::open(path).map_err(|e| e.to_string())?;
     let mut digest = Sha256::new();
@@ -140,16 +140,33 @@ fn sha256_file(path: &Path) -> Result<String, String> {
     Ok(format!("{:x}", digest.finalize()))
 }
 
-fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
+pub(crate) fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
     ensure_regular_file(source, "Paper staging file")?;
+    let previous = destination.with_extension("previous");
+    // A stale Paper swap may contain the only recoverable previous JAR.
+    // Its presence must block publication, even if paper.jar is now missing.
+    if metadata_entry_exists(&previous)? {
+        return Err(format!(
+            "Unresolved Paper JAR swap at {}. Previous data was preserved for reconciliation.",
+            previous.display()
+        ));
+    }
     if metadata_entry_exists(destination)? {
         ensure_regular_file(destination, "Paper JAR")?;
-        let backup = destination.with_extension("previous");
-        remove_regular_file_if_exists(&backup, "previous Paper JAR")?;
-        fs::rename(destination, &backup).map_err(|e| e.to_string())?;
+        fs::rename(destination, &previous).map_err(|e| e.to_string())?;
         match fs::rename(source, destination) {
-            Ok(()) => { let _ = fs::remove_file(backup); Ok(()) }
-            Err(error) => { let _ = fs::rename(&backup, destination); Err(error.to_string()) }
+            Ok(()) => {
+                // This is after publication; cleanup failure cannot undo commit.
+                let _ = remove_regular_file_if_exists(&previous, "previous Paper JAR");
+                Ok(())
+            }
+            Err(error) => match fs::rename(&previous, destination) {
+                Ok(()) => Err(format!("Could not publish Paper JAR; previous value restored: {error}")),
+                Err(restore_error) => Err(format!(
+                    "Could not publish Paper JAR ({error}) or restore previous JAR ({restore_error}). Recovery data was preserved at {}.",
+                    previous.display()
+                )),
+            },
         }
     } else {
         fs::rename(source, destination).map_err(|e| e.to_string())
@@ -205,6 +222,23 @@ mod tests {
     #[test]
     fn paper_download_bound_is_finite() {
         assert!(MAX_PAPER_JAR_BYTES > 0);
+    }
+
+    #[test]
+    fn unresolved_provider_swap_is_never_overwritten() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let suffix = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let root = std::env::temp_dir().join(format!("paper-provider-swap-{}-{suffix}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("paper.jar");
+        let staged = root.join("paper.jar.tmp");
+        let old = target.with_extension("previous");
+        fs::write(&staged, b"new Paper").unwrap();
+        fs::write(&old, b"ONLY PREVIOUS PAPER").unwrap();
+        assert!(replace_file(&staged, &target).is_err());
+        assert_eq!(fs::read(&old).unwrap(), b"ONLY PREVIOUS PAPER");
+        assert_eq!(fs::read(&staged).unwrap(), b"new Paper");
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
