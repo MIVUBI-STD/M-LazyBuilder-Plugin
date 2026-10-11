@@ -288,11 +288,14 @@ impl PluginManagerState {
         publish_backup(source, &rollback)?;
         if let Err(error) = fs::remove_file(source) {
             let restore = restore_from_backup(&rollback, source);
-            let _ = fs::remove_file(&rollback);
             return match restore {
-                Ok(()) => Err(format!("Could not remove invalid plugin JAR; previous file was restored: {error}")),
+                Ok(()) => {
+                    let _ = fs::remove_file(&rollback);
+                    Err(format!("Could not remove invalid plugin JAR; previous file was restored: {error}"))
+                }
                 Err(rollback_error) => Err(format!(
-                    "Could not remove invalid plugin JAR: {error}; rollback also failed: {rollback_error}"
+                    "Could not remove invalid plugin JAR: {error}; rollback also failed: {rollback_error}.                      Recovery JAR retained at {}.",
+                    rollback.display()
                 )),
             };
         }
@@ -341,13 +344,16 @@ impl PluginManagerState {
                         rollback_errors.push(restore_error);
                     }
                 }
-                cleanup_operation_backups(&removals);
                 if rollback_errors.is_empty() {
+                    cleanup_operation_backups(&removals);
                     return Err(format!("Duplicate resolution failed and previous files were restored: {error}"));
                 }
+                // A failed restore may have left a previously removed JAR absent.
+                // Its prepared backup is the recovery artifact: never delete it.
                 return Err(format!(
-                    "Duplicate resolution failed: {error}; rollback also reported: {}",
-                    rollback_errors.join("; ")
+                    "Duplicate resolution failed: {error}; rollback also reported: {}.                      Recovery JAR backups have been retained in {}.",
+                    rollback_errors.join("; "),
+                    backup_dir.display()
                 ));
             }
             removed.push((source.clone(), backup.clone()));
@@ -839,11 +845,14 @@ fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
 }
 
 fn restore_from_backup(backup: &Path, destination: &Path) -> Result<(), String> {
-    if !backup.is_file() { return Err(format!("Plugin rollback backup is missing: {}", backup.display())); }
-    if destination.exists() { fs::remove_file(destination).map_err(|error| error.to_string())?; }
-    fs::copy(backup, destination).map_err(|error| error.to_string())?;
+    persistence::safe_path::ensure_regular_file(backup, "plugin rollback backup")?;
+    // Verify the replacement before touching a surviving destination. Never
+    // remove the original JAR first and leave a partial copy on failure.
+    let staged = destination.with_extension("jar.restore");
+    stage_copy(backup, &staged)?;
+    replace_file(&staged, destination)?;
     if !files_equal(backup, destination)? {
-        return Err("Plugin rollback verification failed.".into());
+        return Err("Plugin rollback verification failed; recovery backup retained.".into());
     }
     Ok(())
 }
@@ -889,7 +898,7 @@ fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstall
 mod tests {
     use super::{
         dependency_problem_from_scan, parse_paper_dependencies, read_metadata,
-        PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
+        restore_from_backup, PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
     };
     use std::{fs, path::PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -975,6 +984,28 @@ mod tests {
         let error = read_metadata(&fake_jar_directory).unwrap_err();
         assert!(error.contains("Unsafe plugin JAR"));
 
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn rollback_restores_verified_bytes_without_discarding_previous_file_on_invalid_backup() {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-plugin-rollback-test-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let destination = directory.join("plugin.jar");
+        let backup = directory.join("plugin.previous.jar");
+
+        fs::write(&destination, b"current plugin").unwrap();
+        assert!(restore_from_backup(&backup, &destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"current plugin");
+
+        fs::write(&backup, b"verified previous plugin").unwrap();
+        restore_from_backup(&backup, &destination).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"verified previous plugin");
+        assert_eq!(fs::read(&backup).unwrap(), b"verified previous plugin");
         let _ = fs::remove_dir_all(directory);
     }
 
