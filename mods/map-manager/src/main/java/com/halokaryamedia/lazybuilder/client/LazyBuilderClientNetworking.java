@@ -41,18 +41,33 @@ public final class LazyBuilderClientNetworking {
         PayloadTypeRegistry.playC2S().register(WorldPayload.ID, WorldPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(WorldPayload.ID, WorldPayload.CODEC);
 
-        ClientPlayNetworking.registerGlobalReceiver(MapPayload.ID, (payload, context) ->
-                context.client().execute(() -> handleMap(payload.bytes())));
-        ClientPlayNetworking.registerGlobalReceiver(TransferPayload.ID, (payload, context) ->
-                context.client().execute(() -> handleTransfer(payload.bytes())));
-        ClientPlayNetworking.registerGlobalReceiver(WorldPayload.ID, (payload, context) ->
-                context.client().execute(() -> handleWorld(payload.bytes())));
+        // Fabric 1.21.4 payload receivers already run on the render thread.
+        // Binding to the originating handler prevents responses from another
+        // play connection from updating the current controllers.
+        ClientPlayNetworking.registerGlobalReceiver(MapPayload.ID, (payload, context) -> {
+            if (sameConnection(context.player().networkHandler, context.client().getNetworkHandler())) {
+                handleMap(payload.bytes());
+            }
+        });
+        ClientPlayNetworking.registerGlobalReceiver(TransferPayload.ID, (payload, context) -> {
+            if (sameConnection(context.player().networkHandler, context.client().getNetworkHandler())) {
+                handleTransfer(payload.bytes());
+            }
+        });
+        ClientPlayNetworking.registerGlobalReceiver(WorldPayload.ID, (payload, context) -> {
+            if (sameConnection(context.player().networkHandler, context.client().getNetworkHandler())) {
+                handleWorld(payload.bytes());
+            }
+        });
 
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> client.execute(() -> {
+            if (!sameConnection(handler, client.getNetworkHandler())) return;
             observedWorldKey = currentWorldKey(client);
             refreshManagedContext();
         }));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> client.execute(() -> {
+            // A delayed old disconnect must not reset a newly joined session.
+            if (!mayResetDisconnectedConnection(handler, client.getNetworkHandler())) return;
             observedWorldKey = null;
             worldController.reset();
             mapController.reset();
@@ -74,6 +89,16 @@ public final class LazyBuilderClientNetworking {
                 mapController.reset();
             }
         });
+    }
+
+    /** Reference identity, not address/world UUID: reconnect creates a new handler. */
+    static boolean sameConnection(Object origin, Object active) {
+        return origin != null && origin == active;
+    }
+
+    /** Null is the expected active-handler state after a completed disconnect. */
+    static boolean mayResetDisconnectedConnection(Object disconnected, Object active) {
+        return active == null || sameConnection(disconnected, active);
     }
 
     public static void sendMap(byte[] payload) {
