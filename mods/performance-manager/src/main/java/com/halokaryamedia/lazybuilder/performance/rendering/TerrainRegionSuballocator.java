@@ -23,9 +23,14 @@ public final class TerrainRegionSuballocator<K> {
 
     public synchronized Allocation allocate(K key, long payloadBytes) {
         if (key == null || payloadBytes <= 0L) return null;
-        release(key);
 
         long size = TerrainRegionArenaPolicy.alignedSize(payloadBytes);
+        Allocation previous = allocations.get(key);
+        // Replacement failure must not invalidate the previous GPU region handle.
+        // Account for spans exposed by the old allocation before releasing it.
+        if (previous != null && !canReplace(previous, size)) return null;
+        release(key);
+
         long selectedOffset = -1L;
         long selectedLength = 0L;
         for (Map.Entry<Long, Long> span : freeSpans.entrySet()) {
@@ -45,6 +50,23 @@ public final class TerrainRegionSuballocator<K> {
         allocations.put(key, allocation);
         usedBytes += size;
         return allocation;
+    }
+
+    private boolean canReplace(Allocation previous, long requestedSize) {
+        for (long spanBytes : freeSpans.values()) {
+            if (spanBytes >= requestedSize) return true;
+        }
+
+        long start = previous.offsetBytes();
+        long end = start + previous.sizeBytes();
+        long available = previous.sizeBytes();
+        Map.Entry<Long, Long> lower = freeSpans.lowerEntry(start);
+        if (lower != null && lower.getKey() + lower.getValue() == start) {
+            available += lower.getValue();
+        }
+        Long higher = freeSpans.get(end);
+        if (higher != null) available += higher;
+        return available >= requestedSize;
     }
 
     public synchronized void release(K key) {
