@@ -221,6 +221,56 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void preservedRootMarkerMustNotTriggerDimensionCleanupOnSecondPass() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds-pending-family");
+        Path workRoot = tempDir.resolve("work-pending-family");
+        Path root = worldRoot.resolve("Registered");
+        Path nether = worldRoot.resolve("Registered_nether");
+        Files.createDirectories(root);
+        Files.createDirectories(nether.resolve("DIM-1"));
+        Files.writeString(root.resolve("level.dat"), "important root");
+        Files.writeString(root.resolve(".lazybuilder-publish-pending"), "invalid marker");
+        Files.writeString(nether.resolve("level.dat"), "important dimension");
+        Files.writeString(nether.resolve("DIM-1/region.dat"), "nether data");
+        Files.createFile(nether.resolve(".lazybuilder-family-publish-pending"));
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+        WorldRecord registered = new WorldRecord(WorldId.create(), "Registered", "Registered",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+
+        WorldFileRepository.PublishRecovery outcome =
+                repository.recoverPublishedWorlds(List.of(registered));
+
+        assertEquals(0, outcome.finalized());
+        assertEquals(1, outcome.preserved());
+        assertEquals("nether data", Files.readString(nether.resolve("DIM-1/region.dat")));
+        assertTrue(Files.exists(root.resolve(".lazybuilder-publish-pending")));
+        assertTrue(Files.exists(nether.resolve(".lazybuilder-family-publish-pending")),
+                "unresolved root must block dimension marker cleanup");
+    }
+
+    @Test
+    void readOnlyRecoveryEvidenceListsOwnedMarkersWithoutChangingThem() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds-recovery-inspection");
+        Path workRoot = tempDir.resolve("work-recovery-inspection");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+        repository.markCreatePending(UUID.randomUUID(), "CreateInterrupted");
+        Path root = worldRoot.resolve("InterruptedPublication");
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("level.dat"), "preserve me");
+        Files.writeString(root.resolve(".lazybuilder-publish-pending"), "unresolved");
+
+        List<String> evidence = repository.pendingRecoveryEvidence();
+
+        assertTrue(evidence.stream().anyMatch(item -> item.startsWith("CREATE marker: ")));
+        assertTrue(evidence.stream().anyMatch(item -> item.startsWith("WORLD publication marker: ")));
+        assertEquals("preserve me", Files.readString(root.resolve("level.dat")));
+        assertTrue(Files.exists(root.resolve(".lazybuilder-publish-pending")));
+        try (var markers = Files.list(workRoot)) {
+            assertTrue(markers.anyMatch(p -> p.getFileName().toString().endsWith(".create")));
+        }
+    }
+
+    @Test
     void legacyEmptyPublishMarkerIsPreservedInsteadOfDeletingUnregisteredWorld() throws Exception {
         Path worldRoot = tempDir.resolve("worlds-legacy-publish");
         Path workRoot = tempDir.resolve("work-legacy-publish");

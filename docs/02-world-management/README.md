@@ -406,7 +406,12 @@ If a Create/Import/Duplicate operation left a world folder but no matching
 registry record, the world folder (including its dimensions) and recovery
 marker are preserved. World Manager blocks automatic world discovery until
 this ambiguity is resolved explicitly; it does **not** delete the folder based
-solely on a transaction marker. Absent world folders may still have empty
+solely on a transaction marker. A malformed root publication marker also blocks
+automatic dimension-marker cleanup, so sibling worlds remain untouched.
+Startup errors include a bounded, read-only inventory of the relevant evidence
+paths. Copy the world, work-directory and registry data to independent storage
+before investigating. Never delete markers or world directories just to make
+startup proceed. Absent world folders may still have empty
 transaction markers cleared. Previously requested committed Delete operations
 retain their separate delete-recovery policy.
 

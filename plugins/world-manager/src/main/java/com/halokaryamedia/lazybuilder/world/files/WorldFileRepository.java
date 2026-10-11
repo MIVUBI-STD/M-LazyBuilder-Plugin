@@ -107,6 +107,12 @@ public interface WorldFileRepository {
         return new ManagedWorldAudit(List.of(), List.of());
     }
 
+    /**
+     * Bounded read-only locations for retained startup recovery evidence.
+     * This is diagnostic presentation, not a new registry or recovery owner.
+     */
+    default List<String> pendingRecoveryEvidence() throws IOException { return List.of(); }
+
     void publishStagedWorld(Path stagedWorld, String destinationFolder) throws IOException;
 
     void deleteWorld(WorldRecord world) throws IOException;

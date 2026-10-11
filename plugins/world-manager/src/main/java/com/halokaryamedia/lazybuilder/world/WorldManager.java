@@ -232,7 +232,11 @@ public final class WorldManager {
                         + ", preserved=" + deleteRecovery.preserved() + ".");
             }
 
-            requireResolvedTransactionRecovery(createRecovery, deleteRecovery);
+            try {
+                requireResolvedTransactionRecovery(createRecovery, deleteRecovery);
+            } catch (IllegalStateException unresolved) {
+                throw new IllegalStateException(unresolved.getMessage() + recoveryEvidenceGuidance(), unresolved);
+            }
 
             WorldFileRepository.PublishRecovery publishRecovery =
                     worldFileRepository.recoverPublishedWorlds(worldRegistry.all());
@@ -247,6 +251,7 @@ public final class WorldManager {
                 throw new IllegalStateException(
                         "World Manager found ambiguous pending publication evidence; "
                                 + "automatic discovery is blocked until it is reconciled manually."
+                                + recoveryEvidenceGuidance()
                 );
             }
 
@@ -274,6 +279,20 @@ public final class WorldManager {
         plugin.getLogger().fine("World Manager ready with " + worldRegistry.size()
                 + " managed worlds using " + (storageLayout.canonical() ? "canonical" : "legacy-compatible")
                 + " storage layout.");
+    }
+
+    private String recoveryEvidenceGuidance() {
+        try {
+            List<String> evidence = worldFileRepository.pendingRecoveryEvidence();
+            return "\nRecovery evidence (read-only; do not delete or rename markers): "
+                    + (evidence.isEmpty() ? "No attributable marker found." : String.join("; ", evidence))
+                    + "\nBefore reconciliation, preserve a separate copy of the world folders, "
+                    + "work directories and registry metadata.";
+        } catch (IOException | RuntimeException inspectionFailure) {
+            return "\nRecovery evidence could not be listed safely ("
+                    + inspectionFailure.getMessage()
+                    + "). Preserve world folders, work directories and registry metadata.";
+        }
     }
 
     static void requireResolvedTransactionRecovery(

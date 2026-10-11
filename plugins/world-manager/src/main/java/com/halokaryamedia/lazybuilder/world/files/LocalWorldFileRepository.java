@@ -397,6 +397,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         Set<String> managedFolders = new HashSet<>();
         for (WorldRecord world : managedWorlds) managedFolders.add(world.folderName());
         Set<String> finalizedFolders = new HashSet<>();
+        Set<String> preservedFolders = new HashSet<>();
 
         int finalized = 0;
         int discarded = 0;
@@ -418,6 +419,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                         // Registry identity alone does not justify deleting a
                         // malformed pending marker. Preserve for reconciliation.
                         preserved++;
+                        preservedFolders.add(folderName);
                         continue;
                     }
                     PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, true);
@@ -431,12 +433,16 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                     // Keep the world and all dimension siblings for recovery.
                     // The startup owner blocks automatic adoption when preserved > 0.
                     preserved++;
+                    preservedFolders.add(folderName);
                 }
             }
         }
 
         for (String folderName : managedFolders) {
-            if (finalizedFolders.contains(folderName)) continue;
+            // An invalid/unresolved root marker must also block sibling
+            // finalization. Otherwise this second pass could clear dimension
+            // evidence while the root is explicitly awaiting reconciliation.
+            if (finalizedFolders.contains(folderName) || preservedFolders.contains(folderName)) continue;
             Path root = worldPath(folderName);
             if (!Files.isDirectory(root) || Files.isSymbolicLink(root)) continue;
             if (!PaperWorldFamilyLayout.hasPendingSibling(worldRoot, folderName)) continue;
@@ -459,6 +465,56 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         }
         PaperWorldFamilyLayout.clearFamilyPendingMarkers(worldRoot, destinationFolder);
         Files.deleteIfExists(marker);
+    }
+
+    @Override
+    public List<String> pendingRecoveryEvidence() throws IOException {
+        // Called only for failed startup reconciliation. Do not read marker
+        // payloads, follow symlinks, modify world bytes or persist another index.
+        List<String> evidence = new ArrayList<>();
+        if (Files.exists(workspaceRoot, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            requireSafeWorkspaceRoot();
+            try (var entries = Files.list(workspaceRoot)) {
+                for (Path entry : entries.toList()) {
+                    String name = entry.getFileName().toString();
+                    if (name.endsWith(CREATE_SUFFIX)) {
+                        evidence.add("CREATE marker: " + printableRecoveryPath(entry));
+                    } else if (name.endsWith(DELETE_SUFFIX)) {
+                        evidence.add("DELETE staging: " + printableRecoveryPath(entry));
+                    }
+                }
+            }
+        }
+        if (Files.exists(worldRoot, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            if (!Files.isDirectory(worldRoot) || Files.isSymbolicLink(worldRoot)) {
+                throw new IOException("World container is unsafe for recovery inspection");
+            }
+            try (var entries = Files.list(worldRoot)) {
+                for (Path entry : entries.toList()) {
+                    if (!Files.isDirectory(entry) || Files.isSymbolicLink(entry)) continue;
+                    Path publish = entry.resolve(PENDING_PUBLISH_MARKER);
+                    if (Files.exists(publish, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                        evidence.add("WORLD publication marker: " + printableRecoveryPath(publish));
+                    }
+                    Path dimension = entry.resolve(PaperWorldFamilyLayout.FAMILY_PENDING_MARKER);
+                    if (Files.exists(dimension, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                        evidence.add("DIMENSION publication marker: " + printableRecoveryPath(dimension));
+                    }
+                }
+            }
+        }
+        evidence.sort(String::compareToIgnoreCase);
+        int limit = 24;
+        if (evidence.size() > limit) {
+            List<String> bounded = new ArrayList<>(evidence.subList(0, limit));
+            bounded.add("... " + (evidence.size() - limit) + " additional recovery items not shown");
+            return List.copyOf(bounded);
+        }
+        return List.copyOf(evidence);
+    }
+
+    private static String printableRecoveryPath(Path path) {
+        return path.toString().replace("\r", "\\r").replace("\n", "\\n");
     }
 
     @Override
