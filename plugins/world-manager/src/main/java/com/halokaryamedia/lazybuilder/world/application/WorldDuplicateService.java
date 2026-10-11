@@ -82,12 +82,15 @@ public final class WorldDuplicateService {
             task.committed = true;
             try {
                 files.markPublishedWorldCommitted(task.destination.folderName());
-            } catch (IOException cleanupFailure) {
-                task.publicationMarkerCleanupFailure = cleanupFailure;
+            } catch (IOException | RuntimeException cleanupFailure) {
+                // Registry publication is already durable. Marker cleanup is
+                // recoverable housekeeping, never a reason to delete this world.
+                task.publicationMarkerCleanupFailure = cleanupFailure instanceof IOException io
+                        ? io : new IOException("Could not finalize committed duplicate marker", cleanupFailure);
             }
             return task.destination;
         } catch (IOException | RuntimeException exception) {
-            if (published) {
+            if (published && !task.committed) {
                 try { files.deleteWorld(task.destination); }
                 catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
             }
@@ -116,8 +119,9 @@ public final class WorldDuplicateService {
             try {
                 files.markPublishedWorldCommitted(task.destination.folderName());
                 task.publicationMarkerCleanupFailure = null;
-            } catch (IOException ignored) {
+            } catch (IOException | RuntimeException ignored) {
                 // Startup reconciliation will clear the marker from a persisted world.
+                // A marker failure after commit cannot downgrade the duplicate.
             }
         }
         task.close();

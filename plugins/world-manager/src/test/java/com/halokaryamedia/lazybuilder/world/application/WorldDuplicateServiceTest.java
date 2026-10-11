@@ -60,6 +60,29 @@ class WorldDuplicateServiceTest {
         assertFalse(fixture.operations.isBusy(fixture.source.id()));
     }
 
+    @Test
+    void committedDuplicateSurvivesUncheckedMarkerCleanupFailures() {
+        Fixture fixture = fixture(false);
+        fixture.files.markerRuntimeFailuresRemaining = 2;
+
+        WorldDuplicateService.DuplicateTask task = fixture.service.prepare(
+                fixture.source.id(), "BuildCopy", "Build Copy");
+        WorldRecord copy = fixture.service.executeFilePhase(task);
+
+        assertTrue(task.committed());
+        assertTrue(task.publicationMarkerCleanupFailure() != null);
+        assertTrue(fixture.files.published, "committed duplicate must not be deleted on marker cleanup fault");
+        assertEquals(copy, fixture.registry.find(copy.id()).orElseThrow());
+        assertEquals(2, fixture.persistence.saved.size());
+
+        // Even if the explicit final retry fails, the persisted world stays
+        // intact and startup marker reconciliation remains available.
+        fixture.service.finish(task);
+        assertTrue(fixture.files.published);
+        assertEquals(copy, fixture.registry.find(copy.id()).orElseThrow());
+        assertFalse(fixture.operations.isBusy(fixture.source.id()));
+    }
+
     private static Fixture fixture(boolean loaded) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord source = new WorldRecord(
@@ -113,6 +136,12 @@ class WorldDuplicateServiceTest {
     private static final class FakeFiles implements WorldFileRepository {
         private WorldCopyProfile lastProfile;
         private boolean published;
+        private int markerRuntimeFailuresRemaining;
+        @Override public void markPublishedWorldCommitted(String folder) {
+            if (markerRuntimeFailuresRemaining-- > 0) {
+                throw new IllegalStateException("injected post-commit marker cleanup failure");
+            }
+        }
         @Override public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) {
             lastProfile = profile;
             return Path.of("work", operationId.toString()).toAbsolutePath();
