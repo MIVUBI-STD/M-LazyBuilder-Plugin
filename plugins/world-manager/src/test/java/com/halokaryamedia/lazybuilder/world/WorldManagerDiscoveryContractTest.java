@@ -21,6 +21,17 @@ class WorldManagerDiscoveryContractTest {
     }
 
     @Test
+    void orphanPaperDimensionIsNotTreatedAsStandaloneWorld() throws Exception {
+        Path root = Files.createDirectory(tempDir.resolve("orphan-dimension"));
+        Path nether = root.resolve("Unfinished_nether");
+        Path dimension = nether.resolve("DIM-1");
+        Files.createDirectories(dimension);
+        Files.writeString(nether.resolve("level.dat"), "metadata");
+        assertTrue(WorldManager.looksLikeDimensionFolder(root, "Unfinished_nether"));
+        assertFalse(WorldManager.looksLikeDimensionFolder(root, "Independent"));
+    }
+
+    @Test
     void ordinaryFileIsNotDiscoverableAsWorldDirectory() throws Exception {
         Path root = Files.createDirectory(tempDir.resolve("worlds-file"));
         Path file = root.resolve("Build");

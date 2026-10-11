@@ -340,6 +340,16 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 }
 
                 if (Files.notExists(world)) {
+                    // A missing root is not proof that the entire world family
+                    // is absent. Keep Create recovery authority if surviving
+                    // Nether/End folders could still contain user world data.
+                    if (Files.exists(worldPath(folderName + PAPER_NETHER_SUFFIX),
+                            java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                            || Files.exists(worldPath(folderName + PAPER_END_SUFFIX),
+                            java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                        preserved++;
+                        continue;
+                    }
                     Files.delete(marker);
                     rolledBack++;
                     continue;

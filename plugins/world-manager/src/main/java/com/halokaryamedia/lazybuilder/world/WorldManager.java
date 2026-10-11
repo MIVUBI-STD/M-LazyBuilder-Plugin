@@ -341,7 +341,9 @@ public final class WorldManager {
 
                 World loaded = plugin.getServer().getWorld(folderName);
                 if (loaded != null && loaded.getEnvironment() != World.Environment.NORMAL) continue;
-                if (loaded == null && looksLikeDimensionFolder(worldsRoot, folderName)) continue;
+                // A surviving dimension is not a new standalone managed world,
+                // even when its base root is missing after an interrupted move.
+                if (looksLikeDimensionFolder(worldsRoot, folderName)) continue;
 
                 WorldRecord discoveredWorld = new WorldRecord(
                         WorldId.create(),
@@ -382,7 +384,7 @@ public final class WorldManager {
         }
     }
 
-    private static boolean looksLikeDimensionFolder(Path worldsRoot, String folderName) {
+    static boolean looksLikeDimensionFolder(Path worldsRoot, String folderName) {
         String normalized = folderName.toLowerCase(Locale.ROOT);
         String baseName;
         if (normalized.endsWith("_nether")) {
@@ -393,6 +395,10 @@ public final class WorldManager {
             return false;
         }
         if (baseName.isBlank()) return false;
+        Path sibling = worldsRoot.resolve(folderName);
+        String dimensionDirectory = normalized.endsWith("_nether") ? "DIM-1" : "DIM1";
+        Path dimension = sibling.resolve(dimensionDirectory);
+        if (Files.isDirectory(dimension) && !Files.isSymbolicLink(dimension)) return true;
         Path levelDat = worldsRoot.resolve(baseName).resolve("level.dat");
         return Files.isRegularFile(levelDat) && !Files.isSymbolicLink(levelDat);
     }

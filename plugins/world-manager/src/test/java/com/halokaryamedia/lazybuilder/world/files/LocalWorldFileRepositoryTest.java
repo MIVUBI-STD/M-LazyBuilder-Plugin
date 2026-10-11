@@ -138,6 +138,25 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void createRecoveryPreservesMarkerWhenOnlyDimensionDataSurvives() throws Exception {
+        Path worlds = tempDir.resolve("orphan-dimension-worlds");
+        Path work = tempDir.resolve("orphan-dimension-work");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        repository.markCreatePending(UUID.randomUUID(), "Unfinished");
+        Path nether = worlds.resolve("Unfinished_nether/DIM-1/region");
+        Files.createDirectories(nether);
+        Files.writeString(nether.resolve("r.0.0.mca"), "IRREPLACEABLE");
+
+        WorldFileRepository.CreateRecovery outcome = repository.recoverCreateTransactions(List.of());
+        assertEquals(0, outcome.rolledBack());
+        assertEquals(1, outcome.preserved());
+        assertEquals("IRREPLACEABLE", Files.readString(nether.resolve("r.0.0.mca")));
+        try (var markers = Files.list(work)) {
+            assertTrue(markers.anyMatch(p -> p.getFileName().toString().endsWith(".create")));
+        }
+    }
+
+    @Test
     void createRecoveryClearsMarkerWhenRuntimeNeverCreatedFolder() throws Exception {
         Path worldRoot = tempDir.resolve("worlds");
         Path workRoot = tempDir.resolve("work");
