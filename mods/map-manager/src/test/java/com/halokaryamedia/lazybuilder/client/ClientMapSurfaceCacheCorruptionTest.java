@@ -26,6 +26,31 @@ class ClientMapSurfaceCacheCorruptionTest {
     }
 
     @Test
+    void rejectsUnknownFutureFormatRatherThanTreatingItAsEmpty() throws Exception {
+        Path region = tempDir.resolve("future.surface.gz");
+        try (DataOutputStream out = output(region)) {
+            out.writeInt(6);
+            out.writeInt(0);
+        }
+        assertThrows(IllegalStateException.class, () -> MapSurfaceRegionStore.read(region));
+    }
+
+    @Test
+    void rejectsRepeatedRegionIndices() throws Exception {
+        Path region = tempDir.resolve("duplicate-index.surface.gz");
+        try (DataOutputStream out = output(region)) {
+            out.writeInt(5);
+            out.writeInt(2);
+            for (int i = 0; i < 2; i++) {
+                out.writeShort(7);
+                out.writeInt(0xFF223344);
+                out.writeInt(72);
+            }
+        }
+        assertThrows(IllegalStateException.class, () -> MapSurfaceRegionStore.read(region));
+    }
+
+    @Test
     void rejectsRegionIndexBeyondCapacity() throws Exception {
         Path region = tempDir.resolve("bad-index.surface.gz");
         try (DataOutputStream out = output(region)) {

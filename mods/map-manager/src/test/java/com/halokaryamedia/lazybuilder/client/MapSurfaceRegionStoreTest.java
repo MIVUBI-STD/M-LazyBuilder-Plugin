@@ -67,6 +67,36 @@ final class MapSurfaceRegionStoreTest {
     }
 
     @Test
+    void legacyTemporaryFileIsNeverOverwritten() throws Exception {
+        Path target = tempDir.resolve("cache.surface.gz");
+        Path previousTemp = tempDir.resolve("cache.surface.gz.tmp");
+        Files.writeString(previousTemp, "important pre-existing bytes");
+        ClientMapSurfaceCache.RegionSnapshot snapshot = new ClientMapSurfaceCache.RegionSnapshot(
+                new int[]{0}, new int[]{0xFF102030}, new int[]{72}, 1L);
+        assertTrue(MapSurfaceRegionStore.writeWithRetry(target, snapshot));
+        assertEquals("important pre-existing bytes", Files.readString(previousTemp));
+        assertEquals(72, MapSurfaceRegionStore.read(target).heights()[0]);
+    }
+
+    @Test
+    void mapRegionSymlinkIsNeverReadOrReplaced() throws Exception {
+        Path source = tempDir.resolve("important-user-file");
+        Files.writeString(source, "important");
+        Path target = tempDir.resolve("danger.surface.gz");
+        try {
+            Files.createSymbolicLink(target, source);
+        } catch (UnsupportedOperationException | java.io.IOException unsupported) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "Symlinks unavailable");
+        }
+        ClientMapSurfaceCache.RegionSnapshot snapshot = new ClientMapSurfaceCache.RegionSnapshot(
+                new int[]{1}, new int[]{0xFF112233}, new int[]{50}, 2L);
+        assertTrue(!MapSurfaceRegionStore.writeWithRetry(target, snapshot));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> MapSurfaceRegionStore.read(target));
+        assertEquals("important", Files.readString(source));
+    }
+
+    @Test
     void regionFileUsesSignedRegionCoordinates() {
         long key = ((long) -3 << 32) ^ (12 & 0xFFFFFFFFL);
         Path file = MapSurfaceRegionStore.regionFile(tempDir, key);

@@ -295,7 +295,7 @@ public final class ClientMapSurfaceCache {
         long generation = scopeGeneration;
         for (Map.Entry<Long, RegionData> entry : regions.entrySet()) {
             RegionData region = entry.getValue();
-            if (region.isEmpty() || !region.shouldQueueWrite()) continue;
+            if (region.isEmpty() || !region.readyForPersistence() || !region.shouldQueueWrite()) continue;
             RegionSnapshot snapshot = region.snapshot();
             enqueueRegionWrite(directory, entry.getKey(), region, snapshot, generation);
         }
@@ -444,8 +444,7 @@ public final class ClientMapSurfaceCache {
 
     private void finishActiveCompletedLoad() {
         if (activeCompletedRegion != null) {
-            activeCompletedRegion.loaded = true;
-            activeCompletedRegion.loadScheduled = false;
+            activeCompletedRegion.markLoadedAfterMerge();
         }
         activeCompletedSnapshot = null;
         activeCompletedRegion = null;
@@ -471,7 +470,7 @@ public final class ClientMapSurfaceCache {
             if (regions.size() <= MAX_LOADED_REGIONS) break;
             RegionData region = entry.getValue();
             if (region == activeCompletedRegion) continue;
-            if (region.isDirty() && directory != null && region.shouldQueueWrite()) {
+            if (region.readyForPersistence() && directory != null && region.shouldQueueWrite()) {
                 enqueueRegionWrite(directory, entry.getKey(), region, region.snapshot(), generation);
             }
         }
@@ -508,7 +507,9 @@ public final class ClientMapSurfaceCache {
             RegionSnapshot snapshot,
             long generation
     ) {
-        if (ioExecutor.isShutdown() || snapshot.size() == 0) return;
+        // Disk read must finish before any write is authorized. Otherwise a
+        // partial live-sampled region could replace unexplored cached columns.
+        if (ioExecutor.isShutdown() || snapshot.size() == 0 || !region.readyForPersistence()) return;
         if (!region.markWriteQueued(snapshot.revision)) return;
 
         Path destination = MapSurfaceRegionStore.regionFile(directory, regionKey);
@@ -784,6 +785,17 @@ public final class ClientMapSurfaceCache {
 
         boolean isDirty() {
             return revision > persistedRevision;
+        }
+
+        boolean readyForPersistence() {
+            // An unknown/corrupted disk region is never eligible for overwrite.
+            // Once a valid read has merged, local sampled deltas may be saved.
+            return loaded && isDirty();
+        }
+
+        void markLoadedAfterMerge() {
+            loaded = true;
+            loadScheduled = false;
         }
 
         boolean shouldQueueWrite() {

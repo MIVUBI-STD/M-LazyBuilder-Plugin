@@ -26,6 +26,19 @@ class ClientMapSurfaceCacheTest {
     }
 
     @Test
+    void localSamplesMustNotReplaceRegionBeforeDiskReadCompletes() {
+        ClientMapSurfaceCache.RegionData region = new ClientMapSurfaceCache.RegionData();
+        region.put(7, 0xFF112233, 70);
+        assertFalse(region.readyForPersistence(),
+                "a partial in-memory region cannot overwrite unexplored disk columns");
+        region.putIfAbsent(8, 0xFF445566, 80);
+        assertFalse(region.readyForPersistence());
+        region.markLoadedAfterMerge();
+        assertTrue(region.readyForPersistence(),
+                "after disk merge the combined region can be safely persisted");
+    }
+
+    @Test
     void successfulWriteOnlyPersistsTheWrittenRevision() {
         ClientMapSurfaceCache.RegionData region = new ClientMapSurfaceCache.RegionData();
         region.put(7, 0xFF112233, 80);
