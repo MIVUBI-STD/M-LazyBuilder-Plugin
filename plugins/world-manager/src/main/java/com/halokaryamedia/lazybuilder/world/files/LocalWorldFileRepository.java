@@ -469,19 +469,23 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
     @Override
     public List<String> pendingRecoveryEvidence() throws IOException {
-        // Called only for failed startup reconciliation. Do not read marker
-        // payloads, follow symlinks, modify world bytes or persist another index.
-        List<String> evidence = new ArrayList<>();
+        // A failed-startup diagnostic only: bounded memory, no metadata reads,
+        // filesystem mutations, symlink traversal, or persistent second index.
+        final int maxEntries = 24;
+        List<String> evidence = new ArrayList<>(maxEntries + 1);
+        int omitted = 0;
         if (Files.exists(workspaceRoot, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
             requireSafeWorkspaceRoot();
             try (var entries = Files.list(workspaceRoot)) {
-                for (Path entry : entries.toList()) {
+                var iterator = entries.iterator();
+                while (iterator.hasNext()) {
+                    Path entry = iterator.next();
                     String name = entry.getFileName().toString();
-                    if (name.endsWith(CREATE_SUFFIX)) {
-                        evidence.add("CREATE marker: " + printableRecoveryPath(entry));
-                    } else if (name.endsWith(DELETE_SUFFIX)) {
-                        evidence.add("DELETE staging: " + printableRecoveryPath(entry));
-                    }
+                    String label = name.endsWith(CREATE_SUFFIX) ? "CREATE marker: "
+                            : name.endsWith(DELETE_SUFFIX) ? "DELETE staging: " : null;
+                    if (label == null) continue;
+                    if (evidence.size() < maxEntries) evidence.add(label + printableRecoveryPath(entry));
+                    else omitted++;
                 }
             }
         }
@@ -490,26 +494,27 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 throw new IOException("World container is unsafe for recovery inspection");
             }
             try (var entries = Files.list(worldRoot)) {
-                for (Path entry : entries.toList()) {
+                var iterator = entries.iterator();
+                while (iterator.hasNext()) {
+                    Path entry = iterator.next();
                     if (!Files.isDirectory(entry) || Files.isSymbolicLink(entry)) continue;
                     Path publish = entry.resolve(PENDING_PUBLISH_MARKER);
                     if (Files.exists(publish, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                        evidence.add("WORLD publication marker: " + printableRecoveryPath(publish));
+                        if (evidence.size() < maxEntries) {
+                            evidence.add("WORLD publication marker: " + printableRecoveryPath(publish));
+                        } else omitted++;
                     }
                     Path dimension = entry.resolve(PaperWorldFamilyLayout.FAMILY_PENDING_MARKER);
                     if (Files.exists(dimension, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                        evidence.add("DIMENSION publication marker: " + printableRecoveryPath(dimension));
+                        if (evidence.size() < maxEntries) {
+                            evidence.add("DIMENSION publication marker: " + printableRecoveryPath(dimension));
+                        } else omitted++;
                     }
                 }
             }
         }
         evidence.sort(String::compareToIgnoreCase);
-        int limit = 24;
-        if (evidence.size() > limit) {
-            List<String> bounded = new ArrayList<>(evidence.subList(0, limit));
-            bounded.add("... " + (evidence.size() - limit) + " additional recovery items not shown");
-            return List.copyOf(bounded);
-        }
+        if (omitted > 0) evidence.add("... " + omitted + " additional recovery items not shown");
         return List.copyOf(evidence);
     }
 
