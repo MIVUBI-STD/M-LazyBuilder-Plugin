@@ -1,7 +1,9 @@
-use crate::engine::{core_modules, java_runtime, paper_provider, runtime_updates, server_config, workspace_registry};
-use serde_json::Value;
-use std::fs;
-use std::path::{Path, PathBuf};
+use crate::engine::{core_modules, java_runtime, paper_provider, persistence, runtime_updates, server_config, workspace_registry};
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::Path;
+#[cfg(test)]
+use std::path::PathBuf;
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -100,10 +102,9 @@ fn resolve_or_provision_paper(workspace: &Path) -> Result<Option<u64>, String> {
     // adopted servers where the build number may be unknown. Updating Paper is an
     // explicit runtime-update action, never a side effect of Prepare Server.
     if paper.is_file() {
-        if manifest.is_file() {
-            let text = fs::read_to_string(&manifest).map_err(|e| e.to_string())?;
-            let value: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-            return Ok(value.get("paperBuild").and_then(Value::as_u64));
+        if persistence::metadata_entry_exists(&manifest, "workspace manifest")? {
+            // WorkspaceRegistry is the sole schema-validation and recovery owner.
+            return Ok(workspace_registry::manifest(workspace)?.paper_build.map(u64::from));
         }
         return Ok(None);
     }
@@ -113,63 +114,51 @@ fn resolve_or_provision_paper(workspace: &Path) -> Result<Option<u64>, String> {
 
 fn ensure_server_properties(workspace: &Path) -> Result<(), String> {
     let path = workspace.join("server").join("server.properties");
-    if path.is_file() {
+    if persistence::metadata_entry_exists(&path, "server.properties")? {
+        // Never accept a user-controlled symlink, reparse point or directory
+        // as a valid server.properties. In particular, do not follow it.
+        persistence::safe_path::ensure_regular_file(&path, "server.properties")?;
         return Ok(());
     }
     let text = "# Managed baseline created by LazyBuilder\nserver-port=25565\nonline-mode=true\nenable-command-block=true\nspawn-protection=0\nview-distance=10\nsimulation-distance=10\n";
-    fs::write(path, text).map_err(|e| e.to_string())
+    let mut file = OpenOptions::new().write(true).create_new(true).open(&path)
+        .map_err(|e| format!("Could not create new server.properties without replacing data: {e}"))?;
+    file.write_all(text.as_bytes()).map_err(|e| e.to_string())?;
+    file.sync_all().map_err(|e| e.to_string())
 }
 
 fn update_paper_manifest_if_known(workspace: &Path, paper_build: Option<u64>) -> Result<(), String> {
-    let Some(paper_build) = paper_build else {
-        // Adopted/unknown Paper builds remain unknown until the explicit Paper
-        // update path establishes an authoritative build number.
+    let Some(build) = paper_build else {
+        // Unknown adopted Paper builds must not modify user metadata.
         return Ok(());
     };
-
-    let path = workspace.join("tools").join("lazybuilder").join("config").join("workspace.json");
-    let text = fs::read_to_string(&path).map_err(|e| e.to_string())?;
-    let mut value: Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
-    if value.get("paperBuild").and_then(Value::as_u64) == Some(paper_build) {
+    let current = workspace_registry::manifest(workspace)?;
+    if current.paper_build.map(u64::from) == Some(build) {
         return Ok(());
     }
-    value["paperBuild"] = Value::from(paper_build);
-    write_json_atomic(&path, &value)
-}
-
-fn write_json_atomic(path: &Path, value: &Value) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    let temporary = PathBuf::from(format!("{}.tmp", path.display()));
-    let backup = PathBuf::from(format!("{}.previous", path.display()));
-    fs::write(
-        &temporary,
-        serde_json::to_string_pretty(value).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-    if path.exists() {
-        let _ = fs::remove_file(&backup);
-        fs::rename(path, &backup).map_err(|e| e.to_string())?;
-        match fs::rename(&temporary, path) {
-            Ok(()) => {
-                let _ = fs::remove_file(backup);
-                Ok(())
-            }
-            Err(error) => {
-                let _ = fs::rename(&backup, path);
-                Err(error.to_string())
-            }
-        }
-    } else {
-        fs::rename(temporary, path).map_err(|e| e.to_string())
-    }
+    // One canonical manifest writer; no separate atomic/rollback implementation.
+    workspace_registry::update_paper_build(workspace, build)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn valid_manifest(paper_build: Option<u32>) -> String {
+        serde_json::json!({
+            "schemaVersion": 1,
+            "workspaceId": "test-workspace",
+            "name": "Test Server",
+            "minecraftVersion": "1.21.4",
+            "serverPlatform": "paper",
+            "paperBuild": paper_build,
+            "worldManagerVersion": null,
+            "utilitiesManagerVersion": null,
+            "createdUnixSeconds": 1,
+            "lastOpenedUnixSeconds": 1
+        }).to_string()
+    }
 
     fn test_root(label: &str) -> PathBuf {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
@@ -186,7 +175,7 @@ mod tests {
         fs::write(server.join("paper.jar"), b"adopted-paper").unwrap();
         fs::write(
             config.join("workspace.json"),
-            r#"{"paperBuild":null,"worldManagerVersion":null,"utilitiesManagerVersion":null}"#,
+            valid_manifest(None),
         )
         .unwrap();
 
@@ -203,7 +192,7 @@ mod tests {
         let config = workspace.join("tools").join("lazybuilder").join("config");
         fs::create_dir_all(&config).unwrap();
         let manifest = config.join("workspace.json");
-        fs::write(&manifest, r#"{"paperBuild":123}"#).unwrap();
+        fs::write(&manifest, valid_manifest(Some(123))).unwrap();
 
         update_paper_manifest_if_known(&workspace, Some(123)).unwrap();
         let first = fs::read_to_string(&manifest).unwrap();
@@ -211,6 +200,49 @@ mod tests {
         let second = fs::read_to_string(&manifest).unwrap();
         assert_eq!(first, second);
 
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn paper_build_metadata_keeps_existing_workspace_identity() {
+        let workspace = test_root("paper-build-preserves-identity");
+        let config = workspace.join("tools").join("lazybuilder").join("config");
+        fs::create_dir_all(&config).unwrap();
+        let manifest = config.join("workspace.json");
+        fs::write(&manifest, valid_manifest(None)).unwrap();
+        update_paper_manifest_if_known(&workspace, Some(123)).unwrap();
+        let persisted: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&manifest).unwrap()).unwrap();
+        assert_eq!(persisted["paperBuild"], 123);
+        assert_eq!(persisted["workspaceId"], "test-workspace");
+        assert_eq!(persisted["name"], "Test Server");
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn existing_server_properties_are_never_overwritten() {
+        let workspace = test_root("properties-preserved");
+        let server = workspace.join("server");
+        fs::create_dir_all(&server).unwrap();
+        let path = server.join("server.properties");
+        fs::write(&path, "custom=user-owned\n").unwrap();
+        ensure_server_properties(&workspace).unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "custom=user-owned\n");
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symbolic_link_server_properties_is_rejected_without_touching_target() {
+        use std::os::unix::fs::symlink;
+        let workspace = test_root("properties-symlink-reject");
+        let server = workspace.join("server");
+        fs::create_dir_all(&server).unwrap();
+        let outside = workspace.join("important.txt");
+        fs::write(&outside, "PRIVATE DATA").unwrap();
+        symlink(&outside, server.join("server.properties")).unwrap();
+        assert!(ensure_server_properties(&workspace).is_err());
+        assert_eq!(fs::read_to_string(&outside).unwrap(), "PRIVATE DATA");
         let _ = fs::remove_dir_all(workspace);
     }
 
