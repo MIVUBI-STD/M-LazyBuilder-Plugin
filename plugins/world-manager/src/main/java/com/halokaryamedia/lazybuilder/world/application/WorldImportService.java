@@ -69,9 +69,10 @@ public final class WorldImportService {
             try {
                 return imports.inspectArtifact(artifactName);
             } catch (IOException | RuntimeException exception) {
-                try { imports.deleteArtifact(artifactName); }
-                catch (IOException cleanupFailure) { exception.addSuppressed(cleanupFailure); }
-                throw new IllegalStateException("Could not inspect uploaded world", exception);
+                // Inspection is read-only. Invalid metadata or a transient read
+                // failure cannot authorize deletion of a user's uploaded archive.
+                // The explicit Discard action owns any destructive cleanup.
+                throw new IllegalStateException("Could not inspect uploaded world; uploaded file was preserved", exception);
             }
         } finally {
             releaseArtifact(artifactName, inspectionId);

@@ -259,7 +259,7 @@ class WorldImportServiceTest {
     }
 
     @Test
-    void failedInspectionDiscardsUnusableUploadedArtifact() {
+    void failedInspectionPreservesUploadedArtifactUntilExplicitDiscard() {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
         FakeFiles files = new FakeFiles(tempDir);
@@ -273,7 +273,12 @@ class WorldImportServiceTest {
                 runtimeStore, updates, converter, new ConversionJobCoordinator()
         );
 
-        assertThrows(IllegalStateException.class, () -> service.inspect("Broken.zip"));
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> service.inspect("Broken.zip"));
+        assertTrue(failure.getMessage().contains("preserved"));
+        assertTrue(imports.deletedArtifacts.isEmpty(),
+                "metadata inspection failure must never delete the user's uploaded world");
+        service.discard("Broken.zip");
         assertEquals(List.of("Broken.zip"), imports.deletedArtifacts);
     }
 
