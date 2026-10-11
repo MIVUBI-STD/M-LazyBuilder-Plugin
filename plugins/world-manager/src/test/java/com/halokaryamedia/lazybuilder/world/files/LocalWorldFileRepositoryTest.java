@@ -469,6 +469,51 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void committedDeleteCannotRemoveNewWorldCreatedAtOriginalFolder() throws Exception {
+        Path worlds = tempDir.resolve("delete-collision-worlds");
+        Path work = tempDir.resolve("delete-collision-work");
+        Files.createDirectories(worlds.resolve("Build"));
+        Files.writeString(worlds.resolve("Build/level.dat"), "old world");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        Path staged = repository.stageDelete(world(), UUID.randomUUID());
+        repository.markDeleteCommitted(staged, world());
+
+        Files.createDirectories(worlds.resolve("Build"));
+        Files.writeString(worlds.resolve("Build/level.dat"), "NEW USER WORLD");
+        Path sibling = worlds.resolve("Build_nether");
+        Files.createDirectories(sibling.resolve("DIM-1/region"));
+        Files.writeString(sibling.resolve("level.dat"), "new dimension");
+        Files.writeString(sibling.resolve("DIM-1/region/r.0.0.mca"), "new data");
+
+        WorldFileRepository.DeleteRecovery recovery = repository.recoverDeleteWorkspaces(List.of());
+        assertEquals(0, recovery.discarded());
+        assertEquals(1, recovery.preserved());
+        assertEquals("old world", Files.readString(staged.resolve("level.dat")));
+        assertEquals("NEW USER WORLD", Files.readString(worlds.resolve("Build/level.dat")));
+        assertEquals("new data", Files.readString(sibling.resolve("DIM-1/region/r.0.0.mca")));
+    }
+
+    @Test
+    void ambiguousDimensionFolderCannotBeDeletedAsOwnedSibling() throws Exception {
+        Path worlds = tempDir.resolve("delete-ambiguous-dimension-worlds");
+        Path work = tempDir.resolve("delete-ambiguous-dimension-work");
+        Files.createDirectories(worlds.resolve("Build"));
+        Files.writeString(worlds.resolve("Build/level.dat"), "root");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        Path staged = repository.stageDelete(world(), UUID.randomUUID());
+        repository.markDeleteCommitted(staged, world());
+        Path sibling = worlds.resolve("Build_nether");
+        Files.createDirectories(sibling);
+        Files.writeString(sibling.resolve("level.dat"), "POSSIBLE STANDALONE WORLD");
+
+        WorldFileRepository.DeleteRecovery result = repository.recoverDeleteWorkspaces(List.of());
+        assertEquals(0, result.discarded());
+        assertEquals(1, result.preserved());
+        assertEquals("root", Files.readString(staged.resolve("level.dat")));
+        assertEquals("POSSIBLE STANDALONE WORLD", Files.readString(sibling.resolve("level.dat")));
+    }
+
+    @Test
     void stagedDeletePreservesDimensionMetadataUntilCommitOrRollback() throws Exception {
         Path worlds = tempDir.resolve("delete-worlds");
         Path root = worlds.resolve("Build");

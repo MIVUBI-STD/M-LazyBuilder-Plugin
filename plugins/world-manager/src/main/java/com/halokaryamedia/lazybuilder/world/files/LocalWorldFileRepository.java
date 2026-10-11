@@ -292,6 +292,15 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (!validDeleteCommitMarker(target, folderName)) {
             throw new IOException("Delete staging has no valid durable commit marker; preserved: " + target);
         }
+        // A newly present world root could belong to unrelated user content.
+        // Never delete its identically named dimension siblings on the strength
+        // of an older staged Delete, even when the old commit marker is valid.
+        if (Files.exists(worldPath(folderName), java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Delete cleanup refused a conflicting world root: " + folderName);
+        }
+        if (PaperWorldFamilyLayout.hasUnsafeCommittedSibling(worldRoot, folderName)) {
+            throw new IOException("Delete cleanup refused unsafe or ambiguous dimension folders: " + folderName);
+        }
         // The staged root remains recovery evidence until the last owned
         // dimension cleanup completes. An error leaves it retryable at startup.
         PaperWorldFamilyLayout.deleteFamilySiblings(worldRoot, folderName);
