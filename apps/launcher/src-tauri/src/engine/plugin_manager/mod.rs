@@ -285,7 +285,7 @@ impl PluginManagerState {
         }
 
         let rollback = backup_directory(&workspace).join(format!(".{}.problem.rollback.jar", normalize_id(problem_id)));
-        publish_backup(source, &rollback)?;
+        publish_recovery_backup(source, &rollback)?;
         if let Err(error) = fs::remove_file(source) {
             let restore = restore_from_backup(&rollback, source);
             return match restore {
@@ -331,7 +331,7 @@ impl PluginManagerState {
         for (index, item) in existing.iter().enumerate() {
             if index == keep_index { continue; }
             let backup = backup_dir.join(format!(".{canonical_id}.duplicate-{index}.rollback.jar"));
-            publish_backup(&item.path, &backup)?;
+            publish_recovery_backup(&item.path, &backup)?;
             removals.push((item.path.clone(), backup));
         }
 
@@ -805,6 +805,19 @@ fn publish_backup(source: &Path, destination: &Path) -> Result<(), String> {
     replace_file(&staged, destination)
 }
 
+// Short-lived duplicate/problem recovery backups are deliberately not reusable.
+// A failed rollback leaves these files behind; a later retry must never replace
+// the remaining recovery evidence with bytes from a different operation.
+fn publish_recovery_backup(source: &Path, destination: &Path) -> Result<(), String> {
+    if destination.exists() {
+        return Err(format!(
+            "Previous plugin recovery backup still exists at {}. Resolve that recovery before retrying.",
+            destination.display()
+        ));
+    }
+    publish_backup(source, destination)
+}
+
 fn move_file_verified(source: &Path, destination: &Path) -> Result<(), String> {
     match fs::rename(source, destination) {
         Ok(()) => Ok(()),
@@ -898,7 +911,7 @@ fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstall
 mod tests {
     use super::{
         dependency_problem_from_scan, parse_paper_dependencies, read_metadata,
-        restore_from_backup, PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
+        publish_recovery_backup, restore_from_backup, PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
     };
     use std::{fs, path::PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1006,6 +1019,23 @@ mod tests {
         restore_from_backup(&backup, &destination).unwrap();
         assert_eq!(fs::read(&destination).unwrap(), b"verified previous plugin");
         assert_eq!(fs::read(&backup).unwrap(), b"verified previous plugin");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn retry_never_overwrites_an_unresolved_recovery_backup() {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-plugin-recovery-collision-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let original = directory.join("original.jar");
+        let backup = directory.join("recovery.jar");
+        fs::write(&original, b"new attempt").unwrap();
+        fs::write(&backup, b"only surviving previous version").unwrap();
+        assert!(publish_recovery_backup(&original, &backup).is_err());
+        assert_eq!(fs::read(&backup).unwrap(), b"only surviving previous version");
         let _ = fs::remove_dir_all(directory);
     }
 
