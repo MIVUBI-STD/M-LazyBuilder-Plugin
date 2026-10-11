@@ -202,6 +202,25 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void malformedMarkerOnRegisteredWorldIsPreservedUntilReconciliation() throws Exception {
+        Path worldRoot = tempDir.resolve("worlds-invalid-publish-marker");
+        Path workRoot = tempDir.resolve("work-invalid-publish-marker");
+        Path folder = worldRoot.resolve("Registered");
+        Files.createDirectories(folder);
+        Files.writeString(folder.resolve("level.dat"), "important world");
+        Files.writeString(folder.resolve(".lazybuilder-publish-pending"), "invalid marker");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
+        WorldRecord registered = new WorldRecord(WorldId.create(), "Registered", "Registered",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        WorldFileRepository.PublishRecovery result =
+                repository.recoverPublishedWorlds(List.of(registered));
+        assertEquals(0, result.finalized());
+        assertEquals(1, result.preserved());
+        assertEquals("important world", Files.readString(folder.resolve("level.dat")));
+        assertTrue(Files.exists(folder.resolve(".lazybuilder-publish-pending")));
+    }
+
+    @Test
     void legacyEmptyPublishMarkerIsPreservedInsteadOfDeletingUnregisteredWorld() throws Exception {
         Path worldRoot = tempDir.resolve("worlds-legacy-publish");
         Path workRoot = tempDir.resolve("work-legacy-publish");

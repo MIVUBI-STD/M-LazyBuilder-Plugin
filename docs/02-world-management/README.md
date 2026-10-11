@@ -397,6 +397,8 @@ World Control V7 carries the current World Manager request/result, settings/expo
 
 Map Action V5 correlates request-bound responses so stale teleport/export/errors cannot resolve another operation. Request id `0` is reserved for authoritative server-pushed current-world transitions; client requests use positive correlation ids. Current-world pushes still include an explicit clear when the player enters an unmanaged world.
 
+## Safety rules
+
 ### Unresolved startup world transactions
 
 Startup recovery uses persisted registry membership to finalize committed worlds.
@@ -407,8 +409,6 @@ this ambiguity is resolved explicitly; it does **not** delete the folder based
 solely on a transaction marker. Absent world folders may still have empty
 transaction markers cleared. Previously requested committed Delete operations
 retain their separate delete-recovery policy.
-
-## Safety rules
 
 - Server plugin is authoritative.
 - Paper world lifecycle/settings calls execute on the primary server thread.

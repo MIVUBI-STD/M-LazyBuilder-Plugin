@@ -414,6 +414,12 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                 String folderName = child.getFileName().toString();
                 PublishMarkerIdentity markerIdentity = readPublishMarker(marker, folderName);
                 if (managedFolders.contains(folderName)) {
+                    if (!markerIdentity.valid()) {
+                        // Registry identity alone does not justify deleting a
+                        // malformed pending marker. Preserve for reconciliation.
+                        preserved++;
+                        continue;
+                    }
                     PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, true);
                     PaperWorldFamilyLayout.clearFamilyPendingMarkers(worldRoot, folderName);
                     Files.delete(marker);
