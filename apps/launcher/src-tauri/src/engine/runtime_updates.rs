@@ -127,7 +127,9 @@ pub fn ensure_core_current(resource_dir: Option<&Path>) -> Result<(), String> {
     }
 
     transaction.finalize()?;
-    core_modules::remove_stale_core_jars(&workspace)?;
+    core_modules::remove_stale_core_jars(&workspace).map_err(|error|
+        format!("Core modules committed, but retiring obsolete core JARs requires attention: {error}")
+    )?;
     Ok(())
 }
 

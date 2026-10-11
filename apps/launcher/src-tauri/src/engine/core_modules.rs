@@ -105,15 +105,18 @@ pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<C
         )?,
     ];
 
+    let marker_path = backups.join(".core-sync-pending");
+    // Even a byte-identical installed pair is not evidence that a previous
+    // interrupted sync completed. Refuse to bypass its durable marker.
+    if entry_exists(&marker_path)? {
+        return Err(format!(
+            "Unresolved core module transaction at {}; preserve existing recovery files and reconcile before retrying.",
+            marker_path.display()
+        ));
+    }
     let any_update = modules.iter().any(|module| module.needs_update);
-    let pending_marker = any_update.then(|| backups.join(".core-sync-pending"));
+    let pending_marker = any_update.then_some(marker_path);
     if let Some(marker) = &pending_marker {
-        if entry_exists(marker)? {
-            return Err(format!(
-                "Unresolved core module transaction at {}; preserve existing recovery files and reconcile before retrying.",
-                marker.display()
-            ));
-        }
         // Preflight every staging/swap path before touching the active JARs.
         for module in modules.iter().filter(|module| module.needs_update) {
             for path in [
@@ -209,52 +212,47 @@ pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<C
 /// single runtime owner and must never coexist as multiple Paper plugin JARs.
 pub fn remove_stale_core_jars(workspace: &Path) -> Result<(), String> {
     let plugins = workspace.join("server").join("plugins");
-    let disabled = workspace
-        .join("tools")
-        .join("lazybuilder")
-        .join("disabled-plugins");
-    let legacy_disabled = workspace.join("server").join("plugins-disabled");
-
+    let disabled = workspace.join("tools").join("lazybuilder").join("disabled-plugins");
+    let legacy = workspace.join("server").join("plugins-disabled");
+    let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
     paths::ensure_existing_owned_directory(workspace, &plugins, "core plugin directory")?;
     paths::ensure_existing_owned_directory(workspace, &disabled, "disabled plugin directory")?;
-    paths::ensure_existing_owned_directory(workspace, &legacy_disabled, "legacy disabled plugin directory")?;
+    paths::ensure_existing_owned_directory(workspace, &legacy, "legacy disabled plugin directory")?;
+    paths::ensure_owned_directory(workspace, &backups, "core recovery directory")?;
+    retire_obsolete_core(&plugins, &backups, "active", true)?;
+    retire_obsolete_core(&disabled, &backups, "disabled", false)?;
+    retire_obsolete_core(&legacy, &backups, "legacy", false)
+}
 
-    remove_stale_from_directory(&plugins, true)?;
-    remove_stale_from_directory(&disabled, false)?;
-    remove_stale_from_directory(&legacy_disabled, false)?;
+fn retire_obsolete_core(directory: &Path, backups: &Path, origin: &str, keep_canonical: bool) -> Result<(), String> {
+    if !directory.is_dir() { return Ok(()); }
+    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let source = entry.map_err(|e| e.to_string())?.path();
+        let Some(name) = source.file_name().and_then(|value| value.to_str()) else { continue; };
+        let lower = name.to_ascii_lowercase();
+        if !lower.ends_with(".jar") || !(lower.starts_with("world-manager-") || lower.starts_with("utilities-manager-")) {
+            continue;
+        }
+        if keep_canonical && (name.eq_ignore_ascii_case(WORLD_FILE_NAME) || name.eq_ignore_ascii_case(UTILITIES_FILE_NAME)) {
+            continue;
+        }
+        // A filename resemblance never grants permission to destroy user data.
+        require_regular_file(&source, "obsolete core JAR")?;
+        let retired = backups.join(format!("retired-{origin}-{name}"));
+        if entry_exists(&retired)? {
+            return Err(format!("Retired core JAR {} already exists; {} was preserved", retired.display(), source.display()));
+        }
+        fs::rename(&source, &retired).map_err(|error|
+            format!("Could not preserve obsolete core JAR {} at {}: {error}", source.display(), retired.display()))?;
+    }
     Ok(())
 }
 
-fn remove_stale_from_directory(directory: &Path, keep_canonical: bool) -> Result<(), String> {
-    if !directory.is_dir() {
-        return Ok(());
-    }
-    for entry in fs::read_dir(directory).map_err(|e| e.to_string())? {
-        let path = entry.map_err(|e| e.to_string())?.path();
-        if !path.is_file() {
-            continue;
-        }
-        let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
-            continue;
-        };
-        let lower = name.to_ascii_lowercase();
-        if !lower.ends_with(".jar") {
-            continue;
-        }
-        let is_core = lower.starts_with("world-manager-") || lower.starts_with("utilities-manager-");
-        if !is_core {
-            continue;
-        }
-        let canonical = name.eq_ignore_ascii_case(WORLD_FILE_NAME)
-            || name.eq_ignore_ascii_case(UTILITIES_FILE_NAME);
-        if keep_canonical && canonical {
-            continue;
-        }
-        fs::remove_file(&path).map_err(|e| {
-            format!("Could not retire stale LazyBuilder core module {}: {e}", path.display())
-        })?;
-    }
-    Ok(())
+pub fn canonical_core_pair_ready(workspace: &Path) -> bool {
+    let plugins = workspace.join("server").join("plugins");
+    [WORLD_FILE_NAME, UTILITIES_FILE_NAME]
+        .iter()
+        .all(|name| require_regular_file(&plugins.join(name), "canonical core JAR").is_ok())
 }
 
 #[derive(Debug)]
@@ -641,9 +639,64 @@ mod tests {
         assert!(!plugins.join("World-Manager-0.0.9.jar").exists());
         assert!(!disabled.join(UTILITIES_FILE_NAME).exists());
         assert!(!disabled.join("Utilities-Manager-0.0.9.jar").exists());
+        let retired = workspace.join("tools").join("lazybuilder").join("plugin-backups");
+        assert_eq!(fs::read(retired.join("retired-active-World-Manager-0.0.9.jar")).unwrap(), b"stale-world");
+        assert_eq!(fs::read(retired.join("retired-disabled-Utilities-Manager-0.0.9.jar")).unwrap(), b"stale-utilities");
+        assert_eq!(fs::read(retired.join(format!("retired-disabled-{UTILITIES_FILE_NAME}"))).unwrap(), b"disabled-current-name");
         assert!(plugins.join("Some-Plugin-1.0.jar").is_file());
         let _ = fs::remove_dir_all(workspace);
     }    #[test]
+    fn interrupted_sync_marker_blocks_even_identical_bundled_modules() {
+        let resources = test_root("core-noop-marker-resources");
+        let workspace = test_root("core-noop-marker-workspace");
+        resource_tree(&resources, b"world", b"utilities");
+        let plugins = workspace.join("server").join("plugins");
+        let backup = workspace.join("tools").join("lazybuilder").join("plugin-backups");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::create_dir_all(&backup).unwrap();
+        fs::write(plugins.join(WORLD_FILE_NAME), b"world").unwrap();
+        fs::write(plugins.join(UTILITIES_FILE_NAME), b"utilities").unwrap();
+        let pending = backup.join(".core-sync-pending");
+        fs::write(&pending, b"unresolved").unwrap();
+
+        assert!(begin_sync(&workspace, Some(&resources)).unwrap_err().contains("Unresolved core module transaction"));
+        assert_eq!(fs::read(&pending).unwrap(), b"unresolved");
+        let _ = fs::remove_dir_all(resources);
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn stale_core_collision_preserves_both_original_and_recovery_bytes() {
+        let workspace = test_root("core-retire-collision");
+        let plugins = workspace.join("server").join("plugins");
+        let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::create_dir_all(&backups).unwrap();
+        let stale = plugins.join("World-Manager-0.0.9.jar");
+        let retired = backups.join("retired-active-World-Manager-0.0.9.jar");
+        fs::write(&stale, b"unretired").unwrap();
+        fs::write(&retired, b"EXISTING USER DATA").unwrap();
+        assert!(remove_stale_core_jars(&workspace).is_err());
+        assert_eq!(fs::read(&stale).unwrap(), b"unretired");
+        assert_eq!(fs::read(&retired).unwrap(), b"EXISTING USER DATA");
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn only_canonical_pair_passes_server_health_readiness() {
+        let workspace = test_root("core-readiness");
+        let plugins = workspace.join("server").join("plugins");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::write(plugins.join("World-Manager-0.0.9.jar"), b"old-world").unwrap();
+        fs::write(plugins.join("Utilities-Manager-0.0.9.jar"), b"old-utility").unwrap();
+        assert!(!canonical_core_pair_ready(&workspace));
+        fs::write(plugins.join(WORLD_FILE_NAME), b"current-world").unwrap();
+        fs::write(plugins.join(UTILITIES_FILE_NAME), b"current-utility").unwrap();
+        assert!(canonical_core_pair_ready(&workspace));
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
     fn owned_directory_guard_rejects_directory_outside_workspace() {
         let workspace = test_root("core-owned-root");
         let outside = test_root("core-owned-outside");

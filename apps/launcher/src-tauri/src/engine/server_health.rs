@@ -1,4 +1,4 @@
-use crate::engine::{java_runtime, server_process_guard, storage_health::{self, StoragePressure}, workspace_registry};
+use crate::engine::{core_modules, java_runtime, server_process_guard, storage_health::{self, StoragePressure}, workspace_registry};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -85,8 +85,7 @@ pub fn inspect(workspace_id: &str) -> Result<ServerReadinessSnapshot, String> {
     checks.push(check("java-runtime", java_ready, if java_ready { "Java runtime ready" } else { "Java runtime missing" }, "LazyBuilder managed Java 21 runtime", true));
 
     let plugins = root.join("server").join("plugins");
-    let core_modules_ready = contains_plugin_prefix(&plugins, "World-Manager-")?
-        && contains_plugin_prefix(&plugins, "Utilities-Manager-")?;
+    let core_modules_ready = core_modules::canonical_core_pair_ready(&root);
     checks.push(check("core-modules", core_modules_ready, if core_modules_ready { "Core modules ready" } else { "Core modules missing" }, &plugins.display().to_string(), true));
 
     let eula_path = root.join("server").join("eula.txt");
@@ -106,17 +105,6 @@ pub fn inspect(workspace_id: &str) -> Result<ServerReadinessSnapshot, String> {
         ServerReadinessState::Ready
     };
     Ok(ServerReadinessSnapshot { workspace_id: entry.id, workspace_name: entry.name, state, ready, running, checks })
-}
-
-fn contains_plugin_prefix(directory: &Path, prefix: &str) -> Result<bool, String> {
-    if !directory.is_dir() { return Ok(false); }
-    for entry in fs::read_dir(directory).map_err(|error| error.to_string())? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        if !entry.file_type().map_err(|error| error.to_string())?.is_file() { continue; }
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with(prefix) && name.to_ascii_lowercase().ends_with(".jar") { return Ok(true); }
-    }
-    Ok(false)
 }
 
 fn read_eula(path: &Path) -> Result<bool, String> {
