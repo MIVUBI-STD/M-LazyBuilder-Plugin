@@ -15,14 +15,7 @@ pub struct RuntimeUpdateStatus {
 pub fn status() -> Result<RuntimeUpdateStatus, String> {
     let workspace = workspace_registry::active_workspace()?;
     let release = paper_provider::latest_stable()?;
-    let status = status_with_release(&workspace, &release)?;
-    if had_target {
-        // Only after both Paper publication and manifest persistence succeed.
-        let _ = persistence::safe_path::remove_regular_file_if_present(
-            &persistent_backup, "Paper update rollback backup"
-        );
-    }
-    Ok(status)
+    status_with_release(&workspace, &release)
 }
 
 /// Update Paper while exposing real transaction boundaries to the Launcher operation
@@ -101,7 +94,15 @@ where
         "Verifying Paper update",
         "Confirming the workspace now records the selected Paper build.",
     );
-    status_with_release(&workspace, &release)
+    let status = status_with_release(&workspace, &release)?;
+    if had_target {
+        // The backup can be retired only after the committed manifest is
+        // re-read and both runtime publication and metadata are confirmed.
+        let _ = persistence::safe_path::remove_regular_file_if_present(
+            &persistent_backup, "Paper update rollback backup"
+        );
+    }
+    Ok(status)
 }
 
 /// Keeps LazyBuilder-bundled Paper modules aligned with the running desktop app.
