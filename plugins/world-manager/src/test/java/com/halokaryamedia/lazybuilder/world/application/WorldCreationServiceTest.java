@@ -81,6 +81,26 @@ class WorldCreationServiceTest {
     }
 
     @Test
+    void partialRuntimeCreationFailureRetainsIntentMarkerForStartupInspection() {
+        WorldRegistry registry = new WorldRegistry();
+        TrackingFiles files = new TrackingFiles();
+        FakeRuntime runtime = new FakeRuntime();
+        runtime.failDuringCreation = true;
+        WorldCreationService service = new WorldCreationService(
+                registry, new MemoryPersistence(), runtime, files,
+                BuildReadyPolicy.defaults()
+        );
+
+        assertThrows(IllegalStateException.class,
+                () -> service.create("Interrupted", "Interrupted", WorldKind.FLAT));
+        assertEquals(1, files.markCount);
+        assertEquals(0, files.runtimeCreatedCount);
+        assertEquals(0, files.clearCount,
+                "creation may have written world data before throwing; preserve INTENT");
+        assertTrue(registry.all().isEmpty());
+    }
+
+    @Test
     void persistenceFailureRollsBackRuntimeAndRegistry() {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
@@ -106,11 +126,15 @@ class WorldCreationServiceTest {
         private final List<BuildReadyPolicy> policies = new ArrayList<>();
         private int rollbackCount;
         private boolean failRollback;
+        private boolean failDuringCreation;
 
         @Override
         public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) {
             createdKinds.add(world.kind());
             policies.add(policy);
+            if (failDuringCreation) {
+                throw new IllegalStateException("Paper failed after entering world creation");
+            }
         }
 
         @Override
