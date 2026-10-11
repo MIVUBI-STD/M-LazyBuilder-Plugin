@@ -81,15 +81,15 @@ public final class WorldLifecycleService {
 
         try (WorldOperationCoordinator.Lease ignored = operations.acquire(worldId, WorldOperationType.ARCHIVE)) {
             boolean wasLoaded = runtimeService.isLoaded(worldId);
-            runtimeService.unloadDuringOperation(worldId);
-
-            WorldRecord archived = current.withLifecycle(WorldLifecycle.ARCHIVED);
             try {
+                runtimeService.unloadDuringOperation(worldId);
+                WorldRecord archived = current.withLifecycle(WorldLifecycle.ARCHIVED);
                 return WorldRegistryTransactions.updateMetadata(registry, persistence, archived);
             } catch (IOException | RuntimeException exception) {
                 if (wasLoaded) {
                     try {
-                        runtimeService.loadDuringOperation(worldId);
+                        // Also restores dimensions if Paper partially unloaded them.
+                        runtimeService.restoreFamilyAfterFailedUnload(worldId);
                     } catch (RuntimeException reloadFailure) {
                         exception.addSuppressed(reloadFailure);
                     }

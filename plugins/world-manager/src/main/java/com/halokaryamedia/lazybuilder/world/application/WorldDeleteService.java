@@ -65,11 +65,16 @@ public final class WorldDeleteService {
         }
 
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.DELETE);
-        boolean wasLoaded = runtimeService.isLoaded(worldId);
+        boolean wasLoaded = false;
         try {
+            wasLoaded = runtimeService.isLoaded(worldId);
             runtimeService.unloadDuringOperation(worldId);
             return new DeleteTask(UUID.randomUUID(), world, wasLoaded, lease);
         } catch (RuntimeException exception) {
+            if (wasLoaded) {
+                try { runtimeService.restoreFamilyAfterFailedUnload(worldId); }
+                catch (RuntimeException recoveryFailure) { exception.addSuppressed(recoveryFailure); }
+            }
             lease.close();
             throw exception;
         }

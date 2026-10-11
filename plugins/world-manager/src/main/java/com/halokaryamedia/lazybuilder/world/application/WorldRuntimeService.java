@@ -82,6 +82,16 @@ public final class WorldRuntimeService {
         return unloadInternal(id);
     }
 
+    /**
+     * Compensate a failed family unload: Paper may have already unloaded some
+     * dimensions while the root world is still loaded. The normal load path
+     * short-circuits on root state, so explicitly reload the entire family.
+     * Call only while holding the owning world operation lease.
+     */
+    void restoreFamilyAfterFailedUnload(WorldId id) {
+        runtime.loadWorld(requireWorld(id));
+    }
+
     /** Begins a snapshot window without moving players or unloading the managed world family. */
     WorldRuntimeGateway.LiveSnapshotState beginLiveSnapshotDuringOperation(WorldId id) {
         WorldRecord world = requireWorld(id);

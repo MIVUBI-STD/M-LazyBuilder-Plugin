@@ -115,6 +115,18 @@ class WorldLifecycleServiceTest {
         assertFalse(operations.isBusy(world.id()));
     }
 
+    @Test
+    void archivePartialUnloadFailureRestoresWorldAndKeepsActiveLifecycle() {
+        Fixture fixture = fixture(WorldLifecycle.ACTIVE, true, false);
+        fixture.runtime.failAfterUnloading = true;
+        assertThrows(IllegalStateException.class, () -> fixture.service.archive(fixture.world.id()));
+        assertTrue(fixture.runtime.loaded);
+        assertEquals(1, fixture.runtime.loadCount);
+        assertEquals(WorldLifecycle.ACTIVE,
+                fixture.registry.find(fixture.world.id()).orElseThrow().lifecycle());
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
     private static Fixture fixture(WorldLifecycle lifecycle, boolean loaded, boolean protectedWorld) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(
@@ -174,6 +186,7 @@ class WorldLifecycleServiceTest {
         private boolean loaded;
         private int loadCount;
         private int unloadCount;
+        private boolean failAfterUnloading;
 
         private FakeRuntime(boolean loaded) {
             this.loaded = loaded;
@@ -202,6 +215,10 @@ class WorldLifecycleServiceTest {
         public void unloadWorld(WorldRecord world) {
             loaded = false;
             unloadCount++;
+            if (failAfterUnloading) {
+                failAfterUnloading = false;
+                throw new IllegalStateException("failed after partial dimension unload");
+            }
         }
 
         @Override

@@ -78,6 +78,19 @@ class WorldDeleteServiceTest {
                 () -> fixture.service.prepare(fixture.world.id(), "build"));
     }
 
+    @Test
+    void failedPartialUnloadRestoresWorldBeforeDeletingAnything() {
+        Fixture fixture = fixture(true);
+        fixture.runtime.failAfterUnloading = true;
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service.prepare(fixture.world.id(), "Build"));
+        assertTrue(fixture.runtime.loaded);
+        assertEquals(1, fixture.runtime.recoveryLoads);
+        assertFalse(fixture.files.stagedDelete);
+        assertTrue(fixture.registry.find(fixture.world.id()).isPresent());
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
     private static Fixture fixture(boolean loaded) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = new WorldRecord(
@@ -122,13 +135,21 @@ class WorldDeleteServiceTest {
 
     private static final class FakeRuntime implements WorldRuntimeGateway {
         private boolean loaded;
+        private boolean failAfterUnloading;
+        private int recoveryLoads;
 
         private FakeRuntime(boolean loaded) { this.loaded = loaded; }
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) { }
         @Override public void rollbackCreatedWorld(WorldRecord world) { }
         @Override public boolean isLoaded(WorldRecord world) { return loaded; }
-        @Override public void loadWorld(WorldRecord world) { loaded = true; }
-        @Override public void unloadWorld(WorldRecord world) { loaded = false; }
+        @Override public void loadWorld(WorldRecord world) { loaded = true; recoveryLoads++; }
+        @Override public void unloadWorld(WorldRecord world) {
+            loaded = false;
+            if (failAfterUnloading) {
+                failAfterUnloading = false;
+                throw new IllegalStateException("failed after partial dimension unload");
+            }
+        }
         @Override public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) { }
     }
 

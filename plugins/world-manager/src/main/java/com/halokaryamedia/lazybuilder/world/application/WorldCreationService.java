@@ -69,10 +69,8 @@ public final class WorldCreationService {
                 throw new IllegalStateException("Could not start Create World transaction: " + folderName, exception);
             }
 
-            boolean runtimeAttempted = false;
             boolean runtimeCreated = false;
             try {
-                runtimeAttempted = true;
                 runtime.createNewWorld(record, buildReadyPolicy);
                 runtimeCreated = true;
                 files.markCreateRuntimeCreated(operationId, record.folderName());
@@ -84,7 +82,7 @@ public final class WorldCreationService {
                 // A failed Paper create call may already have written a world
                 // folder before throwing. An INTENT marker is safer than
                 // asserting rollback of filesystem state we cannot observe.
-                boolean rollbackCompleted = !runtimeAttempted;
+                boolean rollbackCompleted = false;
                 if (runtimeCreated) {
                     try {
                         runtime.rollbackCreatedWorld(record);

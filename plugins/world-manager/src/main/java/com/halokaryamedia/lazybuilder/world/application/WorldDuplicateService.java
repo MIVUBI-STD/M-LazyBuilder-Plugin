@@ -55,12 +55,17 @@ public final class WorldDuplicateService {
 
         WorldRegistry.FolderReservation destinationReservation = registry.reserveFolder(destination.folderName());
         WorldOperationCoordinator.Lease lease = null;
+        boolean wasLoaded = false;
         try {
             lease = operations.acquire(sourceId, WorldOperationType.DUPLICATE);
-            boolean wasLoaded = runtimeService.isLoaded(sourceId);
+            wasLoaded = runtimeService.isLoaded(sourceId);
             runtimeService.unloadDuringOperation(sourceId);
             return new DuplicateTask(UUID.randomUUID(), source, destination, wasLoaded, lease, destinationReservation);
         } catch (RuntimeException exception) {
+            if (lease != null && wasLoaded) {
+                try { runtimeService.restoreFamilyAfterFailedUnload(sourceId); }
+                catch (RuntimeException recoveryFailure) { exception.addSuppressed(recoveryFailure); }
+            }
             if (lease != null) lease.close();
             destinationReservation.close();
             throw exception;

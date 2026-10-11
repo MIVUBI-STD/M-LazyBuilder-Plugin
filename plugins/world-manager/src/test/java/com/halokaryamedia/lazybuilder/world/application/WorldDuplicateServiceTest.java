@@ -83,6 +83,21 @@ class WorldDuplicateServiceTest {
         assertFalse(fixture.operations.isBusy(fixture.source.id()));
     }
 
+    @Test
+    void failedPartialUnloadRestoresSourceFamilyBeforeReleasingLease() {
+        Fixture fixture = fixture(true);
+        fixture.runtime.failAfterUnloading = true;
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service.prepare(fixture.source.id(), "Copy", "Copy"));
+
+        assertTrue(fixture.runtime.loaded);
+        assertEquals(1, fixture.runtime.recoveryLoads);
+        assertFalse(fixture.operations.isBusy(fixture.source.id()));
+        WorldDuplicateService.DuplicateTask retry = fixture.service.prepare(
+                fixture.source.id(), "Copy", "Copy");
+        fixture.service.finish(retry);
+    }
+
     private static Fixture fixture(boolean loaded) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord source = new WorldRecord(
@@ -124,12 +139,20 @@ class WorldDuplicateServiceTest {
 
     private static final class FakeRuntime implements WorldRuntimeGateway {
         private boolean loaded;
+        private boolean failAfterUnloading;
+        private int recoveryLoads;
         private FakeRuntime(boolean loaded) { this.loaded = loaded; }
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) { }
         @Override public void rollbackCreatedWorld(WorldRecord world) { }
         @Override public boolean isLoaded(WorldRecord world) { return loaded; }
-        @Override public void loadWorld(WorldRecord world) { loaded = true; }
-        @Override public void unloadWorld(WorldRecord world) { loaded = false; }
+        @Override public void loadWorld(WorldRecord world) { loaded = true; recoveryLoads++; }
+        @Override public void unloadWorld(WorldRecord world) {
+            loaded = false;
+            if (failAfterUnloading) {
+                failAfterUnloading = false;
+                throw new IllegalStateException("failed after partial dimension unload");
+            }
+        }
         @Override public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) { }
     }
 
