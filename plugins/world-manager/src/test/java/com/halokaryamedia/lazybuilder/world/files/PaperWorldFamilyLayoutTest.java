@@ -63,24 +63,4 @@ class PaperWorldFamilyLayoutTest {
         assertTrue(Files.isRegularFile(worlds.resolve("Build_nether/.lazybuilder-family-publish-pending")));
     }
 
-    @Test
-    void stagingConsolidatesPaperSiblingsBackToCanonicalJavaLayout() throws Exception {
-        Path worlds = tempDir.resolve("worlds");
-        Path staged = tempDir.resolve("staged");
-        Files.createDirectories(staged);
-        Files.write(staged.resolve("level.dat"), new byte[]{1});
-        Files.createDirectories(worlds.resolve("Build_nether/DIM-1/region"));
-        Files.createDirectories(worlds.resolve("Build_the_end/DIM1/region"));
-        Files.write(worlds.resolve("Build_nether/level.dat"), new byte[]{2});
-        Files.write(worlds.resolve("Build_the_end/level.dat"), new byte[]{3});
-        Files.write(worlds.resolve("Build_nether/DIM-1/region/r.0.0.mca"), new byte[]{4});
-        Files.write(worlds.resolve("Build_the_end/DIM1/region/r.0.0.mca"), new byte[]{5});
-
-        PaperWorldFamilyLayout.consolidateSiblingsForStaging(worlds, "Build", staged);
-
-        assertTrue(Files.isRegularFile(staged.resolve("DIM-1/region/r.0.0.mca")));
-        assertTrue(Files.isRegularFile(staged.resolve("DIM1/region/r.0.0.mca")));
-        assertFalse(Files.exists(worlds.resolve("Build_nether")));
-        assertFalse(Files.exists(worlds.resolve("Build_the_end")));
-    }
 }

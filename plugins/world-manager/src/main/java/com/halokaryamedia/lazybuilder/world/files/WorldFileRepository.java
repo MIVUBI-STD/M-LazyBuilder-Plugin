@@ -40,6 +40,16 @@ public interface WorldFileRepository {
     /** Move one managed world into an owned workspace before destructive deletion is committed. */
     Path stageDelete(WorldRecord world, UUID operationId) throws IOException;
 
+    /** Restore a pre-commit Delete without touching existing dimension siblings. */
+    default void restoreStagedDelete(Path staged, WorldRecord world) throws IOException {
+        publishStagedWorld(staged, world.folderName());
+    }
+
+    /** Finalize a committed Delete, removing dimensions before root staging. */
+    default void finishStagedDelete(Path staged, WorldRecord world) throws IOException {
+        deleteWorkspace(staged);
+    }
+
     /** Returns a non-existing, owned direct workspace path reserved by caller identity. */
     default Path reserveWorkspace(UUID operationId) throws IOException {
         throw new UnsupportedOperationException("Workspace reservation is not supported by this repository");

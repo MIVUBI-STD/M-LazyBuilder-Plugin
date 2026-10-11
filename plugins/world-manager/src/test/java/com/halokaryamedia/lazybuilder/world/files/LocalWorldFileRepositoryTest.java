@@ -378,6 +378,73 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void stagedDeletePreservesDimensionMetadataUntilCommitOrRollback() throws Exception {
+        Path worlds = tempDir.resolve("delete-worlds");
+        Path root = worlds.resolve("Build");
+        Path sibling = worlds.resolve("Build_nether");
+        Path work = tempDir.resolve("delete-work");
+        Files.createDirectories(root);
+        Files.createDirectories(sibling.resolve("DIM-1/region"));
+        Files.writeString(root.resolve("level.dat"), "root");
+        Files.writeString(sibling.resolve("level.dat"), "dimension");
+        Files.writeString(sibling.resolve("custom.txt"), "USER DATA");
+        Files.writeString(sibling.resolve("DIM-1/region/r.0.0.mca"), "chunks");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        WorldRecord record = world();
+
+        Path staged = repository.stageDelete(record, UUID.randomUUID());
+        assertFalse(Files.exists(root));
+        assertEquals("USER DATA", Files.readString(sibling.resolve("custom.txt")));
+        repository.restoreStagedDelete(staged, record);
+        assertEquals("root", Files.readString(root.resolve("level.dat")));
+        assertEquals("chunks", Files.readString(sibling.resolve("DIM-1/region/r.0.0.mca")));
+        assertEquals("USER DATA", Files.readString(sibling.resolve("custom.txt")));
+    }
+
+    @Test
+    void committedDeleteCleansSiblingsOnlyAfterCommit() throws Exception {
+        Path worlds = tempDir.resolve("delete-committed-worlds");
+        Path root = worlds.resolve("Build");
+        Path sibling = worlds.resolve("Build_nether");
+        Path work = tempDir.resolve("delete-committed-work");
+        Files.createDirectories(root);
+        Files.createDirectories(sibling.resolve("DIM-1/region"));
+        Files.writeString(root.resolve("level.dat"), "root");
+        Files.writeString(sibling.resolve("custom.txt"), "USER DATA");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        WorldRecord record = world();
+
+        Path staged = repository.stageDelete(record, UUID.randomUUID());
+        assertEquals("USER DATA", Files.readString(sibling.resolve("custom.txt")));
+        repository.finishStagedDelete(staged, record);
+        assertFalse(Files.exists(staged));
+        assertFalse(Files.exists(sibling));
+    }
+
+    @Test
+    void interruptedDeleteWithRegisteredWorldRestoresSiblingBytesUnchanged() throws Exception {
+        Path worlds = tempDir.resolve("delete-recovered-worlds");
+        Path root = worlds.resolve("Build");
+        Path sibling = worlds.resolve("Build_nether");
+        Path work = tempDir.resolve("delete-recovered-work");
+        Files.createDirectories(root);
+        Files.createDirectories(sibling.resolve("DIM-1/region"));
+        Files.writeString(root.resolve("level.dat"), "root");
+        Files.writeString(sibling.resolve("custom.txt"), "USER DATA");
+        Files.writeString(sibling.resolve("DIM-1/region/r.0.0.mca"), "chunks");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        WorldRecord record = world();
+        Path staged = repository.stageDelete(record, UUID.randomUUID());
+
+        WorldFileRepository.DeleteRecovery recovered = repository.recoverDeleteWorkspaces(List.of(record));
+        assertEquals(1, recovered.restored());
+        assertFalse(Files.exists(staged));
+        assertEquals("root", Files.readString(root.resolve("level.dat")));
+        assertEquals("USER DATA", Files.readString(sibling.resolve("custom.txt")));
+        assertEquals("chunks", Files.readString(sibling.resolve("DIM-1/region/r.0.0.mca")));
+    }
+
+    @Test
     void unattributableOrConflictingDeleteStagingIsPreserved() throws Exception {
         Path worldRoot = tempDir.resolve("worlds");
         Path workRoot = tempDir.resolve("work");

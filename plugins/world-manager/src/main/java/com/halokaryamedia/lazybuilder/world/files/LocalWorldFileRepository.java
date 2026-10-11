@@ -205,19 +205,55 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
             throw new IOException("Managed world folder is missing or unsafe: " + world.folderName());
         }
         Path destination = reserveDeleteWorkspace(operationId, world.folderName());
+        // Keep Nether/End siblings and all accompanying data intact until
+        // the World Registry has durably committed the explicit deletion.
         moveDirectory(source, destination);
-        try {
-            PaperWorldFamilyLayout.consolidateSiblingsForStaging(worldRoot, world.folderName(), destination);
-            return destination;
-        } catch (IOException | RuntimeException failure) {
-            try {
-                moveDirectory(destination, source);
-                PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, world.folderName(), false);
-            } catch (IOException rollbackFailure) {
-                failure.addSuppressed(rollbackFailure);
-            }
-            throw failure;
+        return destination;
+    }
+
+    @Override
+    public void restoreStagedDelete(Path staged, WorldRecord world) throws IOException {
+        Objects.requireNonNull(world, "world");
+        restoreStagedDeleteForFolder(staged, world.folderName());
+    }
+
+    private void restoreStagedDeleteForFolder(Path staged, String folderName) throws IOException {
+        Path source = requireOwnedDeleteStaging(staged, folderName);
+        Path destination = worldPath(folderName);
+        if (Files.exists(destination)) {
+            throw new IOException("Cannot restore staged delete over existing world: " + folderName);
         }
+        moveDirectory(source, destination);
+        // Previous Local builds could have moved dimension payloads into root
+        // staging. Restore those legacy stages without deleting existing data.
+        if (Files.exists(destination.resolve(JAVA_NETHER_DIRECTORY))
+                || Files.exists(destination.resolve(JAVA_END_DIRECTORY))) {
+            PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, false);
+        }
+    }
+
+    @Override
+    public void finishStagedDelete(Path staged, WorldRecord world) throws IOException {
+        Objects.requireNonNull(world, "world");
+        finishStagedDeleteForFolder(staged, world.folderName());
+    }
+
+    private void finishStagedDeleteForFolder(Path staged, String folderName) throws IOException {
+        Path target = requireOwnedDeleteStaging(staged, folderName);
+        // The staged root remains recovery evidence until the last owned
+        // dimension cleanup completes. An error leaves it retryable at startup.
+        PaperWorldFamilyLayout.deleteFamilySiblings(worldRoot, folderName);
+        deleteTree(target);
+    }
+
+    private Path requireOwnedDeleteStaging(Path staged, String expectedFolder) throws IOException {
+        Path target = requireDirectWorkspace(Objects.requireNonNull(staged, "staged"));
+        var identity = parseDeleteWorkspaceName(target.getFileName().toString());
+        if (identity.isEmpty() || !identity.get().folderName().equals(expectedFolder)
+                || !Files.isDirectory(target) || Files.isSymbolicLink(target)) {
+            throw new IOException("Delete staging identity or directory is unsafe: " + target.getFileName());
+        }
+        return target;
     }
 
     @Override
@@ -370,17 +406,20 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                         continue;
                     }
                     try {
-                        PaperWorldFamilyLayout.requireFreshFamilyDestinations(worldRoot, folderName);
-                    } catch (IOException collision) {
+                        restoreStagedDeleteForFolder(staged, folderName);
+                        restored++;
+                    } catch (IOException recoveryFailure) {
                         preserved++;
-                        continue;
                     }
-                    moveDirectory(staged, destination);
-                    PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, false);
-                    restored++;
                 } else {
-                    deleteTree(staged);
-                    discarded++;
+                    // Registry removal was durably committed. Finish any
+                    // remaining dimension cleanup before deleting root staging.
+                    try {
+                        finishStagedDeleteForFolder(staged, folderName);
+                        discarded++;
+                    } catch (IOException cleanupFailure) {
+                        preserved++;
+                    }
                 }
             }
         }

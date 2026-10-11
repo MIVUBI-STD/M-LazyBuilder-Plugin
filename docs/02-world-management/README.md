@@ -235,7 +235,9 @@ Rules:
 - managed world folders resolve only under the canonical world root;
 - user input never becomes an arbitrary delete/publish path;
 - symbolic-link world roots / staged links fail closed;
-- partial staging is cleaned on failure;
+- disposable staging is cleaned on failure; uncertain destructive staging remains preserved;
+- Delete moves the root to reversible staging without altering Paper dimension siblings before registry commit; failed Delete restores the root without replacing sibling data;
+- committed Delete removes sibling folders first, then root staging. Interrupted cleanup keeps attributable staging for restart reconciliation;
 - heavy copy/delete work runs away from the Paper main thread after the required Paper quiesce step;
 - Paper mutations remain on the primary thread.
 

@@ -91,14 +91,14 @@ public final class WorldDeleteService {
             task.committed = true;
 
             try {
-                files.deleteWorkspace(staged);
+                files.finishStagedDelete(staged, task.world);
             } catch (IOException cleanupFailure) {
                 task.cleanupWorkspace = staged;
                 task.cleanupFailure = cleanupFailure;
             }
         } catch (IOException | RuntimeException exception) {
             if (staged != null && !task.committed) {
-                try { files.publishStagedWorld(staged, task.world.folderName()); }
+                try { files.restoreStagedDelete(staged, task.world); }
                 catch (IOException restoreFailure) { exception.addSuppressed(restoreFailure); }
             }
             throw new IllegalStateException("Failed to delete world: " + task.world.displayName(), exception);
@@ -117,7 +117,7 @@ public final class WorldDeleteService {
 
         if (task.committed && task.cleanupWorkspace != null) {
             try {
-                files.deleteWorkspace(task.cleanupWorkspace);
+                files.finishStagedDelete(task.cleanupWorkspace, task.world);
                 task.cleanupWorkspace = null;
                 task.cleanupFailure = null;
             } catch (IOException retryFailure) {

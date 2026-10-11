@@ -138,48 +138,6 @@ final class PaperWorldFamilyLayout {
         }
     }
 
-    /**
-     * Moves any existing Paper sibling dimensions into one canonical staged world.
-     * The base world itself must already have been moved into {@code stagedRoot}.
-     */
-    static void consolidateSiblingsForStaging(
-            Path worldRoot,
-            String baseFolder,
-            Path stagedRoot
-    ) throws IOException {
-        Path stage = Objects.requireNonNull(stagedRoot, "stagedRoot").toAbsolutePath().normalize();
-        if (!Files.isDirectory(stage) || Files.isSymbolicLink(stage)) {
-            throw new IOException("Staged world root is missing or unsafe: " + stage);
-        }
-
-        for (DimensionLayout layout : DIMENSIONS) {
-            Path sibling = directChild(worldRoot, baseFolder + layout.suffix());
-            if (Files.notExists(sibling)) continue;
-            if (!Files.isDirectory(sibling) || Files.isSymbolicLink(sibling)) {
-                throw new IOException("Paper dimension folder is unsafe: " + sibling.getFileName());
-            }
-
-            Path target = stage.resolve(layout.directory()).normalize();
-            if (!target.startsWith(stage)) throw new IOException("Staged dimension escaped workspace");
-            if (Files.exists(target)) {
-                throw new IOException("Both canonical and Paper dimension data exist for " + layout.directory());
-            }
-
-            Path nested = sibling.resolve(layout.directory()).normalize();
-            Path source = Files.exists(nested) ? nested : sibling;
-            if (!Files.isDirectory(source) || Files.isSymbolicLink(source)) {
-                throw new IOException("Paper dimension data is unsafe: " + source);
-            }
-
-            if (source.equals(sibling)) {
-                move(source, target);
-            } else {
-                move(source, target);
-                deleteTree(sibling);
-            }
-        }
-    }
-
     static void clearFamilyPendingMarkers(Path worldRoot, String baseFolder) throws IOException {
         for (DimensionLayout layout : DIMENSIONS) {
             Path sibling = directChild(worldRoot, baseFolder + layout.suffix());
