@@ -147,11 +147,13 @@ class WorldDuplicateServiceTest {
         @Override public boolean isLoaded(WorldRecord world) { return loaded; }
         @Override public void loadWorld(WorldRecord world) { loaded = true; recoveryLoads++; }
         @Override public void unloadWorld(WorldRecord world) {
-            loaded = false;
             if (failAfterUnloading) {
                 failAfterUnloading = false;
+                // Model a dimension failure while Paper still reports the root
+                // as loaded: a normal conditional load would incorrectly skip.
                 throw new IllegalStateException("failed after partial dimension unload");
             }
+            loaded = false;
         }
         @Override public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) { }
     }
