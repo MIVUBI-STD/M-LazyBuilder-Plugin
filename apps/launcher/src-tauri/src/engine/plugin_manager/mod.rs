@@ -1,7 +1,7 @@
 use crate::engine::{paths, persistence};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -793,20 +793,31 @@ fn is_jar(path: &Path) -> bool {
 }
 
 fn stage_copy(source: &Path, staged: &Path) -> Result<(), String> {
-    if !source.is_file() { return Err(format!("Source file was not found: {}", source.display())); }
-    if let Some(parent) = staged.parent() { fs::create_dir_all(parent).map_err(|error| error.to_string())?; }
-    if staged.exists() { fs::remove_file(staged).map_err(|error| error.to_string())?; }
-
-    let mut input = File::open(source).map_err(|error| error.to_string())?;
-    let mut output = File::create(staged).map_err(|error| error.to_string())?;
-    std::io::copy(&mut input, &mut output).map_err(|error| error.to_string())?;
-    output.flush().map_err(|error| error.to_string())?;
-    drop(output);
-    if !files_equal(source, staged)? {
-        let _ = fs::remove_file(staged);
-        return Err("Staged plugin JAR verification failed.".into());
+    persistence::safe_path::ensure_regular_file(source, "source plugin JAR")?;
+    if let Some(parent) = staged.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     }
-    Ok(())
+    // A previous .incoming file can be the only surviving recovery artifact.
+    // CREATE_NEW refuses files, symlinks, and races instead of replacing them.
+    let mut input = File::open(source).map_err(|error| error.to_string())?;
+    let mut output = OpenOptions::new().write(true).create_new(true).open(staged)
+        .map_err(|error| format!("Plugin staging path {} is unavailable; preserve existing recovery files: {error}", staged.display()))?;
+    let result = (|| -> Result<(), String> {
+        std::io::copy(&mut input, &mut output).map_err(|error| error.to_string())?;
+        output.flush().map_err(|error| error.to_string())?;
+        output.sync_all().map_err(|error| error.to_string())?;
+        drop(output);
+        if !files_equal(source, staged)? {
+            return Err("Staged plugin JAR verification failed.".into());
+        }
+        Ok(())
+    })();
+    if result.is_err() {
+        // This invocation created the staging file with CREATE_NEW. Only it
+        // can clean that file, never a pre-existing recovery copy.
+        let _ = fs::remove_file(staged);
+    }
+    result
 }
 
 fn copy_atomic(source: &Path, destination: &Path) -> Result<(), String> {
@@ -861,13 +872,31 @@ fn publish_new_then_retire_old(staged: &Path, destination: &Path, current: &Path
 }
 
 fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
-    if destination.exists() {
-        let previous = destination.with_extension("swap.previous");
-        let _ = fs::remove_file(&previous);
+    persistence::safe_path::ensure_regular_file(source, "staged plugin JAR")?;
+    let previous = destination.with_extension("swap.previous");
+    if persistence::metadata_entry_exists(&previous, "previous plugin swap")? {
+        return Err(format!(
+            "Unresolved previous plugin swap at {}; preserve the recovery file before retrying.",
+            previous.display()
+        ));
+    }
+    if persistence::metadata_entry_exists(destination, "plugin destination")? {
+        persistence::safe_path::ensure_regular_file(destination, "plugin destination")?;
         fs::rename(destination, &previous).map_err(|error| error.to_string())?;
         match fs::rename(source, destination) {
-            Ok(()) => { let _ = fs::remove_file(previous); Ok(()) }
-            Err(error) => { let _ = fs::rename(&previous, destination); Err(error.to_string()) }
+            Ok(()) => {
+                // Publication committed; a failed cleanup must not make the
+                // caller undo the new JAR or destroy the old recovery copy.
+                let _ = persistence::safe_path::remove_regular_file_if_present(&previous, "previous plugin swap");
+                Ok(())
+            }
+            Err(error) => match fs::rename(&previous, destination) {
+                Ok(()) => Err(format!("Could not publish staged plugin JAR; original restored: {error}")),
+                Err(restore_error) => Err(format!(
+                    "Could not publish staged plugin JAR ({error}) or restore previous JAR ({restore_error}). Recovery at {} was preserved.",
+                    previous.display()
+                )),
+            },
         }
     } else {
         fs::rename(source, destination).map_err(|error| error.to_string())
@@ -928,7 +957,8 @@ fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstall
 mod tests {
     use super::{
         dependency_problem_from_scan, parse_paper_dependencies, read_metadata,
-        publish_recovery_backup, restore_from_backup, PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
+        publish_recovery_backup, restore_from_backup, replace_file, stage_copy,
+        PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
     };
     use std::{fs, path::PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1036,6 +1066,65 @@ mod tests {
         restore_from_backup(&backup, &destination).unwrap();
         assert_eq!(fs::read(&destination).unwrap(), b"verified previous plugin");
         assert_eq!(fs::read(&backup).unwrap(), b"verified previous plugin");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn stage_copy_refuses_to_overwrite_existing_recovery_bytes() {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-plugin-incoming-collision-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let source = directory.join("new.jar");
+        let pending = directory.join("plugin.jar.incoming");
+        fs::write(&source, b"new candidate").unwrap();
+        fs::write(&pending, b"only recovery copy").unwrap();
+
+        assert!(stage_copy(&source, &pending).is_err());
+        assert_eq!(fs::read(&pending).unwrap(), b"only recovery copy");
+        assert_eq!(fs::read(&source).unwrap(), b"new candidate");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn previous_swap_blocks_new_publication_even_when_destination_is_missing() {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-plugin-unresolved-swap-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let staged = directory.join("new.jar.incoming");
+        let destination = directory.join("plugin.jar");
+        let previous = destination.with_extension("swap.previous");
+        fs::write(&staged, b"new candidate").unwrap();
+        fs::write(&previous, b"only surviving old JAR").unwrap();
+
+        assert!(replace_file(&staged, &destination).is_err());
+        assert_eq!(fs::read(&previous).unwrap(), b"only surviving old JAR");
+        assert_eq!(fs::read(&staged).unwrap(), b"new candidate");
+        assert!(!destination.exists());
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn normal_replacement_keeps_a_verified_new_jar() {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let directory = std::env::temp_dir().join(format!(
+            "lazybuilder-plugin-normal-swap-{}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&directory).unwrap();
+        let staged = directory.join("new.jar.incoming");
+        let destination = directory.join("plugin.jar");
+        fs::write(&staged, b"new JAR").unwrap();
+        fs::write(&destination, b"previous JAR").unwrap();
+
+        replace_file(&staged, &destination).unwrap();
+        assert_eq!(fs::read(&destination).unwrap(), b"new JAR");
+        assert!(!destination.with_extension("swap.previous").exists());
         let _ = fs::remove_dir_all(directory);
     }
 
