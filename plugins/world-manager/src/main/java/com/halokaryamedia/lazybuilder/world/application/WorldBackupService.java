@@ -48,14 +48,20 @@ public final class WorldBackupService {
         }
 
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.BACKUP);
-        boolean wasLoaded = runtimeService.isLoaded(worldId);
+        boolean wasLoaded = false;
         try {
+            wasLoaded = runtimeService.isLoaded(worldId);
             runtimeService.unloadDuringOperation(worldId);
             UUID operationId = UUID.randomUUID();
             String backupId = world.folderName() + "-" + operationId;
             return new BackupTask(operationId, backupId, world, wasLoaded, lease);
         } catch (RuntimeException exception) {
-            lease.close();
+            if (wasLoaded) {
+                try { runtimeService.restoreFamilyAfterFailedUnload(worldId); }
+                catch (RuntimeException reloadFailure) { exception.addSuppressed(reloadFailure); }
+            }
+            try { lease.close(); }
+            catch (RuntimeException closeFailure) { exception.addSuppressed(closeFailure); }
             throw exception;
         }
     }
@@ -79,13 +85,15 @@ public final class WorldBackupService {
             if (staged != null) {
                 try {
                     files.deleteWorkspace(staged);
-                } catch (IOException cleanupFailure) {
-                    // Keep the same request-owned cleanup debt for both success
-                    // and failure. finish() can retry without waiting for
-                    // startup transient-workspace recovery.
+                } catch (IOException | RuntimeException cleanupFailure) {
+                    // Once a backup artifact has been published, even an unchecked
+                    // staging cleanup failure cannot invalidate the backup.
+                    // Preserve the cleanup debt for finish and startup recovery.
+                    IOException deferred = cleanupFailure instanceof IOException io
+                            ? io : new IOException("Backup staging cleanup failed", cleanupFailure);
                     task.cleanupWorkspace = staged;
-                    task.cleanupFailure = cleanupFailure;
-                    if (primaryFailure != null) primaryFailure.addSuppressed(cleanupFailure);
+                    task.cleanupFailure = deferred;
+                    if (primaryFailure != null) primaryFailure.addSuppressed(deferred);
                 }
             }
         }
@@ -105,9 +113,11 @@ public final class WorldBackupService {
                 files.deleteWorkspace(task.cleanupWorkspace);
                 task.cleanupWorkspace = null;
                 task.cleanupFailure = null;
-            } catch (IOException retryFailure) {
-                if (task.cleanupFailure != null) retryFailure.addSuppressed(task.cleanupFailure);
-                task.cleanupFailure = retryFailure;
+            } catch (IOException | RuntimeException retryFailure) {
+                IOException deferred = retryFailure instanceof IOException io
+                        ? io : new IOException("Backup staging cleanup retry failed", retryFailure);
+                if (task.cleanupFailure != null) deferred.addSuppressed(task.cleanupFailure);
+                task.cleanupFailure = deferred;
             }
         }
         task.close();
@@ -146,7 +156,9 @@ public final class WorldBackupService {
         WorldId id = task.world.id();
         WorldRecord current = registry.find(id).orElse(null);
         if (current == null || current.lifecycle() != WorldLifecycle.ACTIVE) return;
-        if (!runtimeService.isLoaded(id)) runtimeService.loadDuringOperation(id);
+        // Paper may have unloaded only some dimensions. Restore the full
+        // previous family even when the root happens to remain loaded.
+        runtimeService.restoreFamilyAfterFailedUnload(id);
     }
 
     public record BackupResult(String backupId, String artifactName) {

@@ -46,6 +46,43 @@ class WorldBackupServiceTest {
     }
 
     @Test
+    void failedPartialUnloadRestoresWorldFamilyAndReleasesBackupLease() {
+        Fixture fixture = fixture(true);
+        fixture.runtime.failDuringUnload = true;
+        assertThrows(IllegalStateException.class, () -> fixture.service.prepare(fixture.world.id()));
+        assertTrue(fixture.runtime.loaded);
+        assertEquals(1, fixture.runtime.loadCount);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+        assertEquals(0, fixture.files.stageCopyCount);
+    }
+
+    @Test
+    void runtimeLoadedQueryFailureDoesNotStrandBackupLease() {
+        Fixture fixture = fixture(true);
+        fixture.runtime.failNextLoadedQuery = true;
+        assertThrows(IllegalStateException.class, () -> fixture.service.prepare(fixture.world.id()));
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+        assertEquals(0, fixture.runtime.unloadCount);
+    }
+
+    @Test
+    void uncheckedPostCommitCleanupFailureDoesNotDiscardBackup() throws Exception {
+        Fixture fixture = fixture(true);
+        fixture.files.uncheckedCleanupFailuresRemaining = 2;
+        WorldBackupService.BackupTask task = fixture.service.prepare(fixture.world.id());
+        WorldBackupService.BackupResult result = fixture.service.executeFilePhase(task);
+
+        assertTrue(task.committed());
+        assertTrue(Files.isRegularFile(tempDir.resolve(result.artifactName())));
+        assertTrue(task.cleanupFailure() != null);
+        fixture.service.finish(task);
+        assertTrue(Files.isRegularFile(tempDir.resolve(result.artifactName())));
+        assertTrue(task.cleanupFailure() != null);
+        assertTrue(fixture.runtime.loaded);
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
     void externallyReloadedWorldIsRejectedBeforeBackupSnapshotCopy() {
         Fixture fixture = fixture(true);
         WorldBackupService.BackupTask task = fixture.service.prepare(fixture.world.id());
@@ -187,12 +224,27 @@ class WorldBackupServiceTest {
         private boolean loaded;
         private int loadCount;
         private int unloadCount;
+        private boolean failDuringUnload;
+        private boolean failNextLoadedQuery;
         FakeRuntime(boolean loaded) { this.loaded = loaded; }
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) { }
         @Override public void rollbackCreatedWorld(WorldRecord world) { }
-        @Override public boolean isLoaded(WorldRecord world) { return loaded; }
+        @Override public boolean isLoaded(WorldRecord world) {
+            if (failNextLoadedQuery) {
+                failNextLoadedQuery = false;
+                throw new IllegalStateException("runtime loaded query failed");
+            }
+            return loaded;
+        }
         @Override public void loadWorld(WorldRecord world) { loaded = true; loadCount++; }
-        @Override public void unloadWorld(WorldRecord world) { loaded = false; unloadCount++; }
+        @Override public void unloadWorld(WorldRecord world) {
+            unloadCount++;
+            if (failDuringUnload) {
+                failDuringUnload = false;
+                throw new IllegalStateException("partial world dimension unload failed");
+            }
+            loaded = false;
+        }
         @Override public void teleportPlayerToSpawn(UUID playerId, WorldRecord world) { }
     }
 
@@ -201,6 +253,7 @@ class WorldBackupServiceTest {
         private int stageCopyCount;
         private int deleteWorkspaceCalls;
         private boolean failNextDelete;
+        private int uncheckedCleanupFailuresRemaining;
         private WorldCopyProfile lastProfile;
         FakeFiles(Path root) { this.root = root; }
         @Override public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) throws IOException {
@@ -216,6 +269,10 @@ class WorldBackupServiceTest {
         @Override public void deleteWorld(WorldRecord world) { throw new UnsupportedOperationException(); }
         @Override public void deleteWorkspace(Path workspace) throws IOException {
             deleteWorkspaceCalls++;
+            if (uncheckedCleanupFailuresRemaining > 0) {
+                uncheckedCleanupFailuresRemaining--;
+                throw new IllegalStateException("unchecked cleanup error");
+            }
             if (failNextDelete) {
                 failNextDelete = false;
                 throw new IOException("transient cleanup failure");
