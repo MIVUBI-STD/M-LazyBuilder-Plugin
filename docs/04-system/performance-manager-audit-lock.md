@@ -112,6 +112,18 @@ These paths remain acceptance-gated:
 
 The implementation may evolve, but a second renderer, scheduler, residency registry, or generic performance framework is not justified while these owners remain sufficient.
 
+## External implementation references (reviewed October 2026)
+
+These projects are architecture references, not bundled dependencies or source-code donors:
+
+- [Sodium](https://github.com/CaffeineMC/sodium): renderer throughput and frame-time consistency. Its full renderer replacement is **not** imported; LazyBuilder preserves one first-party renderer owner and compatibility gates.
+- [Lithium](https://github.com/CaffeineMC/lithium): correctness-preserving optimizations with opt-out mechanisms. Adopt the discipline of narrowly scoped, reversible optional work; do not rewrite authoritative Minecraft behavior.
+- [Iris](https://github.com/IrisShaders/Iris): shader compatibility and lifecycle boundaries. Prefer conservative shader fallback and exact-version compatibility proof over assumptions about modern renderer internals.
+- [Caffeine](https://github.com/ben-manes/caffeine): bounded cache admission/eviction and measured efficiency. Keep existing bounded first-party caches rather than adding a heavyweight external cache dependency without a measured use case.
+- [BlueMap](https://github.com/BlueMap-Minecraft/BlueMap): asynchronous mapping and separation of rendering work from authoritative server state. Map Manager remains a client-side, bounded, presentation-only cache and must never force-load server chunks.
+
+The directly justified source changes in this batch are Map Manager's load-before-write cache invariant and safe on-disk region publication, plus Performance Manager's non-destructive, bounded preference persistence. Deeper GPU allocator, shader-pipeline, and renderer changes remain proof-gated. External licenses must be evaluated before copying any code; no code is copied by this comparison.
+
 ## Capability ownership and remote verification
 
 Compatibility decisions are now made per optimization domain instead of through a growing list of

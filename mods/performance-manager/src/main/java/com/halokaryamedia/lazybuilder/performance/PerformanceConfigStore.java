@@ -6,7 +6,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.LinkOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -17,6 +20,7 @@ public final class PerformanceConfigStore {
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Performance/Config");
     private static final String FILE_NAME = "lazybuilder-performance-manager.properties";
     private static final String HEADER = "LazyBuilder Performance Manager preferences";
+    private static final long MAX_CONFIG_BYTES = 64L * 1024L;
 
     private final Path configFile;
 
@@ -26,12 +30,27 @@ public final class PerformanceConfigStore {
 
     public PerformancePreferences load() {
         PerformancePreferences defaults = PerformancePreferences.defaults();
-        if (!Files.isRegularFile(configFile)) {
+        if (!Files.exists(configFile, LinkOption.NOFOLLOW_LINKS)) {
             save(defaults);
+            return defaults;
+        }
+        if (!Files.isRegularFile(configFile, LinkOption.NOFOLLOW_LINKS)) {
+            LOGGER.warn("Unsafe Performance Manager preference file {}; using defaults without changing it", configFile);
             return defaults;
         }
 
         Properties properties = new Properties();
+        try {
+            if (Files.size(configFile) > MAX_CONFIG_BYTES) {
+                LOGGER.warn("Oversized Performance Manager preference file {}; preserving it and using defaults",
+                        configFile);
+                return defaults;
+            }
+        } catch (IOException inspectionFailure) {
+            LOGGER.warn("Could not inspect Performance Manager preferences {}; using defaults",
+                    configFile, inspectionFailure);
+            return defaults;
+        }
         try (Reader reader = Files.newBufferedReader(configFile)) {
             properties.load(reader);
         } catch (IOException exception) {
@@ -61,28 +80,41 @@ public final class PerformanceConfigStore {
         properties.setProperty("memory.optimizations", Boolean.toString(preferences.memoryOptimizations()));
 
         Path parent = configFile.getParent();
-        Path temporary = configFile.resolveSibling(configFile.getFileName() + ".tmp");
+        Path temporary = null;
         try {
-            if (parent != null) Files.createDirectories(parent);
+            if (parent == null) throw new IOException("Performance preferences have no config directory");
+            Files.createDirectories(parent);
+            if (!Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("Performance preferences directory is unsafe: " + parent);
+            }
+            if (Files.exists(configFile, LinkOption.NOFOLLOW_LINKS)
+                    && !Files.isRegularFile(configFile, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("Refusing unsafe Performance Manager preference target: " + configFile);
+            }
+            temporary = Files.createTempFile(parent, FILE_NAME + ".", ".tmp");
             try (Writer writer = Files.newBufferedWriter(temporary)) {
                 properties.store(writer, HEADER);
             }
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
             try {
-                Files.move(
-                        temporary,
-                        configFile,
-                        StandardCopyOption.REPLACE_EXISTING,
-                        StandardCopyOption.ATOMIC_MOVE
-                );
+                Files.move(temporary, configFile, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException unsupported) {
                 Files.move(temporary, configFile, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException exception) {
-            LOGGER.warn("Unable to persist Performance Manager preferences to {}; keeping runtime preferences active", configFile, exception);
-            try {
-                Files.deleteIfExists(temporary);
-            } catch (IOException cleanupFailure) {
-                LOGGER.debug("Unable to remove temporary Performance Manager preference file {}", temporary, cleanupFailure);
+            LOGGER.warn("Unable to persist Performance Manager preferences to {}; keeping runtime preferences active",
+                    configFile, exception);
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException cleanupFailure) {
+                    LOGGER.debug("Unable to remove temporary Performance Manager preference file {}",
+                            temporary, cleanupFailure);
+                }
             }
         }
     }
