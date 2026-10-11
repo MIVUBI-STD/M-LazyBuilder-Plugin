@@ -106,11 +106,15 @@ class LocalWorldFileRepositoryTest {
         Files.createDirectories(worldRoot.resolve("OrphanCreate"));
         Files.writeString(worldRoot.resolve("OrphanCreate/level.dat"), "level");
 
-        WorldFileRepository.CreateRecovery rolledBack = repository.recoverCreateTransactions(List.of(committed));
-        assertEquals(0, rolledBack.committed());
-        assertEquals(1, rolledBack.rolledBack());
-        assertEquals(0, rolledBack.preserved());
-        assertFalse(Files.exists(worldRoot.resolve("OrphanCreate")));
+        WorldFileRepository.CreateRecovery pending = repository.recoverCreateTransactions(List.of(committed));
+        assertEquals(0, pending.committed());
+        assertEquals(0, pending.rolledBack());
+        assertEquals(1, pending.preserved());
+        assertEquals("level", Files.readString(worldRoot.resolve("OrphanCreate/level.dat")));
+        try (var markers = Files.list(workRoot)) {
+            assertTrue(markers.anyMatch(path -> path.getFileName().toString().endsWith(".create")),
+                    "preserved create transaction must retain its durable recovery marker");
+        }
     }
 
     @Test
@@ -188,10 +192,13 @@ class LocalWorldFileRepositoryTest {
 
         Path orphanStage = repository.stageCopy(world(), UUID.randomUUID(), WorldCopyProfile.DUPLICATE);
         repository.publishStagedWorld(orphanStage, "UncommittedCopy");
-        WorldFileRepository.PublishRecovery discarded = repository.recoverPublishedWorlds(List.of(committed));
-        assertEquals(0, discarded.finalized());
-        assertEquals(1, discarded.discarded());
-        assertFalse(Files.exists(worldRoot.resolve("UncommittedCopy")));
+        WorldFileRepository.PublishRecovery pending = repository.recoverPublishedWorlds(List.of(committed));
+        assertEquals(0, pending.finalized());
+        assertEquals(0, pending.discarded());
+        assertEquals(1, pending.preserved());
+        assertEquals("level", Files.readString(worldRoot.resolve("UncommittedCopy/level.dat")));
+        assertTrue(Files.exists(worldRoot.resolve("UncommittedCopy/.lazybuilder-publish-pending")),
+                "uncommitted world must retain evidence for operator reconciliation");
     }
 
     @Test

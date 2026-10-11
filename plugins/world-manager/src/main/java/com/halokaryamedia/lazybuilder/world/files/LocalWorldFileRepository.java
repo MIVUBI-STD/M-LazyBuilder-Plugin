@@ -292,7 +292,6 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
                 String folderName = identity.get().folderName();
                 Path world = worldPath(folderName);
-                CreateMarkerState markerState = readCreateMarker(marker);
                 if (managedFolders.contains(folderName)) {
                     Files.delete(marker);
                     committed++;
@@ -308,18 +307,12 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                     preserved++;
                     continue;
                 }
-                if (markerState != CreateMarkerState.RUNTIME_CREATED) {
-                    // INTENT or legacy/unparseable evidence does not prove LazyBuilder
-                    // created this folder. Preserve it rather than risk deleting an
-                    // unrelated unmanaged Paper world.
-                    preserved++;
-                    continue;
-                }
-
-                deleteTree(world);
-                PaperWorldFamilyLayout.deletePendingFamilySiblings(worldRoot, folderName);
-                Files.delete(marker);
-                rolledBack++;
+                // Even a RUNTIME_CREATED marker cannot establish whether the
+                // existing folder contains irreplaceable user edits or whether
+                // registry publication succeeded before a later failure.
+                // Preserve the bytes and marker; startup blocks auto-adoption
+                // until an operator reconciles this transaction.
+                preserved++;
             }
         }
         return new CreateRecovery(committed, rolledBack, preserved);
@@ -426,11 +419,11 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                     Files.delete(marker);
                     finalizedFolders.add(folderName);
                     finalized++;
-                } else if (markerIdentity.valid()) {
-                    deleteTree(child);
-                    PaperWorldFamilyLayout.deletePendingFamilySiblings(worldRoot, folderName);
-                    discarded++;
                 } else {
+                    // A marker, even with a valid operation identity, is not
+                    // permission to destroy a world that has no registry record.
+                    // Keep the world and all dimension siblings for recovery.
+                    // The startup owner blocks automatic adoption when preserved > 0.
                     preserved++;
                 }
             }

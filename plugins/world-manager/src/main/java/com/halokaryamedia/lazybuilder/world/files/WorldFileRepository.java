@@ -60,8 +60,9 @@ public interface WorldFileRepository {
 
     /**
      * Reconciles pending Create World transactions against persisted registry truth.
-     * Registered worlds keep their folder and only clear the marker; unregistered worlds
-     * created by an interrupted transaction are removed. Unsafe/unattributable state is preserved.
+     * Registered worlds keep their folder and only clear the marker. Existing
+     * unregistered worlds and markers are preserved for manual reconciliation:
+     * interrupted creation cannot authorize irreversible deletion.
      */
     default CreateRecovery recoverCreateTransactions(Collection<WorldRecord> managedWorlds) throws IOException {
         return new CreateRecovery(0, 0, 0);
@@ -88,7 +89,8 @@ public interface WorldFileRepository {
     /**
      * Reconciles worlds published by a transactional copy/import before the process ended.
      * Persisted registry membership is the commit authority: committed worlds have their
-     * pending marker cleared, while explicitly marked uncommitted publications are discarded.
+     * pending marker cleared, while unregistered publications and their markers are
+     * preserved for manual recovery instead of automatically deleting world data.
      */
     default PublishRecovery recoverPublishedWorlds(Collection<WorldRecord> managedWorlds) throws IOException {
         return new PublishRecovery(0, 0, 0);
