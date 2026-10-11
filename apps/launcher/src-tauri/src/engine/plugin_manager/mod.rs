@@ -294,7 +294,7 @@ impl PluginManagerState {
                     Err(format!("Could not remove invalid plugin JAR; previous file was restored: {error}"))
                 }
                 Err(rollback_error) => Err(format!(
-                    "Could not remove invalid plugin JAR: {error}; rollback also failed: {rollback_error}.                      Recovery JAR retained at {}.",
+                    "Could not remove invalid plugin JAR: {error}; rollback also failed: {rollback_error}. Recovery JAR retained at {}.",
                     rollback.display()
                 )),
             };
@@ -331,8 +331,25 @@ impl PluginManagerState {
         for (index, item) in existing.iter().enumerate() {
             if index == keep_index { continue; }
             let backup = backup_dir.join(format!(".{canonical_id}.duplicate-{index}.rollback.jar"));
-            publish_recovery_backup(&item.path, &backup)?;
+            if backup.exists() {
+                return Err(format!(
+                    "Previous plugin recovery backup still exists at {}. Resolve that recovery before retrying.",
+                    backup.display()
+                ));
+            }
             removals.push((item.path.clone(), backup));
+        }
+
+        // Prepare the entire recovery set before removing any installed JAR.
+        // On preparation failure nothing has been retired, so discard only
+        // backups created by this attempt instead of leaving a false recovery.
+        let mut prepared = Vec::new();
+        for (source, backup) in &removals {
+            if let Err(error) = publish_recovery_backup(source, backup) {
+                cleanup_operation_backups(&prepared);
+                return Err(error);
+            }
+            prepared.push((source.clone(), backup.clone()));
         }
 
         let mut removed: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -351,7 +368,7 @@ impl PluginManagerState {
                 // A failed restore may have left a previously removed JAR absent.
                 // Its prepared backup is the recovery artifact: never delete it.
                 return Err(format!(
-                    "Duplicate resolution failed: {error}; rollback also reported: {}.                      Recovery JAR backups have been retained in {}.",
+                    "Duplicate resolution failed: {error}; rollback also reported: {}. Recovery JAR backups have been retained in {}.",
                     rollback_errors.join("; "),
                     backup_dir.display()
                 ));
