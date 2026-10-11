@@ -17,9 +17,13 @@ pub struct CoreSyncTransaction {
 
 impl CoreSyncTransaction {
     pub fn finalize(mut self) -> Result<(), String> {
-        // Manifest publication already committed. Failure to retire recovery
-        // evidence must never trigger an implicit rollback on Drop.
+        // Manifest publication already committed. Only now promote new
+        // previous-valid rollback backups, leaving older backups intact
+        // throughout an uncommitted transaction.
         self.finalized = true;
+        for module in self.modules.iter().filter(|module| module.needs_update && module.had_target) {
+            module.promote_backup()?;
+        }
         if let Some(marker) = &self.pending_marker {
             fs::remove_file(marker).map_err(|error| format!(
                 "Core modules committed, but could not retire recovery marker {}: {error}",
@@ -135,11 +139,26 @@ pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<C
         file.sync_all().map_err(|e| e.to_string())?;
     }
 
-    for module in modules.iter_mut().filter(|module| module.needs_update) {
-        module.stage()?;
-    }
-    for module in modules.iter_mut().filter(|module| module.needs_update) {
-        module.backup_current()?;
+    let preparation = (|| -> Result<(), String> {
+        for module in modules.iter_mut().filter(|module| module.needs_update) {
+            module.stage()?;
+        }
+        for module in modules.iter_mut().filter(|module| module.needs_update) {
+            module.backup_current()?;
+        }
+        Ok(())
+    })();
+    if let Err(error) = preparation {
+        // Nothing has been published to the active plugin directory yet.
+        // All transient files passed the CREATE_NEW preflight for this attempt.
+        cleanup_staged(&modules);
+        if let Some(marker) = &pending_marker {
+            fs::remove_file(marker).map_err(|remove_error| format!(
+                "Core preparation failed ({error}); could not clear its recovery marker {}: {remove_error}",
+                marker.display()
+            ))?;
+        }
+        return Err(error);
     }
 
     let mut committed: Vec<usize> = Vec::new();
@@ -278,10 +297,16 @@ impl ModuleInstall {
         }
 
         let incoming = self.backup.with_extension("previous.incoming");
-        copy_verified_new(&self.target, &incoming)?;
-        replace_file(&incoming, &self.backup).map_err(|e| {
-            format!("Could not publish core rollback backup {}: {e}", self.backup.display())
-        })
+        copy_verified_new(&self.target, &incoming)
+    }
+
+    fn promote_backup(&self) -> Result<(), String> {
+        if !self.had_target { return Ok(()); }
+        let incoming = self.backup.with_extension("previous.incoming");
+        replace_file(&incoming, &self.backup).map_err(|error| format!(
+            "Core JAR committed but prior rollback backup {} could not be finalized: {error}. Core recovery marker was preserved.",
+            self.backup.display()
+        ))
     }
 
     fn commit(&mut self) -> Result<(), String> {
@@ -293,14 +318,15 @@ impl ModuleInstall {
 
     fn rollback(&mut self) -> Result<(), String> {
         if self.had_target {
-            require_regular_file(&self.backup, "core rollback backup")?;
+            let transaction_backup = self.backup.with_extension("previous.incoming");
+            require_regular_file(&transaction_backup, "core transaction rollback backup")?;
             let restore = self.target.with_extension("jar.restore");
-            copy_verified_new(&self.backup, &restore)?;
+            copy_verified_new(&transaction_backup, &restore)?;
             replace_file(&restore, &self.target)?;
-            if !files_equal(&self.backup, &self.target)? {
+            if !files_equal(&transaction_backup, &self.target)? {
                 return Err(format!(
-                    "Restored core JAR does not match recovery backup {}; recovery copy retained",
-                    self.backup.display()
+                    "Restored core JAR does not match transaction backup {}; recovery copy retained",
+                    transaction_backup.display()
                 ));
             }
             return Ok(());
@@ -506,6 +532,74 @@ mod tests {
         }
         assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"old-world");
         assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"old-utilities");
+        let _ = fs::remove_dir_all(resource_root);
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn aborted_core_sync_keeps_previous_valid_rollback_snapshots() {
+        let resource_root = test_root("core-keep-prior-resource");
+        let workspace = test_root("core-keep-prior-workspace");
+        resource_tree(&resource_root, b"new-world", b"new-utilities");
+        let plugins = workspace.join("server").join("plugins");
+        let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::create_dir_all(&backups).unwrap();
+        fs::write(plugins.join(WORLD_FILE_NAME), b"old-world").unwrap();
+        fs::write(plugins.join(UTILITIES_FILE_NAME), b"old-utilities").unwrap();
+        let earlier = backups.join(format!("{WORLD_FILE_NAME}.previous"));
+        fs::write(&earlier, b"older-valid-rollback").unwrap();
+
+        {
+            let _transaction = begin_sync(&workspace, Some(&resource_root)).unwrap();
+            assert_eq!(fs::read(&earlier).unwrap(), b"older-valid-rollback");
+        }
+        assert_eq!(fs::read(&earlier).unwrap(), b"older-valid-rollback");
+        assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"old-world");
+        assert!(!backups.join(".core-sync-pending").exists());
+        let _ = fs::remove_dir_all(resource_root);
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn finalized_core_sync_promotes_only_committed_previous_jars() {
+        let resource_root = test_root("core-promote-resource");
+        let workspace = test_root("core-promote-workspace");
+        resource_tree(&resource_root, b"new-world", b"new-utilities");
+        let plugins = workspace.join("server").join("plugins");
+        let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::create_dir_all(&backups).unwrap();
+        fs::write(plugins.join(WORLD_FILE_NAME), b"old-world").unwrap();
+        fs::write(plugins.join(UTILITIES_FILE_NAME), b"old-utilities").unwrap();
+        let previous = backups.join(format!("{WORLD_FILE_NAME}.previous"));
+        fs::write(&previous, b"ancient-history").unwrap();
+
+        let transaction = begin_sync(&workspace, Some(&resource_root)).unwrap();
+        assert_eq!(fs::read(&previous).unwrap(), b"ancient-history");
+        transaction.finalize().unwrap();
+        assert_eq!(fs::read(&previous).unwrap(), b"old-world");
+        assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"new-world");
+        assert!(!backups.join(".core-sync-pending").exists());
+        let _ = fs::remove_dir_all(resource_root);
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn preexisting_core_staging_is_preserved_before_sync() {
+        let resource_root = test_root("core-staging-conflict-resource");
+        let workspace = test_root("core-staging-conflict-workspace");
+        resource_tree(&resource_root, b"new-world", b"new-utilities");
+        let plugins = workspace.join("server").join("plugins");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::write(plugins.join(WORLD_FILE_NAME), b"old-world").unwrap();
+        fs::write(plugins.join(UTILITIES_FILE_NAME), b"old-utilities").unwrap();
+        let staged = plugins.join(WORLD_FILE_NAME).with_extension("jar.incoming");
+        fs::write(&staged, b"ONLY RECOVERY COPY").unwrap();
+
+        assert!(begin_sync(&workspace, Some(&resource_root)).is_err());
+        assert_eq!(fs::read(&staged).unwrap(), b"ONLY RECOVERY COPY");
+        assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"old-world");
         let _ = fs::remove_dir_all(resource_root);
         let _ = fs::remove_dir_all(workspace);
     }
