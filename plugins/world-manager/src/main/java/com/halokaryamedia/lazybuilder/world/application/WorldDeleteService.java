@@ -92,9 +92,13 @@ public final class WorldDeleteService {
 
             try {
                 files.finishStagedDelete(staged, task.world);
-            } catch (IOException cleanupFailure) {
+            } catch (IOException | RuntimeException cleanupFailure) {
+                // Durable registry removal is the commit boundary. Unexpected
+                // cleanup exceptions cannot change it into an apparent failure.
+                // Keep staged root for the existing restart reconciliation path.
                 task.cleanupWorkspace = staged;
-                task.cleanupFailure = cleanupFailure;
+                task.cleanupFailure = cleanupFailure instanceof IOException io
+                        ? io : new IOException("Committed Delete cleanup failed", cleanupFailure);
             }
         } catch (IOException | RuntimeException exception) {
             if (staged != null && !task.committed) {
@@ -120,9 +124,11 @@ public final class WorldDeleteService {
                 files.finishStagedDelete(task.cleanupWorkspace, task.world);
                 task.cleanupWorkspace = null;
                 task.cleanupFailure = null;
-            } catch (IOException retryFailure) {
-                if (task.cleanupFailure != null) retryFailure.addSuppressed(task.cleanupFailure);
-                task.cleanupFailure = retryFailure;
+            } catch (IOException | RuntimeException retryFailure) {
+                IOException deferred = retryFailure instanceof IOException io
+                        ? io : new IOException("Committed Delete cleanup retry failed", retryFailure);
+                if (task.cleanupFailure != null) deferred.addSuppressed(task.cleanupFailure);
+                task.cleanupFailure = deferred;
             }
         }
 

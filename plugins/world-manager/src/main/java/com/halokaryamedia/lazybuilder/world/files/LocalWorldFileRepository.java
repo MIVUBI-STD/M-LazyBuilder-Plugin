@@ -223,13 +223,18 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
         if (Files.exists(destination)) {
             throw new IOException("Cannot restore staged delete over existing world: " + folderName);
         }
-        moveDirectory(source, destination);
-        // Previous Local builds could have moved dimension payloads into root
-        // staging. Restore those legacy stages without deleting existing data.
-        if (Files.exists(destination.resolve(JAVA_NETHER_DIRECTORY))
-                || Files.exists(destination.resolve(JAVA_END_DIRECTORY))) {
-            PaperWorldFamilyLayout.publishCanonicalDimensions(worldRoot, folderName, false);
+        // An older Delete implementation moved dimensions into root staging.
+        // Publishing that legacy form after moving the root can fail midway
+        // when other sibling data survives. Do not move the only recovery copy:
+        // require reconciliation of legacy staged families before any mutation.
+        if (Files.exists(source.resolve(JAVA_NETHER_DIRECTORY),
+                    java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                || Files.exists(source.resolve(JAVA_END_DIRECTORY),
+                    java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Legacy Delete staging contains dimension data; preserved for "
+                    + "manual reconciliation without modifying world folders: " + source);
         }
+        moveDirectory(source, destination);
     }
 
     @Override

@@ -402,6 +402,29 @@ class LocalWorldFileRepositoryTest {
     }
 
     @Test
+    void legacyDeleteStagingWithCanonicalDimensionsIsPreservedWithoutPublishing() throws Exception {
+        Path worlds = tempDir.resolve("legacy-delete-worlds");
+        Path work = tempDir.resolve("legacy-delete-work");
+        Path root = worlds.resolve("Build");
+        Files.createDirectories(root);
+        Files.writeString(root.resolve("level.dat"), "user-world");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        WorldRecord record = world();
+        Path staged = repository.stageDelete(record, UUID.randomUUID());
+        Files.createDirectories(staged.resolve("DIM-1/region"));
+        Files.writeString(staged.resolve("DIM-1/region/r.0.0.mca"), "old-world-nether");
+
+        WorldFileRepository.DeleteRecovery recovery =
+                repository.recoverDeleteWorkspaces(List.of(record));
+        assertEquals(0, recovery.restored());
+        assertEquals(1, recovery.preserved());
+        assertFalse(Files.exists(root));
+        assertEquals("user-world", Files.readString(staged.resolve("level.dat")));
+        assertEquals("old-world-nether",
+                Files.readString(staged.resolve("DIM-1/region/r.0.0.mca")));
+    }
+
+    @Test
     void committedDeleteCleansSiblingsOnlyAfterCommit() throws Exception {
         Path worlds = tempDir.resolve("delete-committed-worlds");
         Path root = worlds.resolve("Build");

@@ -73,6 +73,22 @@ class WorldDeleteServiceTest {
     }
 
     @Test
+    void uncheckedPostCommitCleanupFailurePreservesRegistryCommitAndRecovery() {
+        Fixture fixture = fixture(false);
+        fixture.files.uncheckedCleanupFailuresRemaining = 2;
+        WorldDeleteService.DeleteTask task = fixture.service.prepare(fixture.world.id(), "Build");
+
+        assertDoesNotThrow(() -> fixture.service.executeFilePhase(task));
+        assertDoesNotThrow(() -> fixture.service.finish(task));
+
+        assertTrue(task.committed());
+        assertTrue(fixture.registry.all().isEmpty());
+        assertTrue(fixture.persistence.saved.isEmpty());
+        assertNotNull(task.cleanupFailure(), "temporary cleanup failure remains observable");
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+    }
+
+    @Test
     void deleteRequiresExactDisplayNameConfirmation() {
         Fixture fixture = fixture(false);
         assertThrows(IllegalArgumentException.class,
@@ -159,6 +175,7 @@ class WorldDeleteServiceTest {
         private boolean restored;
         private boolean workspaceDeleted;
         private int cleanupFailuresRemaining;
+        private int uncheckedCleanupFailuresRemaining;
 
         @Override
         public Path stageCopy(WorldRecord source, UUID operationId, WorldCopyProfile profile) {
@@ -180,6 +197,10 @@ class WorldDeleteServiceTest {
 
         @Override
         public void deleteWorkspace(Path workspace) throws IOException {
+            if (uncheckedCleanupFailuresRemaining > 0) {
+                uncheckedCleanupFailuresRemaining--;
+                throw new IllegalStateException("injected unchecked cleanup failure");
+            }
             if (cleanupFailuresRemaining > 0) {
                 cleanupFailuresRemaining--;
                 throw new IOException("cleanup failure");
