@@ -2,7 +2,8 @@ use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::operations::{OperationError, OperationRegistry};
 use crate::engine::plugin_ingress;
 use crate::engine::plugin_manager::{PluginInstallResult, PluginManagerState, PluginSummary};
-use crate::engine::server_manager::ServerManagerState;
+use crate::engine::server_manager::{ServerManagerState, ServerSnapshot};
+use crate::engine::server_runtime_registry::ServerRuntimeRegistry;
 use crate::engine::server_start_lock::ServerStartLease;
 use crate::engine::workspace_registry;
 use serde::Serialize;
@@ -207,14 +208,35 @@ where
             }
         };
 
-        let server = task_app.state::<ServerManagerState>();
         let _ = operations.set_phase(
             &operation_id,
             "preflight",
             "Checking plugin mutation safety",
-            "Confirming the server remains offline while plugin files are changed.",
+            "Confirming the selected workspace's Paper process has stopped before changing JARs.",
             None,
         );
+        // Three-server support has one controller per workspace. Never inspect
+        // the former global ServerManagerState for a workspace-scoped mutation.
+        let runtimes = task_app.state::<ServerRuntimeRegistry>();
+        let server = match runtimes.active_runtime() {
+            Ok((selected, server)) if selected.id == active.id => server,
+            Ok(_) => {
+                let error = CommandError::recoverable_action(
+                    "WORKSPACE_CHANGED",
+                    "Active server changed during plugin mutation admission.",
+                    RecoveryAction::ReviewPlugins,
+                );
+                fail_operation(&operations, &operation_id, &error);
+                return Err(error);
+            }
+            Err(message) => {
+                let error = CommandError::recoverable_action(
+                    "SERVER_BUSY", message, RecoveryAction::StopServer,
+                );
+                fail_operation(&operations, &operation_id, &error);
+                return Err(error);
+            }
+        };
         if let Err(message) = ensure_plugin_mutation_allowed(&server) {
             let error = CommandError::recoverable_action("SERVER_BUSY", message, RecoveryAction::StopServer);
             fail_operation(&operations, &operation_id, &error);
@@ -254,7 +276,17 @@ where
 }
 
 fn ensure_plugin_mutation_allowed(server: &ServerManagerState) -> Result<(), String> {
-    let snapshot = server.snapshot()?;
+    require_stopped_paper_snapshot(&server.snapshot()?)
+}
+
+fn require_stopped_paper_snapshot(snapshot: &ServerSnapshot) -> Result<(), String> {
+    // A Crashed state can still hold a live child after failed shutdown.
+    // Process identity, not the human-readable state alone, controls safety.
+    if let Some(pid) = snapshot.pid {
+        return Err(format!(
+            "Paper PID {pid} is still associated with this workspace. Stop or explicitly recover it before changing plugin JARs."
+        ));
+    }
     match snapshot.state.as_str() {
         "Offline" | "Crashed" => Ok(()),
         "Detached" => Err(
@@ -287,4 +319,28 @@ where
     tauri::async_runtime::spawn_blocking(work)
         .await
         .map_err(|error| format!("{label} task failed: {error}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::require_stopped_paper_snapshot;
+    use crate::engine::server_manager::ServerSnapshot;
+
+    fn snapshot(state: &str, pid: Option<u32>) -> ServerSnapshot {
+        ServerSnapshot {
+            state: state.into(), health: "Warning".into(), cpu_load_percent: 0.0,
+            used_memory_bytes: 0, max_memory_bytes: 0, pid, log_path: String::new(),
+        }
+    }
+
+    #[test]
+    fn plugin_mutations_require_absent_paper_pid_even_when_crashed() {
+        assert!(require_stopped_paper_snapshot(&snapshot("Offline", None)).is_ok());
+        assert!(require_stopped_paper_snapshot(&snapshot("Crashed", None)).is_ok());
+        assert!(require_stopped_paper_snapshot(&snapshot("Crashed", Some(123))).is_err());
+        assert!(require_stopped_paper_snapshot(&snapshot("Offline", Some(123))).is_err());
+        assert!(require_stopped_paper_snapshot(&snapshot("Detached", Some(123))).is_err());
+        assert!(require_stopped_paper_snapshot(&snapshot("Starting", None)).is_err());
+        assert!(require_stopped_paper_snapshot(&snapshot("Online", Some(123))).is_err());
+    }
 }
