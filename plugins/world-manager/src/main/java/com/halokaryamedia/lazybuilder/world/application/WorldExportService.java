@@ -131,10 +131,11 @@ public final class WorldExportService {
         String format = normalizeFormat(targetFormat);
         String safeArtifact = validateArtifactName(artifactName);
         WorldOperationCoordinator.Lease lease = operations.acquire(worldId, WorldOperationType.EXPORT);
-        boolean wasLoaded = runtimeService.isLoaded(worldId);
+        boolean wasLoaded = false;
         boolean liveSnapshot = false;
         WorldRuntimeGateway.LiveSnapshotState snapshotState = null;
         try {
+            wasLoaded = runtimeService.isLoaded(worldId);
             if (wasLoaded && runtimeService.hasPlayers(worldId)) {
                 snapshotState = runtimeService.beginLiveSnapshotDuringOperation(worldId);
                 liveSnapshot = true;
@@ -150,8 +151,17 @@ public final class WorldExportService {
                 } catch (RuntimeException restoreFailure) {
                     exception.addSuppressed(restoreFailure);
                 }
+            } else if (wasLoaded && !liveSnapshot) {
+                try {
+                    // Unloading may fail after some dimensions were already
+                    // detached, even while Paper still reports a loaded root.
+                    runtimeService.restoreFamilyAfterFailedUnload(worldId);
+                } catch (RuntimeException restoreFailure) {
+                    exception.addSuppressed(restoreFailure);
+                }
             }
-            lease.close();
+            try { lease.close(); }
+            catch (RuntimeException releaseFailure) { exception.addSuppressed(releaseFailure); }
             throw exception;
         }
     }
@@ -381,7 +391,8 @@ public final class WorldExportService {
             return true;
         }
         if (!task.wasLoaded) return false;
-        if (!runtimeService.isLoaded(id)) runtimeService.loadDuringOperation(id);
+        // Restore the full Paper world family, not only a missing root.
+        runtimeService.restoreFamilyAfterFailedUnload(id);
         return true;
     }
 

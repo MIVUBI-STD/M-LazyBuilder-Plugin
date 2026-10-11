@@ -38,6 +38,32 @@ class WorldExportServiceTest {
     @TempDir Path tempDir;
 
     @Test
+    void failedPartialUnloadRestoresWorldFamilyAndReleasesExportLease() {
+        Fixture fixture = fixture(true);
+        fixture.runtime.failDuringUnload = true;
+        IllegalStateException failure = assertThrows(IllegalStateException.class,
+                () -> fixture.service.prepare(fixture.world.id(),
+                        WorldExportService.NATIVE_SERVER_FORMAT, "Build-export"));
+        assertTrue(failure.getMessage().contains("partial unload"));
+        assertTrue(fixture.runtime.loaded);
+        assertEquals(1, fixture.runtime.loadCount,
+                "family reload is required even if root still appears loaded");
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+        assertEquals(0, fixture.files.stageCopyCount);
+    }
+
+    @Test
+    void failedRuntimeQueryDoesNotStrandExportLease() {
+        Fixture fixture = fixture(true);
+        fixture.runtime.failNextLoadedQuery = true;
+        assertThrows(IllegalStateException.class,
+                () -> fixture.service.prepare(fixture.world.id(),
+                        WorldExportService.NATIVE_SERVER_FORMAT, "Build-export"));
+        assertFalse(fixture.operations.isBusy(fixture.world.id()));
+        assertEquals(0, fixture.runtime.unloadCount);
+    }
+
+    @Test
     void nativeExportRestoresLoadedWorldImmediatelyAfterSnapshot() throws Exception {
         Fixture fixture = fixture(true);
 
@@ -294,12 +320,27 @@ class WorldExportServiceTest {
         int unloadCount;
         int beginLiveSnapshotCount;
         int endLiveSnapshotCount;
+        boolean failDuringUnload;
+        boolean failNextLoadedQuery;
         FakeRuntime(boolean loaded) { this.loaded = loaded; }
         @Override public void createNewWorld(WorldRecord world, BuildReadyPolicy policy) {}
         @Override public void rollbackCreatedWorld(WorldRecord world) {}
-        @Override public boolean isLoaded(WorldRecord world) { return loaded; }
+        @Override public boolean isLoaded(WorldRecord world) {
+            if (failNextLoadedQuery) {
+                failNextLoadedQuery = false;
+                throw new IllegalStateException("Paper runtime load query failed");
+            }
+            return loaded;
+        }
         @Override public void loadWorld(WorldRecord world) { loaded = true; loadCount++; }
-        @Override public void unloadWorld(WorldRecord world) { loaded = false; unloadCount++; }
+        @Override public void unloadWorld(WorldRecord world) {
+            unloadCount++;
+            if (failDuringUnload) {
+                failDuringUnload = false;
+                throw new IllegalStateException("Paper partial unload failed");
+            }
+            loaded = false;
+        }
         @Override public boolean beginLiveSnapshot(WorldRecord world) {
             beginLiveSnapshotCount++;
             boolean previous = autoSave;
