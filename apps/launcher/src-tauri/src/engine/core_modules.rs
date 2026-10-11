@@ -344,7 +344,10 @@ impl ModuleInstall {
 }
 
 fn cleanup_staged(modules: &[ModuleInstall]) {
-    for module in modules {
+    // A module with no change never staged anything in this transaction.
+    // Its pre-existing .incoming files can be the only surviving user recovery
+    // evidence and must never be removed as collateral cleanup.
+    for module in modules.iter().filter(|module| module.needs_update) {
         if module.staged.exists() {
             let _ = fs::remove_file(&module.staged);
         }
@@ -578,6 +581,30 @@ mod tests {
         assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"new-world");
         assert!(!backups.join(".core-sync-pending").exists());
         let _ = fs::remove_dir_all(resource_root);
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn unrelated_core_staging_survives_another_module_update() {
+        let resources = test_root("core-unrelated-stage-resources");
+        let workspace = test_root("core-unrelated-stage-workspace");
+        resource_tree(&resources, b"same-world", b"new-utility");
+        let plugins = workspace.join("server").join("plugins");
+        let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::create_dir_all(&backups).unwrap();
+        fs::write(plugins.join(WORLD_FILE_NAME), b"same-world").unwrap();
+        fs::write(plugins.join(UTILITIES_FILE_NAME), b"old-utility").unwrap();
+        let pending = plugins.join(WORLD_FILE_NAME).with_extension("jar.incoming");
+        let prior_backup = backups.join(format!("{WORLD_FILE_NAME}.previous")).with_extension("previous.incoming");
+        fs::write(&pending, b"UNRELATED RECOVERY").unwrap();
+        fs::write(&prior_backup, b"UNRELATED BACKUP").unwrap();
+
+        begin_sync(&workspace, Some(&resources)).unwrap().finalize().unwrap();
+        assert_eq!(fs::read(&pending).unwrap(), b"UNRELATED RECOVERY");
+        assert_eq!(fs::read(&prior_backup).unwrap(), b"UNRELATED BACKUP");
+        assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"new-utility");
+        let _ = fs::remove_dir_all(resources);
         let _ = fs::remove_dir_all(workspace);
     }
 
