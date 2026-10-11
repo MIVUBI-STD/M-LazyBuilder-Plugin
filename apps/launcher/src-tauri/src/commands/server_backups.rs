@@ -140,10 +140,15 @@ pub async fn server_backup_restore(
         );
         match server_backups::verify(&workspace_id, &backup_id) {
             Ok(report) if report.status == server_backups::BackupIntegrityStatus::LegacyUnverified => {
-                let _ = operations.add_warning(
-                    &operation_id,
-                    "This restore point uses the legacy backup format and has no per-file checksum manifest. Identity validation will still be enforced.",
+                // The restore engine requires a verified, per-file SHA-256 manifest.
+                // Reject legacy snapshots before creating recovery intent or staging.
+                let error = CommandError::recoverable_action(
+                    "BACKUP_INTEGRITY_FAILED",
+                    "This legacy backup has no per-file SHA-256 manifest and cannot be restored automatically. Use a verified, current-format restore point.",
+                    RecoveryAction::ReviewBackups,
                 );
+                fail_operation(&operations, &operation_id, &error, true);
+                return Err(error);
             }
             Ok(_) => {}
             Err(message) => {
