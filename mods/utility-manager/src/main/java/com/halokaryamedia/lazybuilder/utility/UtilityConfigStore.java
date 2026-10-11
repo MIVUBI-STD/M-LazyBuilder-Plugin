@@ -6,7 +6,10 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.Writer;
+import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.LinkOption;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -26,8 +29,14 @@ public final class UtilityConfigStore {
 
     public UtilityPreferences load() {
         UtilityPreferences defaults = UtilityPreferences.defaults();
-        if (!Files.isRegularFile(configFile)) {
+        if (!Files.exists(configFile, LinkOption.NOFOLLOW_LINKS)) {
             save(defaults);
+            return defaults;
+        }
+        if (!Files.isRegularFile(configFile, LinkOption.NOFOLLOW_LINKS)) {
+            // A directory or symbolic link is not an owned preferences file.
+            // Never follow, overwrite, or replace it on startup.
+            LOGGER.warn("Unsafe Utility Manager preferences path {}; using defaults without changing files", configFile);
             return defaults;
         }
 
@@ -91,28 +100,39 @@ public final class UtilityConfigStore {
         properties.setProperty("hud.compact_debug", Boolean.toString(preferences.compactDebugHud()));
 
         Path parent = configFile.getParent();
-        Path temporary = configFile.resolveSibling(configFile.getFileName() + ".tmp");
+        Path temporary = null;
         try {
             if (parent != null) Files.createDirectories(parent);
+            if (Files.exists(configFile, LinkOption.NOFOLLOW_LINKS)
+                    && !Files.isRegularFile(configFile, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("Refusing to replace an unsafe preferences target: " + configFile);
+            }
+            // A shared predictable .tmp filename could be a link to unrelated
+            // user data or a pending write from another session.
+            temporary = Files.createTempFile(parent, FILE_NAME + ".", ".tmp");
             try (Writer writer = Files.newBufferedWriter(temporary)) {
                 properties.store(writer, HEADER);
             }
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
             try {
-                Files.move(
-                        temporary,
-                        configFile,
-                        StandardCopyOption.REPLACE_EXISTING,
-                        StandardCopyOption.ATOMIC_MOVE
-                );
+                Files.move(temporary, configFile,
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException unsupported) {
                 Files.move(temporary, configFile, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException exception) {
-            LOGGER.warn("Unable to persist Utility Manager preferences to {}; keeping runtime preferences active", configFile, exception);
-            try {
-                Files.deleteIfExists(temporary);
-            } catch (IOException cleanupFailure) {
-                LOGGER.debug("Unable to remove temporary Utility Manager preference file {}", temporary, cleanupFailure);
+            LOGGER.warn("Unable to persist Utility Manager preferences to {}; keeping runtime preferences active",
+                    configFile, exception);
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException cleanupFailure) {
+                    LOGGER.debug("Unable to remove temporary Utility Manager preference file {}",
+                            temporary, cleanupFailure);
+                }
             }
         }
     }
