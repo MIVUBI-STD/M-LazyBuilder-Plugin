@@ -126,7 +126,7 @@ pub fn ensure_core_current(resource_dir: Option<&Path>) -> Result<(), String> {
         };
     }
 
-    transaction.finalize();
+    transaction.finalize()?;
     core_modules::remove_stale_core_jars(&workspace)?;
     Ok(())
 }

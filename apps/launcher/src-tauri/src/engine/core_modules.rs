@@ -1,5 +1,6 @@
 use crate::engine::paths;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 pub const CORE_VERSION: &str = "0.1.0-SNAPSHOT";
@@ -11,18 +12,38 @@ pub struct CoreSyncTransaction {
     modules: Vec<ModuleInstall>,
     committed: Vec<usize>,
     finalized: bool,
+    pending_marker: Option<PathBuf>,
 }
 
 impl CoreSyncTransaction {
-    pub fn finalize(mut self) {
+    pub fn finalize(mut self) -> Result<(), String> {
+        // Manifest publication already committed. Failure to retire recovery
+        // evidence must never trigger an implicit rollback on Drop.
         self.finalized = true;
+        if let Some(marker) = &self.pending_marker {
+            fs::remove_file(marker).map_err(|error| format!(
+                "Core modules committed, but could not retire recovery marker {}: {error}",
+                marker.display()
+            ))?;
+        }
         cleanup_staged(&self.modules);
+        Ok(())
     }
 
     pub fn rollback(mut self) -> Result<(), String> {
         let result = self.rollback_inner();
         self.finalized = true;
-        cleanup_staged(&self.modules);
+        if result.is_ok() {
+            if let Some(marker) = &self.pending_marker {
+                fs::remove_file(marker).map_err(|error| format!(
+                    "Core modules restored, but recovery marker {} remains: {error}",
+                    marker.display()
+                ))?;
+            }
+            cleanup_staged(&self.modules);
+        }
+        // On an incomplete rollback keep staged copies, previous backups and
+        // the marker; they may be the only evidence for manual reconciliation.
         result
     }
 
@@ -44,8 +65,13 @@ impl CoreSyncTransaction {
 impl Drop for CoreSyncTransaction {
     fn drop(&mut self) {
         if !self.finalized {
-            let _ = self.rollback_inner();
-            cleanup_staged(&self.modules);
+            if self.rollback_inner().is_ok() {
+                if let Some(marker) = &self.pending_marker {
+                    if fs::remove_file(marker).is_err() { return; }
+                }
+                cleanup_staged(&self.modules);
+            }
+            // A rollback failure deliberately leaves recovery bytes in place.
         }
     }
 }
@@ -75,6 +101,40 @@ pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<C
         )?,
     ];
 
+    let any_update = modules.iter().any(|module| module.needs_update);
+    let pending_marker = any_update.then(|| backups.join(".core-sync-pending"));
+    if let Some(marker) = &pending_marker {
+        if entry_exists(marker)? {
+            return Err(format!(
+                "Unresolved core module transaction at {}; preserve existing recovery files and reconcile before retrying.",
+                marker.display()
+            ));
+        }
+        // Preflight every staging/swap path before touching the active JARs.
+        for module in modules.iter().filter(|module| module.needs_update) {
+            for path in [
+                &module.staged,
+                &module.backup.with_extension("previous.incoming"),
+                &module.backup.with_extension("previous.swap"),
+                &module.target.with_extension("previous.swap"),
+                &module.target.with_extension("jar.restore"),
+            ] {
+                if entry_exists(path)? {
+                    return Err(format!(
+                        "Unresolved core module recovery artifact at {}. Preserve it before retrying.",
+                        path.display()
+                    ));
+                }
+            }
+        }
+        let mut file = OpenOptions::new().write(true).create_new(true)
+            .open(marker).map_err(|error| format!(
+                "Could not reserve durable core transaction {}: {error}", marker.display()
+            ))?;
+        file.write_all(b"lazybuilder-core-sync-v1\n").map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+    }
+
     for module in modules.iter_mut().filter(|module| module.needs_update) {
         module.stage()?;
     }
@@ -97,8 +157,16 @@ pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<C
             if let Err(rollback_error) = modules[index].rollback() {
                 rollback_errors.push(rollback_error);
             }
-            cleanup_staged(&modules);
             if rollback_errors.is_empty() {
+                if let Some(marker) = &pending_marker {
+                    // On a verified rollback, clear only our operation marker.
+                    // Staging can then be retired without losing old JARs.
+                    fs::remove_file(marker).map_err(|remove_error| format!(
+                        "Core module update failed ({error}), JARs were restored, but recovery marker {} could not be removed: {remove_error}",
+                        marker.display()
+                    ))?;
+                }
+                cleanup_staged(&modules);
                 return Err(format!("Core module update failed and was rolled back: {error}"));
             }
             return Err(format!(
@@ -113,6 +181,7 @@ pub fn begin_sync(workspace: &Path, app_resource_dir: Option<&Path>) -> Result<C
         modules,
         committed,
         finalized: false,
+        pending_marker,
     })
 }
 
@@ -181,17 +250,12 @@ struct ModuleInstall {
 
 impl ModuleInstall {
     fn new(source: PathBuf, target: PathBuf, backup: PathBuf) -> Result<Self, String> {
-        let needs_update = if target.is_file() {
-            !files_equal(&source, &target)?
-        } else {
-            target.exists() || !target.is_file()
-        };
-        if target.exists() && !target.is_file() {
-            return Err(format!(
-                "Core module target exists but is not a file: {}",
-                target.display()
-            ));
+        require_regular_file(&source, "bundled core source")?;
+        let target_exists = entry_exists(&target)?;
+        if target_exists {
+            require_regular_file(&target, "core module target")?;
         }
+        let needs_update = !target_exists || !files_equal(&source, &target)?;
         let staged = target.with_extension("jar.incoming");
         Ok(Self {
             source,
@@ -204,72 +268,52 @@ impl ModuleInstall {
     }
 
     fn stage(&mut self) -> Result<(), String> {
-        if self.staged.exists() {
-            fs::remove_file(&self.staged).map_err(|e| e.to_string())?;
-        }
-        fs::copy(&self.source, &self.staged).map_err(|e| {
-            format!("Could not stage core module {}: {e}", self.source.display())
-        })?;
-        if !files_equal(&self.source, &self.staged)? {
-            let _ = fs::remove_file(&self.staged);
-            return Err(format!(
-                "Staged core module verification failed: {}",
-                self.source.display()
-            ));
-        }
-        Ok(())
+        copy_verified_new(&self.source, &self.staged)
     }
 
     fn backup_current(&mut self) -> Result<(), String> {
-        self.had_target = self.target.is_file();
+        self.had_target = entry_exists(&self.target)?;
         if !self.had_target {
             return Ok(());
         }
 
         let incoming = self.backup.with_extension("previous.incoming");
-        if incoming.exists() {
-            fs::remove_file(&incoming).map_err(|e| e.to_string())?;
-        }
-        fs::copy(&self.target, &incoming).map_err(|e| {
-            format!("Could not stage core rollback backup {}: {e}", self.target.display())
-        })?;
-        if !files_equal(&self.target, &incoming)? {
-            let _ = fs::remove_file(&incoming);
-            return Err(format!(
-                "Core rollback backup verification failed: {}",
-                self.target.display()
-            ));
-        }
+        copy_verified_new(&self.target, &incoming)?;
         replace_file(&incoming, &self.backup).map_err(|e| {
             format!("Could not publish core rollback backup {}: {e}", self.backup.display())
         })
     }
 
     fn commit(&mut self) -> Result<(), String> {
-        if self.target.exists() {
-            fs::remove_file(&self.target).map_err(|e| {
-                format!("Could not replace active core module {}: {e}", self.target.display())
-            })?;
-        }
-        fs::rename(&self.staged, &self.target).map_err(|error| {
-            format!("Could not publish core module {}: {error}", self.target.display())
-        })
+        // Never delete the existing runnable JAR before the verified candidate
+        // has been published; replace_file keeps the old bytes in a swap.
+        replace_file(&self.staged, &self.target)
+            .map_err(|error| format!("Could not publish core module {}: {error}", self.target.display()))
     }
 
     fn rollback(&mut self) -> Result<(), String> {
-        if self.target.exists() {
-            fs::remove_file(&self.target).map_err(|e| e.to_string())?;
-        }
         if self.had_target {
-            if !self.backup.is_file() {
+            require_regular_file(&self.backup, "core rollback backup")?;
+            let restore = self.target.with_extension("jar.restore");
+            copy_verified_new(&self.backup, &restore)?;
+            replace_file(&restore, &self.target)?;
+            if !files_equal(&self.backup, &self.target)? {
                 return Err(format!(
-                    "Core module rollback backup is missing: {}",
+                    "Restored core JAR does not match recovery backup {}; recovery copy retained",
                     self.backup.display()
                 ));
             }
-            fs::copy(&self.backup, &self.target).map_err(|e| {
-                format!("Could not restore core module {}: {e}", self.target.display())
-            })?;
+            return Ok(());
+        }
+        if entry_exists(&self.target)? {
+            require_regular_file(&self.target, "newly published core JAR")?;
+            if !files_equal(&self.source, &self.target)? {
+                return Err(format!(
+                    "New core JAR {} changed after publication; refusing rollback deletion",
+                    self.target.display()
+                ));
+            }
+            fs::remove_file(&self.target).map_err(|e| e.to_string())?;
         }
         Ok(())
     }
@@ -288,23 +332,75 @@ fn cleanup_staged(modules: &[ModuleInstall]) {
 }
 
 fn replace_file(source: &Path, destination: &Path) -> Result<(), String> {
-    if destination.exists() {
-        let previous = destination.with_extension("previous.swap");
-        let _ = fs::remove_file(&previous);
+    require_regular_file(source, "staged core JAR")?;
+    let previous = destination.with_extension("previous.swap");
+    if entry_exists(&previous)? {
+        return Err(format!(
+            "Unresolved core JAR swap at {}; existing recovery data was preserved",
+            previous.display()
+        ));
+    }
+    if entry_exists(destination)? {
+        require_regular_file(destination, "current core JAR")?;
         fs::rename(destination, &previous).map_err(|e| e.to_string())?;
         match fs::rename(source, destination) {
             Ok(()) => {
+                // Publication is complete; losing cleanup cannot undo commit.
                 let _ = fs::remove_file(previous);
                 Ok(())
             }
-            Err(error) => {
-                let _ = fs::rename(&previous, destination);
-                Err(error.to_string())
-            }
+            Err(error) => match fs::rename(&previous, destination) {
+                Ok(()) => Err(format!("Could not publish core JAR; old JAR restored: {error}")),
+                Err(restore_error) => Err(format!(
+                    "Core JAR publication failed ({error}) and rollback failed ({restore_error}); recovery preserved at {}",
+                    previous.display()
+                )),
+            },
         }
     } else {
         fs::rename(source, destination).map_err(|e| e.to_string())
     }
+}
+
+fn entry_exists(path: &Path) -> Result<bool, String> {
+    match fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+fn require_regular_file(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| format!("Could not inspect {label} {}: {error}", path.display()))?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(format!("Unsafe {label}: {}", path.display()));
+    }
+    Ok(())
+}
+
+fn copy_verified_new(source: &Path, destination: &Path) -> Result<(), String> {
+    require_regular_file(source, "core copy source")?;
+    let mut input = fs::File::open(source).map_err(|e| e.to_string())?;
+    let mut output = OpenOptions::new().write(true).create_new(true).open(destination)
+        .map_err(|error| format!(
+            "Core staging path {} could not be reserved; recovery data was preserved: {error}",
+            destination.display()
+        ))?;
+    let copy_result = std::io::copy(&mut input, &mut output)
+        .and_then(|_| output.sync_all()).map_err(|e| e.to_string());
+    drop(output);
+    if let Err(error) = copy_result {
+        let _ = fs::remove_file(destination);
+        return Err(error);
+    }
+    if !files_equal(source, destination)? {
+        return Err(format!(
+            "Core staged-copy verification failed at {}; preserve both copies",
+            destination.display()
+        ));
+    }
+    Ok(())
 }
 
 fn resolve_source(resource_dir: Option<&Path>, file_name: &str) -> Result<PathBuf, String> {
@@ -384,7 +480,7 @@ mod tests {
         fs::create_dir_all(&plugins).unwrap();
         fs::write(plugins.join(WORLD_FILE_NAME), b"old-world").unwrap();
         fs::write(plugins.join(UTILITIES_FILE_NAME), b"old-utilities").unwrap();
-        begin_sync(&workspace, Some(&resource_root)).unwrap().finalize();
+        begin_sync(&workspace, Some(&resource_root)).unwrap().finalize().unwrap();
         assert_eq!(fs::read(plugins.join(WORLD_FILE_NAME)).unwrap(), b"new-world");
         assert_eq!(fs::read(plugins.join(UTILITIES_FILE_NAME)).unwrap(), b"new-utilities");
         let backups = workspace.join("tools").join("lazybuilder").join("plugin-backups");
