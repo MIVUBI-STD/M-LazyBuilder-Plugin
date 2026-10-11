@@ -40,6 +40,9 @@ public interface WorldFileRepository {
     /** Move one managed world into an owned workspace before destructive deletion is committed. */
     Path stageDelete(WorldRecord world, UUID operationId) throws IOException;
 
+    /** Durable proof that the registry removal committed before destructive cleanup. */
+    default void markDeleteCommitted(Path staged, WorldRecord world) throws IOException { }
+
     /** Restore a pre-commit Delete without touching existing dimension siblings. */
     default void restoreStagedDelete(Path staged, WorldRecord world) throws IOException {
         publishStagedWorld(staged, world.folderName());

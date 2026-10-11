@@ -91,6 +91,7 @@ public final class WorldDeleteService {
             task.committed = true;
 
             try {
+                files.markDeleteCommitted(staged, task.world);
                 files.finishStagedDelete(staged, task.world);
             } catch (IOException | RuntimeException cleanupFailure) {
                 // Durable registry removal is the commit boundary. Unexpected
@@ -121,6 +122,7 @@ public final class WorldDeleteService {
 
         if (task.committed && task.cleanupWorkspace != null) {
             try {
+                files.markDeleteCommitted(task.cleanupWorkspace, task.world);
                 files.finishStagedDelete(task.cleanupWorkspace, task.world);
                 task.cleanupWorkspace = null;
                 task.cleanupFailure = null;

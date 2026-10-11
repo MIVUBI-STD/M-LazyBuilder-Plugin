@@ -34,6 +34,7 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     private static final String WORK_SUFFIX = ".work";
     private static final String COPY_SUFFIX = ".copy";
     private static final String DELETE_SUFFIX = ".delete";
+    private static final String DELETE_COMMITTED_MARKER = ".lazybuilder-delete-committed";
     private static final String CREATE_SUFFIX = ".create";
     private static final String CREATE_MARKER_VERSION = "1";
     private static final String CREATE_STATE_INTENT = "INTENT";
@@ -239,6 +240,48 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
     }
 
     @Override
+    public void markDeleteCommitted(Path staged, WorldRecord world) throws IOException {
+        Objects.requireNonNull(world, "world");
+        Path stage = requireOwnedDeleteStaging(staged, world.folderName());
+        Path marker = stage.resolve(DELETE_COMMITTED_MARKER);
+        if (Files.exists(marker, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            if (!validDeleteCommitMarker(stage, world.folderName())) {
+                throw new IOException("Delete staging contains invalid commit evidence: " + marker);
+            }
+            return;
+        }
+        byte[] payload = deleteCommitPayload(stage, world.folderName())
+                .getBytes(StandardCharsets.UTF_8);
+        // The registry remove already committed. Publish one durable immutable
+        // marker before any irreversible sibling or staging cleanup.
+        try (var channel = java.nio.channels.FileChannel.open(marker,
+                java.nio.file.StandardOpenOption.CREATE_NEW,
+                java.nio.file.StandardOpenOption.WRITE)) {
+            var buffer = java.nio.ByteBuffer.wrap(payload);
+            while (buffer.hasRemaining()) channel.write(buffer);
+            channel.force(true);
+        }
+    }
+
+    private static String deleteCommitPayload(Path stage, String folderName) throws IOException {
+        var identity = parseDeleteWorkspaceName(stage.getFileName().toString())
+                .orElseThrow(() -> new IOException("Invalid Delete staging identity"));
+        if (!identity.folderName().equalsIgnoreCase(folderName)) {
+            throw new IOException("Delete staging folder identity does not match committed world");
+        }
+        return "version=1\noperationId=" + identity.operationId()
+                + "\ndestination=" + encodeFolderName(identity.folderName()) + "\n";
+    }
+
+    private static boolean validDeleteCommitMarker(Path stage, String folderName) throws IOException {
+        Path marker = stage.resolve(DELETE_COMMITTED_MARKER);
+        if (!Files.isRegularFile(marker) || Files.isSymbolicLink(marker)) return false;
+        if (Files.size(marker) > 1024L) return false;
+        return Files.readString(marker, StandardCharsets.UTF_8)
+                .equals(deleteCommitPayload(stage, folderName));
+    }
+
+    @Override
     public void finishStagedDelete(Path staged, WorldRecord world) throws IOException {
         Objects.requireNonNull(world, "world");
         finishStagedDeleteForFolder(staged, world.folderName());
@@ -246,6 +289,9 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
 
     private void finishStagedDeleteForFolder(Path staged, String folderName) throws IOException {
         Path target = requireOwnedDeleteStaging(staged, folderName);
+        if (!validDeleteCommitMarker(target, folderName)) {
+            throw new IOException("Delete staging has no valid durable commit marker; preserved: " + target);
+        }
         // The staged root remains recovery evidence until the last owned
         // dimension cleanup completes. An error leaves it retryable at startup.
         PaperWorldFamilyLayout.deleteFamilySiblings(worldRoot, folderName);
@@ -428,8 +474,9 @@ public final class LocalWorldFileRepository implements WorldFileRepository {
                         preserved++;
                     }
                 } else {
-                    // Registry removal was durably committed. Finish any
-                    // remaining dimension cleanup before deleting root staging.
+                    // Registry absence is insufficient proof of a committed
+                    // Delete: a missing/corrupt registry must never authorize
+                    // destruction. Only the durable Delete commit marker does.
                     try {
                         finishStagedDeleteForFolder(staged, folderName);
                         discarded++;

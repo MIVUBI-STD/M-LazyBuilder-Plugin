@@ -425,6 +425,7 @@ class LocalWorldFileRepositoryTest {
 
         LocalWorldFileRepository repository = new LocalWorldFileRepository(worldRoot, workRoot);
         Path staged = repository.stageDelete(managed, UUID.randomUUID());
+        repository.markDeleteCommitted(staged, managed);
         WorldFileRepository.DeleteRecovery result = repository.recoverDeleteWorkspaces(List.of());
 
         assertEquals(0, result.restored());
@@ -432,6 +433,39 @@ class LocalWorldFileRepositoryTest {
         assertEquals(0, result.preserved());
         assertFalse(Files.exists(staged));
         assertFalse(Files.exists(worldRoot.resolve(managed.folderName())));
+    }
+
+    @Test
+    void unmarkedDeleteStagingIsPreservedWhenRegistryRecordDisappears() throws Exception {
+        Path worlds = tempDir.resolve("unmarked-delete-worlds");
+        Path work = tempDir.resolve("unmarked-delete-work");
+        Files.createDirectories(worlds.resolve("Build"));
+        Files.writeString(worlds.resolve("Build/level.dat"), "IRREPLACEABLE");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        Path staged = repository.stageDelete(world(), UUID.randomUUID());
+
+        WorldFileRepository.DeleteRecovery recovery = repository.recoverDeleteWorkspaces(List.of());
+        assertEquals(0, recovery.discarded());
+        assertEquals(1, recovery.preserved());
+        assertEquals("IRREPLACEABLE", Files.readString(staged.resolve("level.dat")));
+        assertThrows(java.io.IOException.class,
+                () -> repository.finishStagedDelete(staged, world()));
+    }
+
+    @Test
+    void invalidCommitEvidenceCannotAuthorizeDeletion() throws Exception {
+        Path worlds = tempDir.resolve("invalid-commit-worlds");
+        Path work = tempDir.resolve("invalid-commit-work");
+        Files.createDirectories(worlds.resolve("Build"));
+        Files.writeString(worlds.resolve("Build/level.dat"), "world");
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        Path staged = repository.stageDelete(world(), UUID.randomUUID());
+        Files.writeString(staged.resolve(".lazybuilder-delete-committed"), "invalid");
+
+        WorldFileRepository.DeleteRecovery recovery = repository.recoverDeleteWorkspaces(List.of());
+        assertEquals(0, recovery.discarded());
+        assertEquals(1, recovery.preserved());
+        assertEquals("world", Files.readString(staged.resolve("level.dat")));
     }
 
     @Test
@@ -496,6 +530,7 @@ class LocalWorldFileRepositoryTest {
 
         Path staged = repository.stageDelete(record, UUID.randomUUID());
         assertEquals("USER DATA", Files.readString(sibling.resolve("custom.txt")));
+        repository.markDeleteCommitted(staged, record);
         repository.finishStagedDelete(staged, record);
         assertFalse(Files.exists(staged));
         assertFalse(Files.exists(sibling));
