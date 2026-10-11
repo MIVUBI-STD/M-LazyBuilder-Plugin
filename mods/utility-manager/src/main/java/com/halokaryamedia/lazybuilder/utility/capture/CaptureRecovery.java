@@ -6,8 +6,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -91,7 +91,7 @@ final class CaptureRecovery {
 
                 Path mkv = uniqueTarget(directory, stem + "_recovered", ".mkv");
                 try {
-                    Files.move(partial, mkv, StandardCopyOption.REPLACE_EXISTING);
+                    preservePartial(partial, mkv);
                     preserved++;
                 } catch (IOException moveError) {
                     failed++;
@@ -122,40 +122,45 @@ final class CaptureRecovery {
         try {
             process = new ProcessBuilder(
                     executable,
-                    "-hide_banner", "-loglevel", "warning", "-y",
+                    "-hide_banner", "-loglevel", "warning", "-nostdin", "-n",
                     "-i", input.toString(),
                     "-c", "copy",
                     "-movflags", "+faststart",
                     output.toString()
-            ).redirectErrorStream(true).start();
+            ).redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
 
             if (!process.waitFor(30, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
-                Files.deleteIfExists(output);
+                // The output may have been created by another process since
+                // uniqueTarget(). Never delete an unowned recovery destination.
                 return false;
             }
             boolean success = process.exitValue() == 0 && Files.isRegularFile(output)
                     && Files.size(output) > 0L;
-            if (!success) Files.deleteIfExists(output);
             return success;
         } catch (IOException | InterruptedException error) {
             if (error instanceof InterruptedException) Thread.currentThread().interrupt();
-            try {
-                Files.deleteIfExists(output);
-            } catch (IOException ignored) {
-            }
+            // A failed/no-overwrite FFmpeg attempt must not remove a file
+            // another process placed at the destination.
             return false;
         } finally {
             if (process != null && process.isAlive()) process.destroyForcibly();
         }
     }
 
+    /** Fail closed if a recovered filename appeared after the uniqueness check. */
+    static Path preservePartial(Path partial, Path destination) throws IOException {
+        // No REPLACE_EXISTING or ATOMIC_MOVE: either could replace another file.
+        return Files.move(partial, destination);
+    }
+
     static Path uniqueTarget(Path directory, String stem, String extension) {
         Path candidate = directory.resolve(stem + extension);
-        if (!Files.exists(candidate)) return candidate;
+        if (!Files.exists(candidate, LinkOption.NOFOLLOW_LINKS)) return candidate;
         for (int index = 2; index < 10_000; index++) {
             Path next = directory.resolve(stem + "_" + index + extension);
-            if (!Files.exists(next)) return next;
+            if (!Files.exists(next, LinkOption.NOFOLLOW_LINKS)) return next;
         }
         return directory.resolve(stem + "_" + System.nanoTime() + extension);
     }
