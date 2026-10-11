@@ -248,7 +248,17 @@ fn retire_obsolete_core(directory: &Path, backups: &Path, origin: &str, keep_can
     Ok(())
 }
 
+/// Durable core-sync uncertainty is a repair blocker, not an absent JAR.
+pub fn sync_recovery_pending(workspace: &Path) -> Result<bool, String> {
+    let marker = workspace.join("tools").join("lazybuilder")
+        .join("plugin-backups").join(".core-sync-pending");
+    entry_exists(&marker)
+}
+
 pub fn canonical_core_pair_ready(workspace: &Path) -> bool {
+    // An interrupted transaction cannot be reported Ready even when the
+    // newly published JAR filenames are present and readable.
+    if !matches!(sync_recovery_pending(workspace), Ok(false)) { return false; }
     let plugins = workspace.join("server").join("plugins");
     [WORLD_FILE_NAME, UTILITIES_FILE_NAME]
         .iter()
@@ -704,6 +714,24 @@ mod tests {
         assert!(remove_stale_core_jars(&workspace).is_err());
         assert_eq!(fs::read(&stale).unwrap(), b"unretired");
         assert_eq!(fs::read(&retired).unwrap(), b"EXISTING USER DATA");
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn pending_core_recovery_blocks_readiness_even_with_both_jars_present() {
+        let workspace = test_root("core-recovery-readiness");
+        let plugins = workspace.join("server").join("plugins");
+        let backup_dir = workspace.join("tools").join("lazybuilder").join("plugin-backups");
+        fs::create_dir_all(&plugins).unwrap();
+        fs::create_dir_all(&backup_dir).unwrap();
+        fs::write(plugins.join(WORLD_FILE_NAME), b"world").unwrap();
+        fs::write(plugins.join(UTILITIES_FILE_NAME), b"utilities").unwrap();
+        assert!(canonical_core_pair_ready(&workspace));
+        let marker = backup_dir.join(".core-sync-pending");
+        fs::write(&marker, b"uncertain old sync").unwrap();
+        assert!(sync_recovery_pending(&workspace).unwrap());
+        assert!(!canonical_core_pair_ready(&workspace));
+        assert_eq!(fs::read(&marker).unwrap(), b"uncertain old sync");
         let _ = fs::remove_dir_all(workspace);
     }
 

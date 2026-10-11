@@ -1,4 +1,4 @@
-use crate::engine::{provisioning, server_health, workspace_registry};
+use crate::engine::{core_modules, provisioning, server_health, workspace_registry};
 use serde::Serialize;
 use std::path::Path;
 
@@ -34,6 +34,8 @@ pub fn plan(workspace_id: &str) -> Result<ServerRepairPlan, String> {
     let mut repairs = Vec::new();
     let mut manual_actions = Vec::new();
     let mut blocked_reason = String::new();
+    let workspace = workspace_registry::get(workspace_id)?;
+    let recovery_pending = core_modules::sync_recovery_pending(Path::new(&workspace.path))?;
 
     for check in &health.checks {
         if check.ready {
@@ -54,6 +56,11 @@ pub fn plan(workspace_id: &str) -> Result<ServerRepairPlan, String> {
             "workspace-config" => repairs.push(item(&check.key, "Repair server configuration", "Restore the LazyBuilder files needed to manage this server. Worlds and plugin data will be kept.")),
             "java-runtime" => repairs.push(item(&check.key, "Repair Java 21", "Restore the Java 21 runtime used by this server.")),
             "paper-runtime" => repairs.push(item(&check.key, "Repair Paper", "Restore the supported Paper server runtime.")),
+            "core-modules" if recovery_pending => {
+                blocked_reason = "An interrupted LazyBuilder core update has unresolved recovery evidence. Preserve the JARs and backup files for manual reconciliation; automatic repair is blocked.".into();
+                manual_actions.push(item(&check.key, "Review interrupted core update",
+                    "Retain the .core-sync-pending marker and previous JAR copies. Do not delete or replace them merely to make repair proceed."));
+            }
             "core-modules" => repairs.push(item(&check.key, "Repair LazyBuilder components", "Restore the LazyBuilder components required by this server.")),
             _ if check.repairable => repairs.push(item(&check.key, &check.summary, &check.details)),
             _ => manual_actions.push(item(&check.key, &check.summary, &check.details)),
@@ -117,6 +124,13 @@ fn item(key: &str, title: &str, details: &str) -> ServerRepairItem {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn core_recovery_marker_never_counts_as_available_automatic_repair() {
+        let item = item("core-modules", "Review interrupted core update", "Preserve all backups");
+        assert_eq!(item.check_key, "core-modules");
+        assert!(item.title.contains("interrupted"));
+    }
+
     #[test]
     fn repair_item_keeps_check_identity() {
         let value = item("paper-runtime", "Repair Paper", "details");

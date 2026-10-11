@@ -1,5 +1,5 @@
 use crate::engine::{core_modules, java_runtime, server_process_guard, storage_health::{self, StoragePressure}, workspace_registry};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -28,11 +28,7 @@ pub struct ServerReadinessSnapshot {
     pub checks: Vec<ServerReadinessCheck>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ManifestIdentity { workspace_id: String }
-
-pub fn inspect(workspace_id: &str) -> Result<ServerReadinessSnapshot, String> {
+ pub fn inspect(workspace_id: &str) -> Result<ServerReadinessSnapshot, String> {
     let entry = workspace_registry::get(workspace_id)?;
     let root = PathBuf::from(&entry.path);
     let mut checks = Vec::new();
@@ -61,10 +57,10 @@ pub fn inspect(workspace_id: &str) -> Result<ServerReadinessSnapshot, String> {
     ));
 
     let manifest_path = root.join("tools").join("lazybuilder").join("config").join("workspace.json");
-    let manifest_ready = fs::read_to_string(&manifest_path)
-        .ok()
-        .and_then(|text| serde_json::from_str::<ManifestIdentity>(&text).ok())
-        .is_some_and(|manifest| manifest.workspace_id == entry.id);
+    // Reuse the canonical bounded schema validation and crash recovery instead
+    // of accepting any JSON with a matching workspaceId field.
+    let manifest_ready = workspace_registry::manifest(&root)
+        .is_ok_and(|manifest| manifest.workspace_id == entry.id);
     checks.push(check(
         "workspace-manifest",
         manifest_ready,
@@ -86,7 +82,9 @@ pub fn inspect(workspace_id: &str) -> Result<ServerReadinessSnapshot, String> {
 
     let plugins = root.join("server").join("plugins");
     let core_modules_ready = core_modules::canonical_core_pair_ready(&root);
-    checks.push(check("core-modules", core_modules_ready, if core_modules_ready { "Core modules ready" } else { "Core modules missing" }, &plugins.display().to_string(), true));
+    checks.push(check("core-modules", core_modules_ready,
+        if core_modules_ready { "Core modules ready" } else { "Core modules unavailable or recovery pending" },
+        &plugins.display().to_string(), true));
 
     let eula_path = root.join("server").join("eula.txt");
     let eula_ready = read_eula(&eula_path)?;
