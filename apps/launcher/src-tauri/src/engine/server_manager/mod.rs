@@ -195,7 +195,12 @@ impl ServerManagerState {
         if let Some(stdin) = child.stdin.as_mut() { stdin.write_all(b"stop\n").map_err(|error| error.to_string())?; stdin.flush().map_err(|error| error.to_string())?; }
         let pid = child.id(); let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
         while Instant::now() < deadline { if child.try_wait().map_err(|error| error.to_string())?.is_some() { *guard = None; let _ = self.remove_process_marker_if_matches(pid); set_runtime_state(&self.runtime_state, "Offline")?; *self.startup_started_at.lock().map_err(|_| "startup state lock poisoned".to_string())? = None; return Ok(()); } thread::sleep(Duration::from_millis(100)); }
-        child.kill().map_err(|error| error.to_string())?; let _ = child.wait(); *guard = None; let _ = self.remove_process_marker_if_matches(pid); set_runtime_state(&self.runtime_state, "Offline")?; *self.startup_started_at.lock().map_err(|_| "startup state lock poisoned".to_string())? = None; Ok(())
+        // World saves may still be in progress after the stop deadline.
+        // Preserve the live Paper process and its identity marker. An explicit
+        // recovery action, not ordinary Stop/Restart/Drop, owns forced shutdown.
+        Err(format!(
+            "Paper PID {pid} did not exit after the configured graceful stop timeout ({timeout_seconds}s). To protect world data, the process was left running; inspect Paper and retry Stop. Forced termination is never automatic."
+        ))
     }
 
     pub fn recover_detached(&self) -> Result<DetachedRecoveryResult, String> {

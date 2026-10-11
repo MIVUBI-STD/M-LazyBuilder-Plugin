@@ -130,7 +130,7 @@ pub async fn server_stop(app: AppHandle, workspace_id: Option<String>) -> Comman
         let _lease = ServerStartLease::acquire()?;
         let registry = app.state::<ServerRuntimeRegistry>();
         let (target_id, state) = resolve_runtime(&registry, workspace_id.as_deref())?;
-        stop_with_recovery(&state)?;
+        stop_without_force_kill(&state)?;
         registry.remove(&target_id)
     })
     .await
@@ -144,7 +144,7 @@ pub async fn server_restart(app: AppHandle) -> CommandResult<()> {
         let _lease = ServerStartLease::acquire()?;
         let registry = app.state::<ServerRuntimeRegistry>();
         let (active, state) = registry.active_runtime()?;
-        stop_with_recovery(&state)?;
+        stop_without_force_kill(&state)?;
         let paper_port = prepare_managed_start(&app, &active.id)?;
         state.start(paper_port)?;
         registry.set_paper_port(&active.id, paper_port)
@@ -218,6 +218,9 @@ fn classify_server_stop_error(message: String) -> CommandError {
     let lower = message.to_ascii_lowercase();
     if is_lifecycle_lease_busy(&lower) {
         return CommandError::recoverable_action("SERVER_START_BUSY", message, RecoveryAction::WaitForServerStart);
+    }
+    if lower.contains("graceful stop timeout") {
+        return CommandError::recoverable_action("SERVER_STOP_TIMEOUT", message, RecoveryAction::WaitForServerStop);
     }
     CommandError::recoverable_action("SERVER_STOP_FAILED", message, RecoveryAction::RetryOperation)
 }
@@ -367,35 +370,10 @@ fn paper_port_available(port: u16) -> bool {
     TcpListener::bind(("0.0.0.0", port)).is_ok()
 }
 
-fn stop_with_recovery(state: &ServerManagerState) -> Result<(), String> {
-    match state.stop() {
-        Ok(()) => Ok(()),
-        Err(stop_error) => {
-            let snapshot = state.snapshot().map_err(|snapshot_error| {
-                format!("{stop_error}; additionally failed to inspect stop recovery state: {snapshot_error}")
-            })?;
-
-            if !is_recoverable_stop_snapshot(&snapshot) {
-                return Err(stop_error);
-            }
-
-            match state.recover_detached() {
-                Ok(result) if result.stopped => {
-                    let _ = state.snapshot();
-                    Ok(())
-                }
-                Ok(result) => Err(format!(
-                    "{stop_error}; stop recovery did not terminate PID {}: {}",
-                    result.pid, result.message
-                )),
-                Err(recovery_error) => Err(format!("{stop_error}; stop recovery also failed: {recovery_error}")),
-            }
-        }
-    }
-}
-
-fn is_recoverable_stop_snapshot(snapshot: &ServerSnapshot) -> bool {
-    matches!(snapshot.state.as_str(), "Stopping" | "Detached") && snapshot.pid.is_some()
+fn stop_without_force_kill(state: &ServerManagerState) -> Result<(), String> {
+    // An ordinary Stop/Restart must not auto-escalate to recover_detached(),
+    // which uses process termination. Recovery is a separate explicit action.
+    state.stop()
 }
 
 fn ensure_base_provisioned() -> Result<(), String> {
@@ -428,36 +406,15 @@ fn ensure_provisioned() -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_recoverable_stop_snapshot, normalize_console_command, paper_port_available, select_paper_port};
-    use crate::engine::server_manager::ServerSnapshot;
+    use super::{classify_server_stop_error, normalize_console_command, paper_port_available, select_paper_port};
     use std::net::TcpListener;
 
-    fn snapshot(state: &str, pid: Option<u32>) -> ServerSnapshot {
-        ServerSnapshot {
-            state: state.into(),
-            health: "Warning".into(),
-            cpu_load_percent: 0.0,
-            used_memory_bytes: 0,
-            max_memory_bytes: 0,
-            pid,
-            log_path: String::new(),
-        }
-    }
-
     #[test]
-    fn detached_process_is_recoverable_for_stop_and_restart() {
-        assert!(is_recoverable_stop_snapshot(&snapshot("Detached", Some(42))));
-    }
-
-    #[test]
-    fn stopping_process_is_recoverable() {
-        assert!(is_recoverable_stop_snapshot(&snapshot("Stopping", Some(42))));
-    }
-
-    #[test]
-    fn non_recovery_states_or_missing_pid_are_rejected() {
-        assert!(!is_recoverable_stop_snapshot(&snapshot("Offline", Some(42))));
-        assert!(!is_recoverable_stop_snapshot(&snapshot("Detached", None)));
+    fn graceful_stop_timeout_returns_wait_action_instead_of_forced_recovery() {
+        let error = classify_server_stop_error(
+            "Paper PID 42 did not exit after the configured graceful stop timeout (30s). To protect world data, the process was left running.".into()
+        );
+        assert_eq!(error.code, "SERVER_STOP_TIMEOUT");
     }
 
     #[test]
