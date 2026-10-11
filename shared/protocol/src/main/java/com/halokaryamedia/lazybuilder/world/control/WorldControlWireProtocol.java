@@ -9,6 +9,8 @@ import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
+import java.nio.charset.CodingErrorAction;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -530,7 +532,10 @@ public final class WorldControlWireProtocol {
         if (length < 0 || length > MAX_STRING_BYTES) throw new IOException("World-control string length is invalid");
         byte[] bytes = in.readNBytes(length);
         if (bytes.length != length) throw new EOFException("World-control string is truncated");
-        return new String(bytes, StandardCharsets.UTF_8);
+        return StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes)).toString();
     }
 
     private static void writeUuid(DataOutputStream out, UUID id) throws IOException {

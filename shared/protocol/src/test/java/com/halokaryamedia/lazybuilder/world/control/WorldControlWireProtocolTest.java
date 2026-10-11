@@ -90,6 +90,18 @@ class WorldControlWireProtocolTest {
     }
 
     @Test
+    void rejectsMalformedUtf8InRequestAndResponse() throws Exception {
+        byte[] request = WorldControlWireProtocol.encodeRequest(
+                new WorldControlWireProtocol.InspectImport("x"));
+        request[request.length - 1] = (byte) 0xFF;
+        assertThrows(IOException.class, () -> WorldControlWireProtocol.decodeRequest(request));
+
+        byte[] response = WorldControlWireProtocol.error("x");
+        response[response.length - 1] = (byte) 0xFF;
+        assertThrows(IOException.class, () -> WorldControlWireProtocol.decodeResponse(response));
+    }
+
+    @Test
     void rejectsUnknownVersionAndTrailingBytes() throws Exception {
         byte[] request = WorldControlWireProtocol.encodeRequest(new WorldControlWireProtocol.ListWorlds());
         byte[] wrongVersion = request.clone();

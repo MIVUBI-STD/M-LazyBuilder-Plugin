@@ -7,6 +7,8 @@ import java.io.DataOutputStream;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
+import java.nio.charset.CodingErrorAction;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.UUID;
@@ -377,7 +379,10 @@ public final class TransferWireProtocol {
         if (length < 0 || length > MAX_STRING_BYTES) throw new IOException("Transfer string length is invalid");
         byte[] bytes = in.readNBytes(length);
         if (bytes.length != length) throw new EOFException("Transfer string is truncated");
-        return new String(bytes, StandardCharsets.UTF_8);
+        return StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(bytes)).toString();
     }
 
     private static void writeString(DataOutputStream out, String value) throws IOException {

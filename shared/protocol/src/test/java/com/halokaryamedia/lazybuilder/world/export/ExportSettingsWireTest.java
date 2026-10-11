@@ -63,6 +63,31 @@ class ExportSettingsWireTest {
     }
 
     @Test
+    void rejectsMalformedUtf8InOptionalSettingsAndRuleValues() throws Exception {
+        ByteArrayOutputStream options = new ByteArrayOutputStream();
+        try (DataOutputStream out = new DataOutputStream(options)) {
+            ExportSettingsWire.write(out, new ExportSettingsWire.Settings(
+                    "x", "", Map.of(), false));
+        }
+        byte[] invalidOptional = options.toByteArray();
+        invalidOptional[3] = (byte) 0xFF;
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(invalidOptional))) {
+            assertThrows(IOException.class, () -> ExportSettingsWire.read(in));
+        }
+
+        ByteArrayOutputStream rules = new ByteArrayOutputStream();
+        try (DataOutputStream out = new DataOutputStream(rules)) {
+            ExportSettingsWire.write(out, new ExportSettingsWire.Settings(
+                    "", "", Map.of("keepInventory", "x"), false));
+        }
+        byte[] invalidRule = rules.toByteArray();
+        invalidRule[invalidRule.length - 1] = (byte) 0xFF;
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(invalidRule))) {
+            assertThrows(IOException.class, () -> ExportSettingsWire.read(in));
+        }
+    }
+
+    @Test
     void rejectsTruncatedPayload() throws Exception {
         byte[] truncated = {1, 0};
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(truncated))) {

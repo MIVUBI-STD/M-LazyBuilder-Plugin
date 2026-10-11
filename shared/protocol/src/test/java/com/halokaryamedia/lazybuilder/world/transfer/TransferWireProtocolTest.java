@@ -51,6 +51,18 @@ class TransferWireProtocolTest {
     }
 
     @Test
+    void rejectsMalformedUtf8InRequestAndResponse() throws Exception {
+        byte[] request = TransferWireProtocol.encodeRequest(
+                new TransferWireProtocol.BeginDownload("x"));
+        request[request.length - 1] = (byte) 0xFF;
+        assertThrows(IOException.class, () -> TransferWireProtocol.decodeRequest(request));
+
+        byte[] response = TransferWireProtocol.error("x");
+        response[response.length - 1] = (byte) 0xFF;
+        assertThrows(IOException.class, () -> TransferWireProtocol.decodeResponse(response));
+    }
+
+    @Test
     void rejectsUnknownVersionAndTrailingBytesOnBothDirections() throws Exception {
         byte[] request = TransferWireProtocol.encodeRequest(new TransferWireProtocol.BeginDownload("build.zip"));
         byte[] wrongVersion = request.clone();

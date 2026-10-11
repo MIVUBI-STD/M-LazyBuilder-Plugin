@@ -9,6 +9,8 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.ByteBuffer;
+import java.nio.charset.CodingErrorAction;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -332,7 +334,10 @@ public final class MapActionWireProtocol {
         if (length < 1 || length > MAX_STRING_BYTES || length > in.available()) throw new IOException("Invalid map string length");
         byte[] data = in.readNBytes(length);
         if (data.length != length) throw new IOException("Unexpected end of map payload");
-        return new String(data, StandardCharsets.UTF_8);
+        return StandardCharsets.UTF_8.newDecoder()
+                .onMalformedInput(CodingErrorAction.REPORT)
+                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                .decode(ByteBuffer.wrap(data)).toString();
     }
 
     private static void writeString(DataOutputStream out, String value) throws IOException {

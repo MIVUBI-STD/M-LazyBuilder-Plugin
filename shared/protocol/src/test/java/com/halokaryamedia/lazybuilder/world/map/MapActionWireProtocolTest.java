@@ -209,6 +209,20 @@ class MapActionWireProtocolTest {
     }
 
     @Test
+    void rejectsMalformedUtf8InRequestAndResponse() {
+        byte[] reply = MapActionWireProtocol.error(88L, "x");
+        reply[reply.length - 1] = (byte) 0xFF;
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(reply));
+
+        byte[] request = MapActionWireProtocol.exportAreaRequest(
+                89L, WorldId.create(), "ab", 0, 0, 1, 1,
+                "JAVA_1_21_4", "area.zip", ExportSettingsWire.Settings.inherit());
+        // version/opcode (2), requestId (8), worldId (16), length (2).
+        request[28] = (byte) 0xFF;
+        assertThrows(IOException.class, () -> MapActionWireProtocol.decodeRequest(request));
+    }
+
+    @Test
     void rejectsTruncatedPayloadsAndUnknownOpcodes() {
         assertThrows(IOException.class, () -> MapActionWireProtocol.decodeRequest(new byte[9]));
         assertThrows(IOException.class, () -> MapActionWireProtocol.decodeResponse(new byte[9]));
