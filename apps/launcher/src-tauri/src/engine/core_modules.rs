@@ -1,4 +1,4 @@
-use crate::engine::paths;
+use crate::engine::{paths, persistence};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::io::Read;
@@ -395,12 +395,10 @@ fn entry_exists(path: &Path) -> Result<bool, String> {
 }
 
 fn require_regular_file(path: &Path, label: &str) -> Result<(), String> {
-    let metadata = fs::symlink_metadata(path)
-        .map_err(|error| format!("Could not inspect {label} {}: {error}", path.display()))?;
-    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
-        return Err(format!("Unsafe {label}: {}", path.display()));
-    }
-    Ok(())
+    // Reuse the Launcher filesystem owner, including Windows reparse-point
+    // rejection. Core staging and stale-JAR retirement must have the same
+    // path-safety semantics as workspace metadata persistence.
+    persistence::safe_path::ensure_regular_file(path, label)
 }
 
 fn copy_verified_new(source: &Path, destination: &Path) -> Result<(), String> {
@@ -693,6 +691,26 @@ mod tests {
         fs::write(plugins.join(WORLD_FILE_NAME), b"current-world").unwrap();
         fs::write(plugins.join(UTILITIES_FILE_NAME), b"current-utility").unwrap();
         assert!(canonical_core_pair_ready(&workspace));
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_core_artifact_is_not_published_or_retired() {
+        use std::os::unix::fs::symlink;
+        let resource_root = test_root("core-symlink-resource");
+        let workspace = test_root("core-symlink-workspace");
+        resource_tree(&resource_root, b"new-world", b"new-utilities");
+        let plugins = workspace.join("server").join("plugins");
+        fs::create_dir_all(&plugins).unwrap();
+        let outside = workspace.join("important-user-file.txt");
+        fs::write(&outside, b"PROTECTED").unwrap();
+        symlink(&outside, plugins.join(WORLD_FILE_NAME)).unwrap();
+
+        assert!(begin_sync(&workspace, Some(&resource_root)).is_err());
+        assert_eq!(fs::read(&outside).unwrap(), b"PROTECTED");
+        assert!(plugins.join(WORLD_FILE_NAME).is_symlink());
+        let _ = fs::remove_dir_all(resource_root);
         let _ = fs::remove_dir_all(workspace);
     }
 
