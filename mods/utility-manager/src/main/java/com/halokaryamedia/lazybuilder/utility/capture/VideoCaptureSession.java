@@ -362,6 +362,15 @@ final class VideoCaptureSession {
             fail("Recording finalization was interrupted.");
         }
 
+        // destroyForcibly() requests termination; it is not proof that the
+        // process has actually exited. Calling exitValue() too early can throw
+        // and leave the recording stuck in STOPPING without a failure status.
+        if (process.isAlive()) {
+            process.destroyForcibly();
+            fail("FFmpeg did not exit during finalization. Partial recording was preserved.");
+            publish(notifier, Text.literal(status));
+            return;
+        }
         if (state == State.FAILED || process.exitValue() != 0) {
             if (state != State.FAILED) fail("FFmpeg exited with code " + process.exitValue());
             publish(notifier, Text.literal(status));
