@@ -35,10 +35,11 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
         filtered.clear();
         filtered.addAll(filter(searchField == null ? "" : searchField.getText()));
 
-        int width = Math.min(720, Math.max(280, this.width - 24));
+        int width = Math.min(720, Math.max(100, this.width - 24));
         int left = (this.width - width) / 2;
 
         String previous = searchField == null ? "" : searchField.getText();
+        int caret = searchField == null ? previous.length() : searchField.getCursor();
         searchField = new TextFieldWidget(
                 textRenderer,
                 left,
@@ -50,6 +51,7 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
         searchField.setPlaceholder(Text.literal("Search settings..."));
         searchField.setMaxLength(80);
         searchField.setText(previous);
+        searchField.setCursor(Math.min(caret, previous.length()), false);
         searchField.setChangedListener(value -> {
             filtered.clear();
             filtered.addAll(filter(value));
@@ -104,7 +106,7 @@ public final class LazyBuilderSettingsSearchScreen extends Screen {
         context.fill(0, 0, width, 36, TOP_BAR);
         context.fill(0, height - FOOTER_HEIGHT, width, height, TOP_BAR);
 
-        int panelWidth = Math.min(720, Math.max(280, width - 24));
+        int panelWidth = Math.min(720, Math.max(100, width - 24));
         int left = (width - panelWidth) / 2;
         context.drawTextWithShadow(
                 textRenderer,
