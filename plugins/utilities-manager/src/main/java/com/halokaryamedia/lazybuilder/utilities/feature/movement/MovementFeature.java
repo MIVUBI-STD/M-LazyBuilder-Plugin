@@ -9,6 +9,8 @@ import org.bukkit.command.PluginCommand;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.entity.EntityPotionEffectEvent;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerGameModeChangeEvent;
@@ -38,6 +40,7 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
     private final MovementSettings settings;
     private final Map<UUID, PlayerUtilityState> states = new HashMap<>();
     private final Set<UUID> internalGameModeChanges = new HashSet<>();
+    private final Set<UUID> internalPotionChanges = new HashSet<>();
     private boolean enabled;
 
     public MovementFeature(JavaPlugin plugin, MovementSettings settings) {
@@ -65,6 +68,7 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
         }
         states.clear();
         internalGameModeChanges.clear();
+        internalPotionChanges.clear();
         HandlerList.unregisterAll(this);
         enabled = false;
     }
@@ -108,19 +112,22 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
             player.sendMessage("Usage: /" + modeCommand(mode));
             return true;
         }
-        if (!player.hasPermission("lazybuilder.utilities.gamemode")) {
-            player.sendMessage("You do not have permission to change gamemode with LazyBuilder.");
+        if (!hasGameModeAccess(player, mode)) {
+            player.sendMessage("You do not have permission to switch to "
+                    + mode.name().toLowerCase(Locale.ROOT) + ".");
             return true;
         }
 
         PlayerUtilityState state = states.get(player.getUniqueId());
+        if (!changeGameModeInternally(player, mode)) {
+            player.sendMessage("Game mode change was blocked. Your current mode was kept.");
+            return true;
+        }
         if (state != null && state.noclipActive) {
             state.noclipActive = false;
             state.noclipBaseline = null;
         }
-
-        changeGameModeInternally(player, mode);
-        if (state != null && state.flyActive) {
+        if (state != null && state.flyActive && player.hasPermission("lazybuilder.utilities.fly")) {
             state.flightBaseline = FlightState.capture(player);
             applyFly(player, state);
         }
@@ -201,12 +208,14 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
         PlayerUtilityState state = states.computeIfAbsent(id, ignored -> new PlayerUtilityState());
         if (state.noclipActive) {
             GameMode restoreMode = state.noclipBaseline;
+            if (restoreMode != null && player.getGameMode() == GameMode.SPECTATOR
+                    && !changeGameModeInternally(player, restoreMode)) {
+                player.sendMessage("Could not exit Noclip: the game mode change was blocked.");
+                return true;
+            }
             state.noclipActive = false;
             state.noclipBaseline = null;
-            if (restoreMode != null && player.getGameMode() == GameMode.SPECTATOR) {
-                changeGameModeInternally(player, restoreMode);
-            }
-            if (state.flyActive) {
+            if (state.flyActive && player.hasPermission("lazybuilder.utilities.fly")) {
                 applyFly(player, state);
             }
             player.sendMessage("Noclip disabled.");
@@ -220,9 +229,14 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
             return true;
         }
 
-        state.noclipBaseline = player.getGameMode();
+        GameMode baseline = player.getGameMode();
+        if (!changeGameModeInternally(player, GameMode.SPECTATOR)) {
+            player.sendMessage("Could not enable Noclip: Spectator mode was blocked.");
+            cleanupState(id, state);
+            return true;
+        }
+        state.noclipBaseline = baseline;
         state.noclipActive = true;
-        changeGameModeInternally(player, GameMode.SPECTATOR);
         player.sendMessage("Noclip enabled.");
         return true;
     }
@@ -250,16 +264,29 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
             return true;
         }
 
-        state.nightVisionBaseline = player.getPotionEffect(PotionEffectType.NIGHT_VISION);
-        state.nightVisionActive = true;
-        player.addPotionEffect(new PotionEffect(
+        PotionEffect previous = player.getPotionEffect(PotionEffectType.NIGHT_VISION);
+        PotionEffect desired = new PotionEffect(
                 PotionEffectType.NIGHT_VISION,
                 Integer.MAX_VALUE,
                 0,
                 false,
                 false,
                 true
-        ));
+        );
+        internalPotionChanges.add(id);
+        boolean applied;
+        try {
+            applied = player.addPotionEffect(desired);
+        } finally {
+            internalPotionChanges.remove(id);
+        }
+        if (!applied || !isOwnedNightVision(player.getPotionEffect(PotionEffectType.NIGHT_VISION))) {
+            player.sendMessage("Night Vision was not changed; another effect or server rule may be active.");
+            cleanupState(id, state);
+            return true;
+        }
+        state.nightVisionBaseline = previous;
+        state.nightVisionActive = true;
         player.sendMessage("Night Vision enabled.");
         return true;
     }
@@ -288,10 +315,33 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
             plugin.getServer().getScheduler().runTask(plugin, () -> {
                 PlayerUtilityState current = states.get(id);
                 if (current == null || !current.flyActive || !player.isOnline()) return;
+                if (!settings.fly() || !player.hasPermission("lazybuilder.utilities.fly")) {
+                    current.flyActive = false;
+                    current.flightBaseline = null;
+                    cleanupState(id, current);
+                    return;
+                }
                 current.flightBaseline = FlightState.capture(player);
                 applyFly(player, current);
             });
         }
+        cleanupState(id, state);
+    }
+
+    /**
+     * If another plugin/potion/beacon changes Night Vision, LazyBuilder no
+     * longer owns the effect. Never erase or restore over that newer effect.
+     */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onPotionEffectChange(EntityPotionEffectEvent event) {
+        if (!(event.getEntity() instanceof Player player)
+                || event.getModifiedType() != PotionEffectType.NIGHT_VISION) return;
+        UUID id = player.getUniqueId();
+        if (internalPotionChanges.contains(id)) return;
+        PlayerUtilityState state = states.get(id);
+        if (state == null || !state.nightVisionActive) return;
+        state.nightVisionActive = false;
+        state.nightVisionBaseline = null;
         cleanupState(id, state);
     }
 
@@ -330,17 +380,42 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
         PotionEffect previous = state.nightVisionBaseline;
         state.nightVisionActive = false;
         state.nightVisionBaseline = null;
-        player.removePotionEffect(PotionEffectType.NIGHT_VISION);
-        if (previous != null) {
-            player.addPotionEffect(previous);
+        if (!isOwnedNightVision(player.getPotionEffect(PotionEffectType.NIGHT_VISION))) return;
+        UUID id = player.getUniqueId();
+        internalPotionChanges.add(id);
+        try {
+            player.removePotionEffect(PotionEffectType.NIGHT_VISION);
+            if (previous != null) player.addPotionEffect(previous);
+        } finally {
+            internalPotionChanges.remove(id);
         }
     }
 
-    private void changeGameModeInternally(Player player, GameMode mode) {
+    static boolean isOwnedNightVision(PotionEffect effect) {
+        return effect != null
+                && effect.getType() == PotionEffectType.NIGHT_VISION
+                && effect.getAmplifier() == 0
+                && effect.getDuration() >= Integer.MAX_VALUE - 1200
+                && !effect.isAmbient()
+                && !effect.hasParticles()
+                && effect.hasIcon();
+    }
+
+    public static String modePermission(GameMode mode) {
+        return "lazybuilder.utilities.gamemode." + mode.name().toLowerCase(Locale.ROOT);
+    }
+
+    public static boolean hasGameModeAccess(CommandSender sender, GameMode mode) {
+        return sender.hasPermission("lazybuilder.utilities.gamemode")
+                && sender.hasPermission(modePermission(mode));
+    }
+
+    private boolean changeGameModeInternally(Player player, GameMode mode) {
         UUID id = player.getUniqueId();
         internalGameModeChanges.add(id);
         try {
             player.setGameMode(mode);
+            return player.getGameMode() == mode;
         } finally {
             internalGameModeChanges.remove(id);
         }
