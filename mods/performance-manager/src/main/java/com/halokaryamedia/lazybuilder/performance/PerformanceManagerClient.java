@@ -150,12 +150,14 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                     shaderOnlyReloadRequests++;
                     reloadMinecraftShaders(client).whenComplete((ignored, error) ->
                             client.execute(() -> {
-                                shaderTerrainReloadInFlight = false;
-                                if (shaderTerrainReloadGeneration == reloadGeneration) {
-                                    shaderTerrainReloadGeneration = -1L;
-                                }
                                 FirstPartyShaderRuntime current = shaderRuntime;
-                                if (current == null) return;
+                                // Completion from an obsolete shader owner or prior
+                                // generation must not retire a newer reload's lease.
+                                if (!isCurrentShaderReloadCompletion(
+                                        shaderTerrainReloadGeneration, reloadGeneration,
+                                        current, shaders)) return;
+                                shaderTerrainReloadInFlight = false;
+                                shaderTerrainReloadGeneration = -1L;
                                 Throwable cause = unwrap(error);
                                 if (cause == null) shaderOnlyReloadSuccesses++;
                                 else shaderOnlyReloadFailures++;
@@ -170,6 +172,15 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                 }
             }
         });
+    }
+
+    /** Match both owner identity and generation to reject obsolete async callbacks. */
+    static boolean isCurrentShaderReloadCompletion(
+            long pendingGeneration, long completedGeneration,
+            Object currentOwner, Object submittedOwner
+    ) {
+        return pendingGeneration >= 0L && pendingGeneration == completedGeneration
+                && currentOwner != null && currentOwner == submittedOwner;
     }
 
     private static CompletableFuture<Void> reloadMinecraftShaders(MinecraftClient client) {
