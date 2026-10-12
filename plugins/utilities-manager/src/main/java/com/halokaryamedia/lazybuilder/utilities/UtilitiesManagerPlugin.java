@@ -45,6 +45,8 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
     private final Map<String, Boolean> requestedFeatures = new HashMap<>();
     private final Map<String, String> featureFailures = new HashMap<>();
     private MovementSettings movementSettings;
+    private MovementFeature movementRuntime;
+    private String reloadFailureReason = "";
     private BuildHelpersSettings buildHelpersSettings;
     private WorldSafetySettings worldSafetySettings;
     private PaperUtilityTelemetryAdapter telemetryAdapter;
@@ -86,12 +88,14 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
     }
 
     public boolean reloadUtilities() {
+        reloadFailureReason = "";
         File configFile = new File(getDataFolder(), "config.yml");
         YamlConfiguration candidate = new YamlConfiguration();
         try {
             candidate.load(configFile);
             validateConfiguration(candidate);
         } catch (IOException | InvalidConfigurationException | RuntimeException exception) {
+            reloadFailureReason = "Configuration is invalid. Existing settings were kept.";
             getLogger().log(Level.WARNING, "Utilities config reload rejected; current runtime was kept.", exception);
             return false;
         }
@@ -101,7 +105,21 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
             previous.loadFromString(getConfig().saveToString());
             validateConfiguration(previous);
         } catch (InvalidConfigurationException | RuntimeException exception) {
+            reloadFailureReason = "Current configuration could not be backed up safely.";
             getLogger().log(Level.SEVERE, "Current Utilities configuration could not be snapshotted safely.", exception);
+            return false;
+        }
+
+        if (sameEffectiveConfiguration(candidate)) {
+            // A no-op reload must never reset active Noclip/Fly or replace
+            // a potion effect just to reapply identical settings.
+            reloadConfig();
+            return true;
+        }
+        if (movementRuntime != null && movementRuntime.hasActiveSessions()) {
+            reloadFailureReason = "Players have active Fly, Noclip or Night Vision sessions. "
+                    + "Ask them to finish those sessions before applying changed settings.";
+            getLogger().warning("Utilities reload deferred: " + reloadFailureReason);
             return false;
         }
 
@@ -109,6 +127,7 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
         try {
             if (oldRegistry != null) oldRegistry.disableAll();
         } catch (RuntimeException exception) {
+            reloadFailureReason = "Existing features could not be stopped safely; no new settings were applied.";
             getLogger().log(Level.SEVERE, "Utilities reload stopped because current features did not disable cleanly.", exception);
             return false;
         }
@@ -121,6 +140,7 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
             getLogger().info("Utilities-Manager configuration reloaded.");
             return true;
         } catch (RuntimeException activationFailure) {
+            reloadFailureReason = "New settings could not be activated. Previous settings were restored when possible.";
             getLogger().log(Level.SEVERE, "Utilities candidate activation failed; restoring previous runtime.", activationFailure);
             disableCurrentRegistry("Partially activated Utilities candidate did not disable cleanly during rollback.");
             try {
@@ -129,11 +149,32 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
                 bindHubCommand();
                 getLogger().warning("Previous Utilities runtime restored after reload failure.");
             } catch (RuntimeException rollbackFailure) {
+                reloadFailureReason = "Rollback failed. Utilities were disabled; check the server console.";
                 getLogger().log(Level.SEVERE, "Utilities rollback failed; disabling plugin to avoid a partial runtime.", rollbackFailure);
                 getServer().getPluginManager().disablePlugin(this);
             }
             return false;
         }
+    }
+
+    public String reloadFailureReason() {
+        return reloadFailureReason;
+    }
+
+    private boolean sameEffectiveConfiguration(Configuration candidate) {
+        return movementSettings != null && buildHelpersSettings != null && worldSafetySettings != null
+                && movementSettings.equals(MovementSettings.from(
+                        requireSection(candidate, "features.movement")))
+                && buildHelpersSettings.equals(BuildHelpersSettings.from(
+                        requireSection(candidate, "features.build-helpers")))
+                && worldSafetySettings.equals(WorldSafetySettings.from(
+                        requireSection(candidate, "features.world-safety")))
+                && requestedFeatures.getOrDefault(MovementFeature.ID, false)
+                        == candidate.getBoolean("features.movement.enabled", true)
+                && requestedFeatures.getOrDefault(BuildHelpersFeature.ID, false)
+                        == candidate.getBoolean("features.build-helpers.enabled", true)
+                && requestedFeatures.getOrDefault(WorldSafetyFeature.ID, false)
+                        == candidate.getBoolean("features.world-safety.enabled", true);
     }
 
     public FeatureStatus featureStatus(String featureId) {
@@ -233,6 +274,7 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
         movementFeature.bindCommands();
 
         featureRegistry = registry;
+        movementRuntime = movementFeature;
         worldSafetySettings = nextWorldSafety;
         movementSettings = nextMovement;
         buildHelpersSettings = nextBuildHelpers;
