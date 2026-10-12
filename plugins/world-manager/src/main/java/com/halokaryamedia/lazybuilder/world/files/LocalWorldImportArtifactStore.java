@@ -182,9 +182,9 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         try {
             Path extracted = target;
             if (directBackup) {
-                // A server-owned backup never moves into the import inbox.
-                // Reverify before and after extraction to reject modified source bytes.
-                verifyReadOnlyDigest(artifact, expectedSha256);
+                // The request pinned a digest before extraction. Verify it
+                // afterward before publication; no extra compressed ZIP copy
+                // or redundant first hash pass is required.
                 extractBounded(artifact, target);
                 verifyReadOnlyDigest(artifact, expectedSha256);
             } else if (expectedSha256 != null) {
