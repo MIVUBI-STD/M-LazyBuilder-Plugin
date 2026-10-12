@@ -24,6 +24,7 @@ public final class PerformanceRuntime {
     private PerformancePreferences preferences;
     private volatile String lastPreferenceUpdateStatus = "ready";
     private Object activeWorldIdentity;
+    private boolean foregroundWorldActive;
 
     public PerformanceRuntime(Path configDirectory) {
         this.configStore = new PerformanceConfigStore(configDirectory);
@@ -60,9 +61,27 @@ public final class PerformanceRuntime {
 
         backgroundPolicy.update(client, preferences);
 
-        PerformanceGovernor.Profile governorProfile = updateGovernor(client);
+        // Paused, minimized and unfocused intervals are NOT evidence of game
+        // frame performance. Reset the previous pressure/governor window only
+        // at the focus boundary, not continuously while backgrounded.
+        boolean foreground = isForegroundWorld(client);
+        if (foreground != foregroundWorldActive) {
+            foregroundWorldActive = foreground;
+            frameMonitor.resetSession();
+            governor.reset();
+        }
 
-        if (preferences.entityCulling() || preferences.blockEntityCulling()) {
+        PerformanceGovernor.Profile governorProfile;
+        if (shouldUseFramePressure(foreground, frameMonitor.sampleCount())) {
+            governorProfile = updateGovernor(client);
+        } else {
+            // Three fresh frames are required before the governor can infer
+            // pressure or grant extra throughput after refocusing.
+            governor.reset();
+            governorProfile = governor.profile();
+        }
+
+        if (foreground && (preferences.entityCulling() || preferences.blockEntityCulling())) {
             cullingRuntime.tick(client, preferences, frameMonitor.pressure(), governorProfile);
         }
         if (client != null && client.worldRenderer != null && preferences.renderingOptimizations()) {
@@ -76,6 +95,15 @@ public final class PerformanceRuntime {
                     releaseBudget
             );
         }
+    }
+
+    static boolean shouldUseFramePressure(boolean foreground, int sampleCount) {
+        return foreground && sampleCount >= 3;
+    }
+
+    private static boolean isForegroundWorld(MinecraftClient client) {
+        return client != null && client.world != null && client.getWindow() != null
+                && client.isWindowFocused() && !client.getWindow().isMinimized();
     }
 
     public boolean shouldRender(Entity entity) {
