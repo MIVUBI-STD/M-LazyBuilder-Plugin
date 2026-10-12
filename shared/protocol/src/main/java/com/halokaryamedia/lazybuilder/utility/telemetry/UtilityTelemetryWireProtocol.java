@@ -21,11 +21,12 @@ public final class UtilityTelemetryWireProtocol {
     private UtilityTelemetryWireProtocol() {
     }
 
-    public sealed interface Request permits Subscribe {
+    public sealed interface Request permits Subscribe, Unsubscribe {
     }
 
-    public record Subscribe() implements Request {
-    }
+    public record Subscribe() implements Request { }
+
+    public record Unsubscribe() implements Request { }
 
     public sealed interface Response permits Snapshot {
     }
