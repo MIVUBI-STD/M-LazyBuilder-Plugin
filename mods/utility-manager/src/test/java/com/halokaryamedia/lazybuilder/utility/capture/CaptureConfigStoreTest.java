@@ -22,7 +22,7 @@ final class CaptureConfigStoreTest {
 
         assertEquals(CapturePreferences.defaults(), preferences);
         assertTrue(Files.isRegularFile(store.configFile()));
-        assertEquals(CapturePreferences.ScreenshotQuality.HIGH, preferences.screenshotQuality());
+        assertEquals(CapturePreferences.ScreenshotQuality.MAXIMUM, preferences.screenshotQuality());
     }
 
     @Test
