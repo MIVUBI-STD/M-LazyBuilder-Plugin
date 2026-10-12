@@ -632,6 +632,9 @@ public final class WorldManagerScreen extends Screen {
     private static String friendlyError(String message) {
         if (message == null || message.isBlank()) return "World Manager could not complete the request.";
         String lower = message.toLowerCase(Locale.ROOT);
+        if (lower.contains("no safe landing") || lower.contains("safe world teleport")) {
+            return "Unsafe world spawn. Check the landing area and retry.";
+        }
         if (lower.contains("permission")) return "Your server role does not allow this action.";
         if (lower.contains("builders are inside")) return "Move builders out of this world, then try again.";
         if (lower.contains("disk space") || lower.contains("storage")) return "There is not enough storage for this operation.";
