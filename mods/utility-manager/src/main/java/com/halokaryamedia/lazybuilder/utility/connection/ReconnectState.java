@@ -27,6 +27,23 @@ public final class ReconnectState {
         LOGGER.debug("Cleared reconnect target because the current client context has no multiplayer target");
     }
 
+    /**
+     * A direct-connection attempt can have no saved ServerInfo. Use the actual
+     * attempted address rather than leaving a stale target from another server.
+     */
+    public static void captureAttempt(ServerInfo info, ServerAddress address) {
+        if (info != null && info.address != null && !info.address.isBlank()) {
+            capture(info);
+            return;
+        }
+        if (address == null || !ServerAddress.isValid(address.toString())) {
+            clear();
+            return;
+        }
+        String target = address.toString();
+        capture(new ServerInfo(target, target, ServerInfo.ServerType.OTHER));
+    }
+
     public static void clear() {
         lastServer = null;
     }
