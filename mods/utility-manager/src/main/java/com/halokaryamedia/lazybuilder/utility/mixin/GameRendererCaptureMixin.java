@@ -48,16 +48,25 @@ abstract class GameRendererCaptureMixin {
             CallbackInfo ci
     ) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || client.getFramebuffer() == null) return;
+        if (client == null) return;
 
         if (lazybuilder$cleanCaptureActive) {
-            CaptureManager.captureCleanScreenshot(client);
-            client.options.hudHidden = lazybuilder$previousHudHidden;
-            renderHand = lazybuilder$previousRenderHand;
-            blockOutlineEnabled = lazybuilder$previousBlockOutline;
-            lazybuilder$cleanCaptureActive = false;
+            try {
+                if (client.getFramebuffer() != null) {
+                    CaptureManager.captureCleanScreenshot(client);
+                }
+            } finally {
+                // The temporary clean-capture view must never survive a
+                // screenshot encoder/readback failure or missing framebuffer.
+                client.options.hudHidden = lazybuilder$previousHudHidden;
+                renderHand = lazybuilder$previousRenderHand;
+                blockOutlineEnabled = lazybuilder$previousBlockOutline;
+                lazybuilder$cleanCaptureActive = false;
+            }
         }
 
-        CaptureManager.onFrameRendered(client.getFramebuffer(), System.nanoTime());
+        if (client.getFramebuffer() != null) {
+            CaptureManager.onFrameRendered(client.getFramebuffer(), System.nanoTime());
+        }
     }
 }
