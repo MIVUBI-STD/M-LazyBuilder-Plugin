@@ -8,28 +8,15 @@ import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.HeightMap;
 import org.bukkit.Location;
-import org.bukkit.Material;
 import org.bukkit.Server;
 import org.bukkit.World;
-import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 
 import java.util.Objects;
-import java.util.Set;
 import java.util.UUID;
 
 /** Paper implementation of server-authoritative X/Z map teleport resolution. */
 public final class PaperWorldLocationGateway implements WorldLocationGateway {
-    private static final Set<Material> UNSAFE_FLOORS = Set.of(
-            Material.CACTUS,
-            Material.MAGMA_BLOCK,
-            Material.CAMPFIRE,
-            Material.SOUL_CAMPFIRE,
-            Material.FIRE,
-            Material.SOUL_FIRE,
-            Material.POWDER_SNOW
-    );
-
     private final Server server;
 
     public PaperWorldLocationGateway(Server server) {
@@ -52,7 +39,7 @@ public final class PaperWorldLocationGateway implements WorldLocationGateway {
 
         Location destination;
         if (record.kind() == WorldKind.VOID) {
-            destination = world.getSpawnLocation().clone();
+            destination = PaperSafeLanding.resolveSpawn(world, record);
         } else {
             Location borderProbe = new Location(world, blockX + 0.5D, world.getMinHeight() + 1.0D, blockZ + 0.5D);
             if (!world.getWorldBorder().isInside(borderProbe)) {
@@ -73,11 +60,7 @@ public final class PaperWorldLocationGateway implements WorldLocationGateway {
         int maxFeetY = Math.min(highest + 1, world.getMaxHeight() - 2);
         int minFeetY = world.getMinHeight() + 1;
         for (int feetY = maxFeetY; feetY >= minFeetY; feetY--) {
-            Block floor = world.getBlockAt(blockX, feetY - 1, blockZ);
-            Block feet = world.getBlockAt(blockX, feetY, blockZ);
-            Block head = world.getBlockAt(blockX, feetY + 1, blockZ);
-            if (!floor.getType().isSolid() || UNSAFE_FLOORS.contains(floor.getType())) continue;
-            if (!feet.isPassable() || !head.isPassable()) continue;
+            if (!PaperSafeLanding.canLand(world, blockX, feetY, blockZ)) continue;
             return new Location(
                     world,
                     blockX + 0.5D,
