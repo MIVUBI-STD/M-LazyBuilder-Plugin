@@ -217,6 +217,13 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
         return command.getLabel().equalsIgnoreCase(commandName);
     }
 
+    /** Use the real Paper command map; a declared alias can be shadowed. */
+    public boolean isCommandAliasReady(String alias, String canonical) {
+        PluginCommand owner = getCommand(canonical);
+        return owner != null && isCommandReady(canonical)
+                && getServer().getCommandMap().getCommand(alias) == owner;
+    }
+
     public List<String> shadowedCommands() {
         List<String> shadowed = new ArrayList<>();
         for (String commandName : CANONICAL_COMMANDS) {
