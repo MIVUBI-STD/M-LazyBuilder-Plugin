@@ -19,7 +19,7 @@ public record CapturePreferences(
     }
 
     public CapturePreferences {
-        screenshotQuality = screenshotQuality == null ? ScreenshotQuality.HIGH : screenshotQuality;
+        screenshotQuality = screenshotQuality == null ? ScreenshotQuality.MAXIMUM : screenshotQuality;
         videoQuality = videoQuality == null ? VideoQuality.HIGH : videoQuality;
         videoResolution = videoResolution == null ? VideoResolution.GAME : videoResolution;
         videoFrameRate = videoFrameRate == null ? VideoFrameRate.FPS_60 : videoFrameRate;
