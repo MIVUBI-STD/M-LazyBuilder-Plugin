@@ -82,7 +82,7 @@ final class CaptureConfigStoreTest {
     }
 
     @Test
-    void malformedQualityFallsBackToHigh() throws Exception {
+    void malformedQualityFallsBackToNativePng() throws Exception {
         CaptureConfigStore store = new CaptureConfigStore(tempDir);
         Files.writeString(store.configFile(), "screenshot.quality=definitely-not-valid\n");
 
