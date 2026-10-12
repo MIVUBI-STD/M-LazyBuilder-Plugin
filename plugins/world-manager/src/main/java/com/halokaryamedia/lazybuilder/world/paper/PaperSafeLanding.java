@@ -72,14 +72,16 @@ final class PaperSafeLanding {
         double centerZ = z + 0.5D;
         // Checking only the center can place half the player's body outside a
         // narrow/edge world border. Use all four footprint corners.
-        for (double offsetX : new double[]{-PLAYER_HALF_WIDTH, PLAYER_HALF_WIDTH}) {
-            for (double offsetZ : new double[]{-PLAYER_HALF_WIDTH, PLAYER_HALF_WIDTH}) {
-                if (!world.getWorldBorder().isInside(
-                        new Location(world, centerX + offsetX, feetY, centerZ + offsetZ))) {
-                    return false;
-                }
-            }
-        }
+        Location borderProbe = new Location(world,
+                centerX - PLAYER_HALF_WIDTH, feetY, centerZ - PLAYER_HALF_WIDTH);
+        var border = world.getWorldBorder();
+        if (!border.isInside(borderProbe)) return false;
+        borderProbe.setX(centerX + PLAYER_HALF_WIDTH);
+        if (!border.isInside(borderProbe)) return false;
+        borderProbe.setZ(centerZ + PLAYER_HALF_WIDTH);
+        if (!border.isInside(borderProbe)) return false;
+        borderProbe.setX(centerX - PLAYER_HALF_WIDTH);
+        if (!border.isInside(borderProbe)) return false;
 
         Block floor = world.getBlockAt(x, feetY - 1, z);
         Block feet = world.getBlockAt(x, feetY, z);
