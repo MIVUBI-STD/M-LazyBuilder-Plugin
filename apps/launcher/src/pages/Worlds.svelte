@@ -19,6 +19,7 @@
   let search = '';
   let error: RuntimeErrorPresentation | null = null;
   let notice: string | null = null;
+  let outputFolderHint: 'backups' | 'exports' | null = null;
   let busy = false;
   let serverState: ServerState = 'Offline';
   let serverOnline = false;
@@ -79,6 +80,17 @@
     return visibleWorlds().filter((world) => world.lifecycle === 'ARCHIVED');
   }
 
+  async function openWorldOutputFolder() {
+    if (!outputFolderHint) return;
+    try {
+      const workspace = await runtimeProduct.workspace.state();
+      if (!workspace.active) throw new Error('No server is selected.');
+      await runtimeProduct.workspace.openFolder(workspace.active.id);
+    } catch (value) {
+      error = presentRuntimeError(value, 'Could not open the server folder.');
+    }
+  }
+
   function hasErrorAction() {
     return Boolean(error?.action && recoveryNavigationTarget(error.action) && onRecoveryNavigate);
   }
@@ -128,6 +140,7 @@
     busy = true;
     error = null;
     notice = null;
+    outputFolderHint = null;
     try {
       await runtimeProduct.worlds.create({
         folderName: folderName(displayName, 'world'),
@@ -170,6 +183,7 @@
     importBusy = true;
     error = null;
     notice = null;
+    outputFolderHint = null;
     try {
       const artifactName = pendingImportArtifact?.sourcePath === importPath
         ? pendingImportArtifact.artifactName
@@ -251,6 +265,7 @@
     operationBusyWorldId = world.id;
     error = null;
     notice = null;
+    outputFolderHint = null;
     try {
       operationTask = action === 'backup'
         ? await runtimeProduct.worlds.backup(world.id)
@@ -259,8 +274,9 @@
           : await runtimeProduct.worlds.restore(world.id);
       const completed = await pollTask(operationTask.taskId);
       if (completed && pageActive) {
+        if (action === 'backup') outputFolderHint = 'backups';
         notice = action === 'backup'
-          ? `World backup created for ${world.displayName}. It is stored in this server's World Manager backup folder, separate from full-server restore points.`
+          ? `World backup created for ${world.displayName}. In the server folder, open world-system/backups. Full-server restore points are managed separately.`
           : action === 'archive'
             ? `${world.displayName} archived. Use Restore in Archived worlds to reactivate it; this is not a backup restore.`
             : `${world.displayName} reactivated from archive.`;
@@ -322,6 +338,7 @@
     operationBusyWorldId = duplicateSource.id;
     error = null;
     notice = null;
+    outputFolderHint = null;
     const originalName = duplicateSource.displayName;
     try {
       operationTask = await runtimeProduct.worlds.duplicate({
@@ -349,6 +366,7 @@
     operationBusyWorldId = exportSource.id;
     error = null;
     notice = null;
+    outputFolderHint = null;
     try {
       operationTask = await runtimeProduct.worlds.export({
         worldId: exportSource.id,
@@ -361,8 +379,9 @@
       if (completed && pageActive) {
         const artifact = operationTask?.result;
         notice = artifact
-          ? `Export ready: ${artifact}. Find it in this server's World Manager exports folder.`
-          : `World export completed. Find the file in this server's World Manager exports folder.`;
+          ? `Export ready: ${artifact}. In the server folder, open world-system/exports.`
+          : `World export completed. In the server folder, open world-system/exports.`;
+        outputFolderHint = 'exports';
       }
     } catch (value) {
       if (pageActive) error = presentRuntimeError(value, 'Could not export this world.');
@@ -380,6 +399,7 @@
     operationBusyWorldId = deleteSource.id;
     error = null;
     notice = null;
+    outputFolderHint = null;
     const deletedName = deleteSource.displayName;
     try {
       operationTask = await runtimeProduct.worlds.delete({
@@ -426,7 +446,14 @@
   </header>
 
   <RuntimeErrorNotice {error} onAction={hasErrorAction() ? handleErrorAction : undefined} />
-  {#if notice}<div class="world-notice" role="status">{notice}</div>{/if}
+  {#if notice}
+    <div class="world-notice" role="status">
+      <span>{notice}</span>
+      {#if outputFolderHint}
+        <button class="output-folder-button" onclick={openWorldOutputFolder}>Open server folder</button>
+      {/if}
+    </div>
+  {/if}
 
   {#if !serverOnline}
     <section class="state-card">
@@ -608,7 +635,8 @@
   .task-activity{height:5px;overflow:hidden;border-radius:999px;background:var(--surface-3)}.task-activity i{display:block;height:100%;width:30%;border-radius:999px;background:var(--accent);animation:world-task-active 1.5s ease-in-out infinite alternate}
   @keyframes world-task-active{from{transform:translateX(0)}to{transform:translateX(230%)}}
   @media(prefers-reduced-motion:reduce){.task-activity i{animation:none;width:100%}}
-  .world-notice{margin-bottom:12px;padding:11px 12px;border:1px solid var(--accent-border);border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--text-soft);font-size:12px;line-height:1.5}
+  .world-notice{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;padding:11px 12px;border:1px solid var(--accent-border);border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--text-soft);font-size:12px;line-height:1.5}
+  .output-folder-button{min-height:32px;padding:5px 10px;border:1px solid var(--accent-border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:11px;font-weight:650;cursor:pointer}.output-folder-button:hover{background:var(--surface-2)}
   .world-list{overflow:visible;border:1px solid var(--border-soft);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow-card)}
   .world-row{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;min-height:64px;padding:10px 12px;border-bottom:1px solid var(--border-soft);transition:background-color 120ms ease}.world-row:last-child{border-bottom:0}.world-row:hover{background:rgba(255,255,255,.018)}.world-row.archived{opacity:.76}
   .world-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:9px;background:var(--surface-2);color:var(--muted)}.world-icon svg{width:18px;height:18px}
