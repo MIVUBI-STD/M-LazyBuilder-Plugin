@@ -3,7 +3,6 @@ use crate::engine::server_start_lock::ServerStartLease;
 use crate::engine::persistence::safe_path;
 use crate::engine::workspace_registry;
 use std::fs;
-use std::path::PathBuf;
 use crate::engine::world_manager::{
     create_world,
     get_world_settings,
