@@ -31,10 +31,10 @@ final class UtilityPreferencesTest {
     void narratorSuppressionUpdatePreservesEveryOtherPreference() {
         UtilityPreferences original = UtilityPreferences.defaults();
 
-        UtilityPreferences updated = original.withSuppressNarrator(false);
+        UtilityPreferences updated = original.withSuppressNarrator(true);
 
-        assertFalse(updated.suppressNarrator());
-        assertTrue(original.suppressNarrator());
+        assertTrue(updated.suppressNarrator());
+        assertFalse(original.suppressNarrator());
         assertEquals(original.borderlessWindow(), updated.borderlessWindow());
         assertEquals(original.extendedChatHistory(), updated.extendedChatHistory());
         assertEquals(original.keepChatDraft(), updated.keepChatDraft());
