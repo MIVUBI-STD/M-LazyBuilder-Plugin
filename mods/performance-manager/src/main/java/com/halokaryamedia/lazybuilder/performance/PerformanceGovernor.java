@@ -20,8 +20,10 @@ public final class PerformanceGovernor {
         boolean protective = isProtective(safe);
         boolean relaxed = isRelaxed(safe);
 
-        pressuredTicks = protective ? pressuredTicks + 1 : 0;
-        stableTicks = relaxed ? stableTicks + 1 : 0;
+        // Counters are state-machine guards, not lifetime metrics. Saturate at
+        // the largest decision threshold rather than accumulating for hours.
+        pressuredTicks = protective ? Math.min(PRESSURED_TICKS_TO_PROTECT, pressuredTicks + 1) : 0;
+        stableTicks = relaxed ? Math.min(STABLE_TICKS_TO_RELAX, stableTicks + 1) : 0;
 
         if (pressuredTicks >= PRESSURED_TICKS_TO_PROTECT) {
             mode = Mode.PROTECTIVE;
@@ -110,6 +112,10 @@ public final class PerformanceGovernor {
         }
     }
 
+    private static double sanitizeNonNegative(double value) {
+        return Double.isFinite(value) ? Math.max(0.0D, value) : 0.0D;
+    }
+
     public record Input(
             FramePressure pressure,
             double frameControlMs,
@@ -126,14 +132,16 @@ public final class PerformanceGovernor {
 
         public Input {
             pressure = pressure == null ? FramePressure.NORMAL : pressure;
-            frameControlMs = Math.max(0.0D, frameControlMs);
+            frameControlMs = sanitizeNonNegative(frameControlMs);
             chunkUploadBacklog = Math.max(0, chunkUploadBacklog);
             chunkBuildBacklog = Math.max(0, chunkBuildBacklog);
             freeChunkBuffers = Math.max(0, freeChunkBuffers);
-            usedMemoryRatio = Math.max(0.0D, Math.min(1.0D, usedMemoryRatio));
+            usedMemoryRatio = Double.isFinite(usedMemoryRatio)
+                    ? Math.max(0.0D, Math.min(1.0D, usedMemoryRatio))
+                    : 0.0D;
             cullingCacheHits = Math.max(0L, cullingCacheHits);
             cullingOccludedDecisions = Math.max(0L, cullingOccludedDecisions);
-            cullingCpuAverageMs = Math.max(0.0D, cullingCpuAverageMs);
+            cullingCpuAverageMs = sanitizeNonNegative(cullingCpuAverageMs);
         }
     }
 }
