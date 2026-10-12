@@ -225,6 +225,26 @@ pub fn start_restore_backup(request: &RestoreWorldBackupRequest) -> Result<World
     if request.destination_folder.trim().is_empty() || request.display_name.trim().is_empty() {
         return Err("A destination world name is required.".into());
     }
+    // Revalidate the file selected by the user against the *current* workspace.
+    // A previous picker session for server A cannot be restored into server B,
+    // even if both servers contain a backup with the same filename.
+    let workspace = crate::engine::workspace_registry::current()?
+        .ok_or_else(|| "Select a server before restoring a backup".to_string())?;
+    let root = PathBuf::from(&workspace.path).join("world-system").join("backups");
+    let canonical_root = fs::canonicalize(&root)
+        .map_err(|_| "The selected server backup folder is unavailable".to_string())?;
+    if root != canonical_root {
+        return Err("The selected server backup folder is redirected or unsafe".into());
+    }
+    let selected = PathBuf::from(&request.backup_file_path);
+    persistence::safe_path::ensure_regular_file(&selected, "selected world backup")?;
+    let canonical_source = fs::canonicalize(&selected)
+        .map_err(|error| format!("Selected world backup cannot be opened: {error}"))?;
+    if canonical_source.parent() != Some(canonical_root.as_path())
+        || canonical_source.file_name().and_then(|name| name.to_str())
+            != Some(request.backup_file_name.as_str()) {
+        return Err("The selected backup does not belong to this server. Choose it again.".into());
+    }
     request_mutation_json("POST", "/v1/tasks/restore-backup", Some(request))
 }
 
