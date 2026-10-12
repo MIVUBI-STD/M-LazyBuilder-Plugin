@@ -259,6 +259,7 @@ export const runtimePreviewProduct = {
     tasks: async () => [completedTask()], task: async (_taskId: string) => completedTask(), archive: async (worldId: string) => completedTask(worldId), restore: async (worldId: string) => completedTask(worldId), backup: async (worldId: string) => completedTask(worldId),
     duplicate: async (request: { worldId: string }) => completedTask(request.worldId), export: async (request: { worldId: string }) => completedTask(request.worldId), delete: async (request: { worldId: string }) => completedTask(request.worldId),
     pickImport: async () => 'D:\\Imports\\Example World.zip',
-    pickBackup: async () => 'D:\\LazyBuilder\\MIVUBI Build Server\\world-system\\backups\\Tana-Samawa-3e539c14-a84c-4892-8cc3-41c2e7d41c88.zip', uploadImport: async (_filePath: string) => 'preview-import.zip', import: async (_request: unknown) => completedTask('preview-import')
+    restoreBackup: async (_request: unknown) => completedTask('preview-restored-world'),
+    pickBackup: async () 'D:\\LazyBuilder\\MIVUBI Build Server\\world-system\\backups\\Tana-Samawa-3e539c14-a84c-4892-8cc3-41c2e7d41c88.zip', uploadImport: async (_filePath: string) => 'preview-import.zip', import: async (_request: unknown) => completedTask('preview-import')
   }
 };
