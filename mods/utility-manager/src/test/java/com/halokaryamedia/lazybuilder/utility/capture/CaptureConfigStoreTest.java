@@ -45,6 +45,43 @@ final class CaptureConfigStoreTest {
     }
 
     @Test
+    void predictableTemporaryFileIsNeverOverwrittenBySavingPreferences() throws Exception {
+        CaptureConfigStore store = new CaptureConfigStore(tempDir);
+        Path oldTemp = store.configFile().resolveSibling(
+                store.configFile().getFileName() + ".tmp");
+        Files.writeString(oldTemp, "someone-else-owned-this");
+        store.save(CapturePreferences.defaults());
+        assertEquals("someone-else-owned-this", Files.readString(oldTemp));
+        assertEquals(CapturePreferences.defaults(), store.load());
+    }
+
+    @Test
+    void unsafeTargetDirectoryIsPreserved() throws Exception {
+        CaptureConfigStore store = new CaptureConfigStore(tempDir);
+        Files.createDirectory(store.configFile());
+        Files.writeString(store.configFile().resolve("notes.txt"), "keep-this");
+        store.save(CapturePreferences.defaults());
+        assertEquals("keep-this", Files.readString(store.configFile().resolve("notes.txt")));
+        assertEquals(CapturePreferences.defaults(), store.load());
+    }
+
+    @Test
+    void symbolicLinkCaptureConfigDoesNotReadOrModifyTarget() throws Exception {
+        CaptureConfigStore store = new CaptureConfigStore(tempDir);
+        Path privateTarget = tempDir.resolve("private.txt");
+        Files.writeString(privateTarget, "private");
+        try {
+            Files.createSymbolicLink(store.configFile(), privateTarget);
+        } catch (UnsupportedOperationException | java.io.IOException unavailable) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "Symbolic links not supported in this filesystem");
+        }
+        assertEquals(CapturePreferences.defaults(), store.load());
+        store.save(CapturePreferences.defaults());
+        assertEquals("private", Files.readString(privateTarget));
+        assertTrue(Files.isSymbolicLink(store.configFile()));
+    }
+
+    @Test
     void malformedQualityFallsBackToHigh() throws Exception {
         CaptureConfigStore store = new CaptureConfigStore(tempDir);
         Files.writeString(store.configFile(), "screenshot.quality=definitely-not-valid\n");
