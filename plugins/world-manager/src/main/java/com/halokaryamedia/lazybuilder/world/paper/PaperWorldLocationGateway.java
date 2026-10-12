@@ -17,6 +17,8 @@ import java.util.UUID;
 
 /** Paper implementation of server-authoritative X/Z map teleport resolution. */
 public final class PaperWorldLocationGateway implements WorldLocationGateway {
+    /** Map teleport should never descend hundreds of blocks into unrelated caves. */
+    private static final int MAX_MAP_SURFACE_DESCENT = 16;
     private final Server server;
 
     public PaperWorldLocationGateway(Server server) {
@@ -58,7 +60,7 @@ public final class PaperWorldLocationGateway implements WorldLocationGateway {
     private static Location resolveSafeSurface(World world, int blockX, int blockZ, Player player) {
         int highest = world.getHighestBlockYAt(blockX, blockZ, HeightMap.MOTION_BLOCKING_NO_LEAVES);
         int maxFeetY = Math.min(highest + 1, world.getMaxHeight() - 2);
-        int minFeetY = world.getMinHeight() + 1;
+        int minFeetY = Math.max(world.getMinHeight() + 1, maxFeetY - MAX_MAP_SURFACE_DESCENT);
         for (int feetY = maxFeetY; feetY >= minFeetY; feetY--) {
             if (!PaperSafeLanding.canLand(world, blockX, feetY, blockZ)) continue;
             return new Location(
@@ -70,7 +72,8 @@ public final class PaperWorldLocationGateway implements WorldLocationGateway {
                     player.getLocation().getPitch()
             );
         }
-        throw new IllegalStateException("No safe surface found at map location X=" + blockX + " Z=" + blockZ);
+        throw new IllegalStateException("No safe surface found near the top of map location X="
+                + blockX + " Z=" + blockZ + ". No teleport was performed; choose another map location.");
     }
 
     private Player requireOnlinePlayer(UUID playerId) {
