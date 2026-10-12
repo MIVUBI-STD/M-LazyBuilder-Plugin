@@ -17,7 +17,7 @@ import java.util.Map;
  * do not serialize unrelated ChunkBuilder instances.
  */
 public final class ChunkRebuildBackpressure {
-    private static final Map<ChunkBuilder, DeferredState> STATES = new IdentityHashMap<>();
+    private static final Map<ChunkBuilder, DeferredState<ChunkBuilder.BuiltChunk.Task>> STATES = new IdentityHashMap<>();
     private static final ThreadLocal<Boolean> RELEASING = ThreadLocal.withInitial(() -> false);
 
     private ChunkRebuildBackpressure() {
@@ -36,7 +36,7 @@ public final class ChunkRebuildBackpressure {
             return false;
         }
 
-        DeferredState state = stateIfPresent(builder);
+        DeferredState<ChunkBuilder.BuiltChunk.Task> state = stateIfPresent(builder);
         int deferredTasks = state == null ? 0 : state.size();
         if (!ChunkRebuildBackpressurePolicy.shouldDefer(
                 pressure,
@@ -68,7 +68,7 @@ public final class ChunkRebuildBackpressure {
 
         int boundedBudget = Math.max(1, budget);
         for (int released = 0; released < boundedBudget; released++) {
-            DeferredState state = stateIfPresent(builder);
+            DeferredState<ChunkBuilder.BuiltChunk.Task> state = stateIfPresent(builder);
             if (state == null) return;
 
             ChunkBuilder.BuiltChunk.Task task = state.poll();
@@ -91,7 +91,7 @@ public final class ChunkRebuildBackpressure {
     public static void releaseAll(ChunkBuilder builder) {
         if (builder == null) return;
 
-        DeferredState state = stateIfPresent(builder);
+        DeferredState<ChunkBuilder.BuiltChunk.Task> state = stateIfPresent(builder);
         if (state == null) return;
 
         while (true) {
@@ -114,7 +114,7 @@ public final class ChunkRebuildBackpressure {
     public static void cancel(ChunkBuilder builder) {
         if (builder == null) return;
 
-        DeferredState state;
+        DeferredState<ChunkBuilder.BuiltChunk.Task> state;
         synchronized (STATES) {
             state = STATES.remove(builder);
             // Close under the registry lock so a concurrent producer holding a
@@ -130,23 +130,23 @@ public final class ChunkRebuildBackpressure {
     }
 
     static int deferredCount(ChunkBuilder builder) {
-        DeferredState state = stateIfPresent(builder);
+        DeferredState<ChunkBuilder.BuiltChunk.Task> state = stateIfPresent(builder);
         return state == null ? 0 : state.size();
     }
 
-    private static DeferredState stateFor(ChunkBuilder builder) {
+    private static DeferredState<ChunkBuilder.BuiltChunk.Task> stateFor(ChunkBuilder builder) {
         synchronized (STATES) {
-            return STATES.computeIfAbsent(builder, ignored -> new DeferredState());
+            return STATES.computeIfAbsent(builder, ignored -> new DeferredState<>());
         }
     }
 
-    private static DeferredState stateIfPresent(ChunkBuilder builder) {
+    private static DeferredState<ChunkBuilder.BuiltChunk.Task> stateIfPresent(ChunkBuilder builder) {
         synchronized (STATES) {
             return STATES.get(builder);
         }
     }
 
-    private static void removeIfEmpty(ChunkBuilder builder, DeferredState state) {
+    private static void removeIfEmpty(ChunkBuilder builder, DeferredState<ChunkBuilder.BuiltChunk.Task> state) {
         synchronized (STATES) {
             // Remove an empty state only when the queue can also be marked
             // closed atomically. A concurrent sender otherwise might enqueue
@@ -157,11 +157,11 @@ public final class ChunkRebuildBackpressure {
         }
     }
 
-    private static final class DeferredState {
-        private final ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = new ArrayDeque<>();
+    static final class DeferredState<T> {
+        private final ArrayDeque<T> queue = new ArrayDeque<>();
         private boolean closed;
 
-        synchronized boolean addIfCapacity(ChunkBuilder.BuiltChunk.Task task, int limit) {
+        synchronized boolean addIfCapacity(T task, int limit) {
             if (closed || queue.size() >= limit) return false;
             queue.addLast(task);
             return true;
@@ -177,7 +177,7 @@ public final class ChunkRebuildBackpressure {
             closed = true;
         }
 
-        synchronized ChunkBuilder.BuiltChunk.Task poll() {
+        synchronized T poll() {
             return queue.pollFirst();
         }
 
