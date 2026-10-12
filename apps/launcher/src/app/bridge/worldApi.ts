@@ -28,6 +28,8 @@ export const worldApi = {
   delete: (request: DeleteWorldRequest) => invokeRuntime<WorldTaskSnapshot>('world_delete', { request }),
   pickImport: () => invokeRuntime<string | null>('world_import_pick'),
   pickBackup: () => invokeRuntime<string | null>('world_backup_pick'),
+  restoreBackup: (request: RestoreWorldBackupRequest) =>
+    invokeRuntime<WorldTaskSnapshot>('world_backup_restore_copy', { request }),
   uploadImport: (filePath: string) => invokeRuntime<string>('world_import_upload', { filePath }),
   import: (request: ImportWorldRequest) => invokeRuntime<WorldTaskSnapshot>('world_import', { request })
 };
