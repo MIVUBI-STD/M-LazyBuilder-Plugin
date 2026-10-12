@@ -87,7 +87,7 @@ final class CaptureConfigStoreTest {
         Files.writeString(store.configFile(), "screenshot.quality=definitely-not-valid\n");
 
         assertEquals(
-                CapturePreferences.ScreenshotQuality.HIGH,
+                CapturePreferences.ScreenshotQuality.MAXIMUM,
                 store.load().screenshotQuality()
         );
     }
