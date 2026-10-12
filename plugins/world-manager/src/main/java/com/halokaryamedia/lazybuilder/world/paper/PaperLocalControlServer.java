@@ -332,6 +332,7 @@ public final class PaperLocalControlServer {
             case "/backup" -> handleBackupTaskStart(exchange);
             case "/export" -> handleExportTaskStart(exchange);
             case "/import" -> handleImportTaskStart(exchange);
+            case "/restore-backup" -> handleRestoreBackupTaskStart(exchange);
             case "/delete" -> handleDeleteTaskStart(exchange);
             case "/archive", "/restore" -> handleLifecycleTaskStart(exchange, relative);
             default -> sendError(exchange, 404, "not_found", "Unknown task operation.");
@@ -436,30 +437,7 @@ public final class PaperLocalControlServer {
             sendJson(exchange, 202, taskResponse(replay));
             return;
         }
-        if (importAdmissions.size() >= MAX_IMPORT_ADMISSIONS) {
-            // Retire only an accepted request with authoritative durable
-            // WorldRegistry provenance and a terminal (or trimmed terminal)
-            // task. Such a task has already released its transfer ownership.
-            UUID removable = null;
-            for (Map.Entry<UUID, ImportAdmission> entry : importAdmissions.entrySet()) {
-                WorldRecord world = registry.findByImportRequestId(entry.getKey()).orElse(null);
-                if (world == null) continue;
-                WorldTaskSnapshot prior = tasks.find(entry.getValue().taskId()).orElse(null);
-                if (prior != null && prior.state()
-                        != com.halokaryamedia.lazybuilder.world.task.WorldTaskState.SUCCEEDED) continue;
-                WorldRecord.ImportProvenance provenance = world.importProvenance();
-                if (!provenance.artifactName().equals(entry.getValue().artifactName())
-                        || !world.folderName().equals(entry.getValue().destinationFolder())
-                        || !provenance.requestedDisplayName().equals(entry.getValue().displayName())) continue;
-                removable = entry.getKey();
-                break;
-            }
-            if (removable == null) {
-                throw new IllegalStateException(
-                        "Import admission history is full; unresolved requests require reconciliation");
-            }
-            importAdmissions.remove(removable);
-        }
+        ensureImportAdmissionCapacity();
         if (!importUploads.claimForImport(artifactName, requestId, destinationFolder, displayName)) {
             throw new IllegalStateException("Desktop import artifact is missing or already claimed");
         }
@@ -499,6 +477,88 @@ public final class PaperLocalControlServer {
         }
         importAdmissions.put(requestId, new ImportAdmission(artifactName, destinationFolder, displayName, queued.taskId()));
         sendJson(exchange, 202, taskResponse(queued));
+    }
+
+    /**
+     * Read-only local backup request. The caller supplies only a leaf filename;
+     * WorldBackupStore resolves its own root and WorldImportService performs the
+     * same staged publication used by ordinary verified imports.
+     */
+    private synchronized void handleRestoreBackupTaskStart(HttpExchange exchange) throws Exception {
+        RestoreBackupTaskStartRequest request = readJson(exchange, RestoreBackupTaskStartRequest.class);
+        UUID requestId = UUID.fromString(requireNonBlank(request.requestId(), "requestId"));
+        String backupName = requireNonBlank(request.backupFileName(), "backupFileName");
+        String destinationFolder = requireNonBlank(request.destinationFolder(), "destinationFolder");
+        String displayName = requireNonBlank(request.displayName(), "displayName");
+
+        WorldRecord committed = registry.findByImportRequestId(requestId).orElse(null);
+        if (committed != null) {
+            requireMatchingImport(requestId, backupName, destinationFolder, displayName,
+                    committed.importProvenance().artifactName(),
+                    committed.folderName(), committed.importProvenance().requestedDisplayName());
+            sendJson(exchange, 202, taskResponse(committedImportSnapshot(committed)));
+            return;
+        }
+        ImportAdmission previous = importAdmissions.get(requestId);
+        if (previous != null) {
+            requireMatchingImport(requestId, backupName, destinationFolder, displayName,
+                    previous.artifactName(), previous.destinationFolder(), previous.displayName());
+            WorldTaskSnapshot replay = tasks.find(previous.taskId()).orElseThrow(() ->
+                    new IllegalStateException("Restore task history expired; reconcile before another submission"));
+            sendJson(exchange, 202, taskResponse(replay));
+            return;
+        }
+
+        ensureImportAdmissionCapacity();
+        WorldTaskSnapshot queued = taskRunner.submit(
+                WorldTaskType.IMPORT,
+                null,
+                "Restore from backup queued.",
+                progress -> heavyOperations.restoreBackupAsCopy(
+                        backupName, destinationFolder, displayName,
+                        requestId, progress::update).id().toString()
+        );
+        importAdmissions.put(requestId, new ImportAdmission(
+                backupName, destinationFolder, displayName, queued.taskId()));
+        sendJson(exchange, 202, taskResponse(queued));
+    }
+
+    private static void requireMatchingImport(
+            UUID requestId, String requestedName, String requestedFolder, String requestedDisplay,
+            String expectedName, String expectedFolder, String expectedDisplay
+    ) {
+        if (!requestedName.equals(expectedName)
+                || !requestedFolder.equals(expectedFolder)
+                || !requestedDisplay.equals(expectedDisplay)) {
+            throw new IllegalStateException("Request ID reused with different restore parameters: " + requestId);
+        }
+    }
+
+    private void ensureImportAdmissionCapacity() {
+        if (importAdmissions.size() >= MAX_IMPORT_ADMISSIONS) {
+            // Retire only an accepted request with authoritative durable
+            // WorldRegistry provenance and a terminal (or trimmed terminal)
+            // task. Such a task has already released its transfer ownership.
+            UUID removable = null;
+            for (Map.Entry<UUID, ImportAdmission> entry : importAdmissions.entrySet()) {
+                WorldRecord world = registry.findByImportRequestId(entry.getKey()).orElse(null);
+                if (world == null) continue;
+                WorldTaskSnapshot prior = tasks.find(entry.getValue().taskId()).orElse(null);
+                if (prior != null && prior.state()
+                        != com.halokaryamedia.lazybuilder.world.task.WorldTaskState.SUCCEEDED) continue;
+                WorldRecord.ImportProvenance provenance = world.importProvenance();
+                if (!provenance.artifactName().equals(entry.getValue().artifactName())
+                        || !world.folderName().equals(entry.getValue().destinationFolder())
+                        || !provenance.requestedDisplayName().equals(entry.getValue().displayName())) continue;
+                removable = entry.getKey();
+                break;
+            }
+            if (removable == null) {
+                throw new IllegalStateException(
+                        "Import admission history is full; unresolved requests require reconciliation");
+            }
+            importAdmissions.remove(removable);
+        }
     }
 
     private void handleDeleteTaskStart(HttpExchange exchange) throws Exception {
@@ -758,6 +818,7 @@ public final class PaperLocalControlServer {
     private record ImportDiscardRequest(String artifactName) {}
     private record ImportDiscardResponse(String artifactName, boolean discarded) {}
     private record ImportTaskStartRequest(String requestId, String artifactName, String destinationFolder, String displayName) {}
+    private record RestoreBackupTaskStartRequest(String requestId, String backupFileName, String destinationFolder, String displayName) {}
     private record ImportAdmission(String artifactName, String destinationFolder, String displayName, UUID taskId) {}
     private record DeleteTaskStartRequest(String worldId, String typedDisplayName) {}
     private record CreateWorldRequest(String folderName, String displayName, String kind) {}
