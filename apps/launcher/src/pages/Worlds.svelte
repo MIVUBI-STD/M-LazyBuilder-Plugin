@@ -260,7 +260,7 @@
       pendingImportDestinationFolder = destinationFolder;
       const submittedTask = backupRestoreMode
         ? await runtimeProduct.worlds.restoreBackup({
-            requestId, backupFileName: artifactName, destinationFolder, displayName
+            requestId, backupFileName: artifactName, backupFilePath: importPath, destinationFolder, displayName
           })
         : await runtimeProduct.worlds.import({
             requestId, artifactName, destinationFolder, displayName
