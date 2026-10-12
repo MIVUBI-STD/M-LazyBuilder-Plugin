@@ -27,10 +27,16 @@ final class CaptureRecovery {
 
     static synchronized void start(Path gameDirectory) {
         if (worker != null && worker.isAlive()) return;
-        Path directory = gameDirectory == null
-                ? null
-                : gameDirectory.resolve("captures").resolve("videos");
-        if (directory == null || !Files.isDirectory(directory) || !hasPartialRecording(directory)) {
+        Path directory;
+        try {
+            directory = gameDirectory == null ? null
+                    : CaptureStoragePaths.existingVideoDirectory(gameDirectory);
+        } catch (IOException unsafePath) {
+            status = "Recording recovery skipped: unsafe video folder";
+            LOGGER.warn("Cannot inspect video recovery directory safely", unsafePath);
+            return;
+        }
+        if (directory == null || !hasPartialRecording(directory)) {
             status = "No recovery needed";
             return;
         }
