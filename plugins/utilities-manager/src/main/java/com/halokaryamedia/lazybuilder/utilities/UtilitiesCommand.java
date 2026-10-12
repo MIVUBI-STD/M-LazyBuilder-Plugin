@@ -267,24 +267,28 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
     private boolean canUseFly(CommandSender sender) {
         return plugin.featureStatus(MovementFeature.ID) == FeatureStatus.READY
                 && plugin.movementSettings().fly()
-                && sender.hasPermission("lazybuilder.utilities.fly");
+                && sender.hasPermission("lazybuilder.utilities.fly")
+                && plugin.isCommandReady("fly");
     }
 
     private boolean canUseNoclip(CommandSender sender) {
         return plugin.featureStatus(MovementFeature.ID) == FeatureStatus.READY
                 && plugin.movementSettings().noclip()
-                && sender.hasPermission("lazybuilder.utilities.noclip");
+                && sender.hasPermission("lazybuilder.utilities.noclip")
+                && plugin.isCommandReady("noclip");
     }
 
     private boolean canUseNightVision(CommandSender sender) {
         return plugin.featureStatus(MovementFeature.ID) == FeatureStatus.READY
                 && plugin.movementSettings().nightVision()
-                && sender.hasPermission("lazybuilder.utilities.nightvision");
+                && sender.hasPermission("lazybuilder.utilities.nightvision")
+                && plugin.isCommandReady("nightvision");
     }
 
     private boolean canUseGamemode(CommandSender sender) {
         return plugin.featureStatus(MovementFeature.ID) == FeatureStatus.READY
-                && sender.hasPermission("lazybuilder.utilities.gamemode");
+                && sender.hasPermission("lazybuilder.utilities.gamemode")
+                && plugin.isCommandReady("gmc");
     }
 
     private String statusWord(String featureId) {
