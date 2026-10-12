@@ -87,6 +87,11 @@ final class FrameReadbackRing implements AutoCloseable {
             for (Slot slot : slots) {
             if (!slot.pending()) continue;
             int wait = GL32C.glClientWaitSync(slot.fence, 0, 0L);
+            if (wait == GL32C.GL_WAIT_FAILED) {
+                slot.releaseFence();
+                session.fail("Video readback failed on the GPU. Partial recording was kept for recovery.");
+                continue;
+            }
             if (wait != GL32C.GL_ALREADY_SIGNALED && wait != GL32C.GL_CONDITION_SATISFIED) {
                 continue;
             }
