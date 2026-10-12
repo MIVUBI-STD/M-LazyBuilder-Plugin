@@ -138,9 +138,8 @@ final class VideoCaptureSession {
                     + "Lower Minecraft display resolution and try again.");
             return false;
         }
-        int capacity = (int) capacityLong;
-        for (int i = 0; i < FRAME_POOL_SIZE; i++) freeFrames.add(new FramePacket(capacity));
-
+        // Large direct CPU packets are created on the encoder worker, never
+        // on Minecraft's render thread when the player presses F9.
         Path outputDirectory = gameDirectory.toPath().resolve("captures").resolve("videos");
         try {
             Files.createDirectories(outputDirectory);
@@ -284,6 +283,18 @@ final class VideoCaptureSession {
         if (!capabilities.available() || capabilities.encoder() == null) {
             fail(capabilities.status());
             publish(notifier, Text.literal("Recording unavailable: " + capabilities.status()));
+            return;
+        }
+
+        try {
+            int capacity = (int) ((long) sourceWidth * (long) sourceHeight * 4L);
+            for (int index = 0; index < FRAME_POOL_SIZE; index++) {
+                freeFrames.add(new FramePacket(capacity));
+            }
+        } catch (OutOfMemoryError allocationFailure) {
+            freeFrames.clear();
+            fail("Not enough native memory for recording buffers. Lower game resolution and retry.");
+            publish(notifier, Text.literal(status));
             return;
         }
 
