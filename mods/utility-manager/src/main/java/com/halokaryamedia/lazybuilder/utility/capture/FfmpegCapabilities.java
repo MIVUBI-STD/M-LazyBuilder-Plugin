@@ -51,6 +51,7 @@ final class FfmpegCapabilities {
             try {
                 process = new ProcessBuilder(executable, "-hide_banner", "-version")
                         .redirectErrorStream(true)
+                        .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                         .start();
                 if (!process.waitFor(5, TimeUnit.SECONDS)) {
                     process.destroyForcibly();
@@ -93,20 +94,28 @@ final class FfmpegCapabilities {
 
     private static Snapshot probe(String executable, CapturePreferences.VideoEncoderMode mode) {
         Process process = null;
+        Path outputFile = null;
         try {
+            // The encoder list may fill a small Windows child pipe before
+            // waitFor() returns. Capture it to an owned temporary file.
+            outputFile = Files.createTempFile("lazybuilder-ffmpeg-probe-", ".txt");
             process = new ProcessBuilder(executable, "-hide_banner", "-encoders")
                     .redirectErrorStream(true)
+                    .redirectOutput(outputFile.toFile())
                     .start();
             if (!process.waitFor(6, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
                 return new Snapshot(executable, null, false, "FFmpeg probe timed out");
             }
-            byte[] output = process.getInputStream().readAllBytes();
             if (process.exitValue() != 0) {
                 return new Snapshot(executable, null, false, "FFmpeg probe failed");
             }
+            if (Files.size(outputFile) > 2L * 1024L * 1024L) {
+                return new Snapshot(executable, null, false, "FFmpeg encoder list exceeded expected size");
+            }
 
-            String encoders = new String(output, StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
+            String encoders = Files.readString(outputFile, StandardCharsets.UTF_8)
+                    .toLowerCase(Locale.ROOT);
             for (Encoder encoder : candidates(encoders, mode)) {
                 if (encoderInitializes(executable, encoder)) {
                     return new Snapshot(executable, encoder, true, "Ready · " + encoder.label());
@@ -118,6 +127,10 @@ final class FfmpegCapabilities {
             return new Snapshot(executable, null, false, safeMessage(error));
         } finally {
             if (process != null && process.isAlive()) process.destroyForcibly();
+            if (outputFile != null) {
+                try { Files.deleteIfExists(outputFile); }
+                catch (IOException ignored) { }
+            }
         }
     }
 
@@ -149,7 +162,8 @@ final class FfmpegCapabilities {
                     "-c:v", encoder.ffmpegName(),
                     "-f", "null",
                     "-"
-            ).redirectErrorStream(true).start();
+            ).redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
 
             if (!process.waitFor(8, TimeUnit.SECONDS)) {
                 process.destroyForcibly();
