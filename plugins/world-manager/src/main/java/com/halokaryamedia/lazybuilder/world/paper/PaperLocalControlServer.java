@@ -488,12 +488,13 @@ public final class PaperLocalControlServer {
         RestoreBackupTaskStartRequest request = readJson(exchange, RestoreBackupTaskStartRequest.class);
         UUID requestId = UUID.fromString(requireNonBlank(request.requestId(), "requestId"));
         String backupName = requireNonBlank(request.backupFileName(), "backupFileName");
+        String provenanceName = "backup:" + backupName;
         String destinationFolder = requireNonBlank(request.destinationFolder(), "destinationFolder");
         String displayName = requireNonBlank(request.displayName(), "displayName");
 
         WorldRecord committed = registry.findByImportRequestId(requestId).orElse(null);
         if (committed != null) {
-            requireMatchingImport(requestId, backupName, destinationFolder, displayName,
+            requireMatchingImport(requestId, provenanceName, destinationFolder, displayName,
                     committed.importProvenance().artifactName(),
                     committed.folderName(), committed.importProvenance().requestedDisplayName());
             sendJson(exchange, 202, taskResponse(committedImportSnapshot(committed)));
@@ -501,7 +502,7 @@ public final class PaperLocalControlServer {
         }
         ImportAdmission previous = importAdmissions.get(requestId);
         if (previous != null) {
-            requireMatchingImport(requestId, backupName, destinationFolder, displayName,
+            requireMatchingImport(requestId, provenanceName, destinationFolder, displayName,
                     previous.artifactName(), previous.destinationFolder(), previous.displayName());
             WorldTaskSnapshot replay = tasks.find(previous.taskId()).orElseThrow(() ->
                     new IllegalStateException("Restore task history expired; reconcile before another submission"));
@@ -519,7 +520,7 @@ public final class PaperLocalControlServer {
                         requestId, progress::update).id().toString()
         );
         importAdmissions.put(requestId, new ImportAdmission(
-                backupName, destinationFolder, displayName, queued.taskId()));
+                provenanceName, destinationFolder, displayName, queued.taskId()));
         sendJson(exchange, 202, taskResponse(queued));
     }
 
