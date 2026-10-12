@@ -21,6 +21,16 @@ public interface WorldImportArtifactStore {
     }
 
     /**
+     * Extract one read-only, server-owned backup directly. Implementations must
+     * apply the same bounded archive/path/identity checks as ordinary imports,
+     * reverify expected bytes and never delete the source backup.
+     */
+    default StagedImport stageReadOnlyBackup(Path backupZip, Path workspace, String expectedSha256)
+            throws IOException {
+        throw new IOException("Direct restore from a read-only backup is not supported");
+    }
+
+    /**
      * Reads bounded presentation metadata from an uploaded import artifact without
      * publishing or mutating a managed world.
      */
