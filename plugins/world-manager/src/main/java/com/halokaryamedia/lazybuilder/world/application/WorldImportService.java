@@ -190,7 +190,7 @@ public final class WorldImportService {
         WorldRecord destination = new WorldRecord(
                 WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
                 WorldLifecycle.ACTIVE, WorldRecord.DEFAULT_GAME_MODE,
-                new WorldRecord.ImportProvenance(requestId, backupFileName, displayName, digest));
+                new WorldRecord.ImportProvenance(requestId, "backup:" + backupFileName, displayName, digest));
         WorldRegistry.FolderReservation reservation = registry.reserveFolder(destination.folderName());
         return new ImportTask(UUID.randomUUID(), backupFileName, destination, reservation, source);
     }
