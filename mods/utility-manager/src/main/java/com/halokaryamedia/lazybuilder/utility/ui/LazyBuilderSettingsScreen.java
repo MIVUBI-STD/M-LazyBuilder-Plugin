@@ -1509,6 +1509,14 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
         if (category == Category.ACCESSIBILITY) {
             UtilityPreferences defaults = UtilityPreferences.defaults();
+            // Reset is an explicit user request to restore Minecraft-native
+            // defaults. Release any Utility narrator ownership before resetting
+            // GameOptions, not after, so an enqueued preference callback cannot
+            // overwrite the reset with a stale captured mode.
+            if (!defaults.suppressNarrator() && client != null) {
+                com.halokaryamedia.lazybuilder.utility.accessibility.NarratorSuppressionController
+                        .applyIfEnabled(client, false);
+            }
             UtilityManagerClient.updatePreferences(
                     UtilityManagerClient.preferences().withSuppressNarrator(defaults.suppressNarrator())
             );
