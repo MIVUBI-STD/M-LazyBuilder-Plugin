@@ -26,6 +26,13 @@ final class PluginCommandContractTest {
         assertTrue(pluginYml.getBoolean("permissions.lazybuilder.builder.children.lazybuilder.utilities.fly"));
         assertTrue(pluginYml.getBoolean("permissions.lazybuilder.builder.children.lazybuilder.utilities.build"));
         assertTrue(pluginYml.getBoolean("permissions.lazybuilder.admin.children.lazybuilder.utilities.reload"));
+        // A previous builder role granting the parent gamemode node must keep
+        // access to all four shortcuts; operators may explicitly deny a child.
+        for (String mode : java.util.List.of("creative", "survival", "adventure", "spectator")) {
+            assertTrue(pluginYml.getBoolean(
+                    "permissions.lazybuilder.utilities.gamemode.children.lazybuilder.utilities.gamemode." + mode));
+            assertFalse(pluginYml.getBoolean("permissions.lazybuilder.utilities.gamemode." + mode + ".default"));
+        }
 
         String version = pluginYml.getString("version");
         assertNotNull(version);
