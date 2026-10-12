@@ -162,6 +162,7 @@ public final class UtilityManagerClient implements ClientModInitializer {
 
         if (compactDebugDisabled) {
             client.execute(() -> {
+                CompactDebugNetworking.stopSnapshots();
                 CompactDebugInteraction.invalidate(client);
                 CompactDebugServerState.clear();
             });
