@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
  */
 final class FrameReadbackRing implements AutoCloseable {
     private static final int SLOT_COUNT = 3;
+    private static final long MAX_FENCE_PENDING_NANOS = 5_000_000_000L;
 
     private final Slot[] slots = new Slot[SLOT_COUNT];
     private int cursor;
@@ -75,6 +76,7 @@ final class FrameReadbackRing implements AutoCloseable {
                 return false;
             }
             slot.repeatCount = Math.max(1, repeatCount);
+            slot.fenceCreatedNanos = System.nanoTime();
             cursor = (cursor + 1) % SLOT_COUNT;
             return true;
         } catch (RuntimeException failure) {
@@ -100,6 +102,11 @@ final class FrameReadbackRing implements AutoCloseable {
                 continue;
             }
             if (wait != GL32C.GL_ALREADY_SIGNALED && wait != GL32C.GL_CONDITION_SATISFIED) {
+                if (slot.fenceCreatedNanos != 0L
+                        && System.nanoTime() - slot.fenceCreatedNanos > MAX_FENCE_PENDING_NANOS) {
+                    slot.releaseFence();
+                    session.fail("Video GPU readback timed out. Partial recording was kept for recovery.");
+                }
                 continue;
             }
 
@@ -183,6 +190,7 @@ final class FrameReadbackRing implements AutoCloseable {
         private long fence;
         private int capacity;
         private int repeatCount;
+        private long fenceCreatedNanos;
 
         boolean pending() {
             return fence != 0L;
@@ -204,6 +212,7 @@ final class FrameReadbackRing implements AutoCloseable {
                 fence = 0L;
             }
             repeatCount = 0;
+            fenceCreatedNanos = 0L;
         }
 
         void close() {
