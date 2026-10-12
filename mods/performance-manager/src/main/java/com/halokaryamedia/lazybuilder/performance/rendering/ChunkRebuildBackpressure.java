@@ -117,6 +117,9 @@ public final class ChunkRebuildBackpressure {
         DeferredState state;
         synchronized (STATES) {
             state = STATES.remove(builder);
+            // Close under the registry lock so a concurrent producer holding a
+            // stale state reference cannot enqueue work into a detached queue.
+            if (state != null) state.close();
         }
         if (state == null) return;
 
@@ -144,9 +147,11 @@ public final class ChunkRebuildBackpressure {
     }
 
     private static void removeIfEmpty(ChunkBuilder builder, DeferredState state) {
-        if (!state.isEmpty()) return;
         synchronized (STATES) {
-            if (STATES.get(builder) == state && state.isEmpty()) {
+            // Remove an empty state only when the queue can also be marked
+            // closed atomically. A concurrent sender otherwise might enqueue
+            // a task after the state was detached, silently losing the work.
+            if (STATES.get(builder) == state && state.closeIfEmpty()) {
                 STATES.remove(builder);
             }
         }
@@ -154,11 +159,22 @@ public final class ChunkRebuildBackpressure {
 
     private static final class DeferredState {
         private final ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = new ArrayDeque<>();
+        private boolean closed;
 
         synchronized boolean addIfCapacity(ChunkBuilder.BuiltChunk.Task task, int limit) {
-            if (queue.size() >= limit) return false;
+            if (closed || queue.size() >= limit) return false;
             queue.addLast(task);
             return true;
+        }
+
+        synchronized boolean closeIfEmpty() {
+            if (!queue.isEmpty()) return false;
+            closed = true;
+            return true;
+        }
+
+        synchronized void close() {
+            closed = true;
         }
 
         synchronized ChunkBuilder.BuiltChunk.Task poll() {
