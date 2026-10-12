@@ -243,24 +243,28 @@
     notice = null;
     outputFolderHint = null;
     try {
-      const artifactName = pendingImportArtifact?.sourcePath === importPath
-        ? pendingImportArtifact.artifactName
-        : await runtimeProduct.worlds.uploadImport(importPath);
-      pendingImportArtifact = { sourcePath: importPath, artifactName };
-      // A server-owned upload must be admitted to its Paper task regardless of
-      // page navigation. If task admission fails, retain its name for retry.
+      const artifactName = backupRestoreMode
+        ? (importPath.split(/[\\/]/).pop() || '')
+        : pendingImportArtifact?.sourcePath === importPath
+          ? pendingImportArtifact.artifactName
+          : await runtimeProduct.worlds.uploadImport(importPath);
+      if (!artifactName) throw new Error('The selected world backup filename is invalid.');
+      // Ordinary imports retain verified upload ownership across ambiguous
+      // task admissions. Backups stay in Paper's own read-only backup store.
+      if (!backupRestoreMode) pendingImportArtifact = { sourcePath: importPath, artifactName };
       const requestId = pendingImportRequestId ?? crypto.randomUUID();
       pendingImportRequestId = requestId;
       const destinationFolder = pendingImportDestinationFolder ?? (backupRestoreMode
         ? `${folderName(displayName, 'restored-world')}-${crypto.randomUUID().slice(0, 8)}`
         : folderName(displayName, 'imported-world'));
       pendingImportDestinationFolder = destinationFolder;
-      const submittedTask = await runtimeProduct.worlds.import({
-        requestId,
-        artifactName,
-        destinationFolder,
-        displayName
-      });
+      const submittedTask = backupRestoreMode
+        ? await runtimeProduct.worlds.restoreBackup({
+            requestId, backupFileName: artifactName, destinationFolder, displayName
+          })
+        : await runtimeProduct.worlds.import({
+            requestId, artifactName, destinationFolder, displayName
+          });
       if (!pageActive) return;
       operationTask = submittedTask;
       importOpen = false;
@@ -635,7 +639,7 @@
       <div class="modal-head"><div><h2 id="import-world-title">{backupRestoreMode ? 'Restore backup as copy' : 'Import world'}</h2><p>{backupRestoreMode ? 'Create a new world from this server backup. The original world and ZIP stay unchanged.' : 'Add a Java or Bedrock world (.zip or .mcworld) to this server.'}</p></div><button class="icon-button" aria-label="Close import world dialog" disabled={importBusy} onclick={() => (importOpen = false)}>×</button></div>
       <RuntimeErrorNotice {error} />
       <label>World file<div class="file-picker"><span title={importPath}>{importPath ? importPath.split(/[\\/]/).pop() : 'No file selected'}</span><button class="secondary compact" disabled={importBusy} onclick={backupRestoreMode ? pickWorldBackup : pickImport}>Choose file</button></div></label>
-      {#if backupRestoreMode}<p class="field-hint">Large backups need additional temporary disk space and are subject to server upload limits.</p>{/if}
+      {#if backupRestoreMode}<p class="field-hint">Large backups require temporary space for extraction. No separate upload is needed, and the original backup stays unchanged.</p>{/if}
       <label>World name<input bind:value={importName} disabled={!importPath || importBusy} placeholder="Imported World" /></label>
       <div class="modal-actions"><button class="secondary" disabled={importBusy} onclick={() => (importOpen = false)}>Cancel</button><button class="primary" disabled={importBusy || !importPath || !importName.trim()} onclick={runImport}>{importBusy ? (backupRestoreMode ? 'Restoring copy…' : 'Importing…') : (backupRestoreMode ? 'Restore as copy' : 'Import world')}</button></div>
     </div>
