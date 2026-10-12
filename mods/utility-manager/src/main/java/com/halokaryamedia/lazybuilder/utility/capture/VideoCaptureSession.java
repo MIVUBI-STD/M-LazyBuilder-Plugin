@@ -211,6 +211,7 @@ final class VideoCaptureSession {
     }
 
     FramePacket acquireFramePacket(int capacity) {
+        if (state == State.FAILED || state == State.FINISHED || state == State.IDLE) return null;
         FramePacket packet = freeFrames.poll();
         if (packet == null) return null;
         packet.ensureCapacity(capacity);
@@ -229,6 +230,7 @@ final class VideoCaptureSession {
 
     void submitFramePacket(FramePacket packet) {
         if (packet == null) return;
+        if (state == State.FAILED || state == State.FINISHED || state == State.IDLE) return;
         if (!readyFrames.offer(packet)) {
             recordDroppedFrame();
             recycleFramePacket(packet);
