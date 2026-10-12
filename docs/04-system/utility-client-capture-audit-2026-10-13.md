@@ -122,6 +122,45 @@ recordings at 4K can still consume hundreds of MiB in combined GPU
 and native CPU buffers. Measure that behavior on Windows before lowering
 budgets arbitrarily or changing the renderer/encoder architecture.
 
+## Additional filesystem and GPU edge-case follow-up
+
+- The video writer's native CPU packet pool now initializes on the existing
+  recording worker rather than during the F9 key event. The `STARTING` state
+  remains visible while FFmpeg and the pool are prepared. This removes a
+  known direct-buffer allocation from the render-thread interaction, but
+  GPU PBO allocation is still on the render thread by design.
+- Framebuffer read state, pixel-pack binding, mapping and unmapping are
+  protected on ordinary OpenGL failures. A frame enters the encoder queue
+  only after its GPU buffer successfully unmaps; its repeat pacing is
+  retained across fence cleanup. Failed sessions do not requeue late frames
+  or retain recycled packets.
+- Unsignalled OpenGL fences older than five seconds are abandoned during the
+  existing frame-drain work and cause a failure status. No additional timer
+  was added. This protects a *rendering* client from an indefinitely active
+  STOPPING state; a client that renders no further frames still relies on
+  normal shutdown/interrupt cleanup.
+- F10 clean-capture temporarily hidden HUD/hand/outline flags are restored
+  in the RETURN callback and, if that callback was skipped by a recoverable
+  render failure, on the next render entry.
+- New `CaptureStoragePaths` is a narrowly scoped checker shared by
+  `VideoCaptureSession` and `CaptureRecovery`. Recording and recovery
+  reject symlinks/reparse redirections of `captures` and `videos`; the
+  canonical directory hierarchy must remain below the selected profile.
+  This protects the *directory*, not just individual outputs.
+
+**Executed limited proof:** Java 21 standalone tests on the current Linux
+container showed `Files.move` preserves an existing target and confirmed
+normal capture-directory creation plus rejection of symlinked `captures`
+and `captures/videos`. These limited local checks **do not** certify
+Windows junction behavior, exact repository Gradle/JUnit results, FFmpeg
+playback, native OpenGL or a Minecraft build.
+
+**Build gate:** `.github/workflows/utility-manager-verify.yml` contains
+the Windows Java 21/Gradle build/test and artifact upload, but is
+`workflow_dispatch`-only. It must be invoked deliberately on the
+exact final `Local` SHA to obtain a meaningful build verdict. No workflow
+run or PASS result has been verified for this batch.
+
 ## Deferred issues
 
 - Client screenshot link/open-folder convenience: evaluate after usability testing; no new file browser is approved by default.
