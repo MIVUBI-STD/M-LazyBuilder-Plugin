@@ -5,6 +5,7 @@ import type {
   DuplicateWorldRequest,
   ExportWorldRequest,
   ImportWorldRequest,
+  RestoreWorldBackupRequest,
   ManagedWorldSummary,
   UpdateWorldSettingsRequest,
   WorldSettingsSnapshot,
