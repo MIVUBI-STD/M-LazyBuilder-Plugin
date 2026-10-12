@@ -66,6 +66,8 @@ public final class WorldManagerPlugin extends JavaPlugin {
         this.buildPerformanceController = new BuildPerformanceController(this, worldManager.worldRegistry());
         this.buildPerformanceController.start();
 
+        ChunkPregenerationController pregeneration = new ChunkPregenerationController(
+                getServer(), worldManager.worldRegistry());
         long idleMinutes = Math.max(1L, getConfig().getLong("world-manager.idle-unload.minutes", 10L));
         boolean idleUnloadEnabled = getConfig().getBoolean("world-manager.idle-unload.enabled", true);
         if (idleUnloadEnabled) {
@@ -75,7 +77,8 @@ public final class WorldManagerPlugin extends JavaPlugin {
                     worldManager.worldOperationCoordinator(),
                     world -> worldManager.worldRuntimeService().isLoaded(world.id()),
                     world -> worldManager.worldRuntimeService().hasPlayers(world.id()),
-                    worldManager.worldProtectionPolicy(),
+                    world -> worldManager.worldProtectionPolicy().test(world)
+                            || pregeneration.keepsWorldLoaded(world.folderName()),
                     Duration.ofMinutes(idleMinutes)
             );
             this.idleUnloadTask = getServer().getScheduler().runTaskTimer(
@@ -86,8 +89,6 @@ public final class WorldManagerPlugin extends JavaPlugin {
             );
         }
 
-        ChunkPregenerationController pregeneration = new ChunkPregenerationController(
-                getServer(), worldManager.worldRegistry());
         BuildPerformanceCommand performanceCommand = new BuildPerformanceCommand(getServer(), pregeneration);
         PluginCommand lazyperf = getCommand("lazyperf");
         if (lazyperf == null) {
