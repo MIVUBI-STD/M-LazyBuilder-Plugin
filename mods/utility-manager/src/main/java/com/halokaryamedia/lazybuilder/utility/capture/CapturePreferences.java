@@ -10,7 +10,7 @@ public record CapturePreferences(
 ) {
     public static CapturePreferences defaults() {
         return new CapturePreferences(
-                ScreenshotQuality.HIGH,
+                ScreenshotQuality.MAXIMUM,
                 VideoQuality.HIGH,
                 VideoResolution.GAME,
                 VideoFrameRate.FPS_60,
