@@ -229,6 +229,34 @@ public final class WorldHeavyOperationOrchestrator {
         return Objects.requireNonNull(imported, "imported");
     }
 
+    /** Server-owned backup source; publication remains the existing import service. */
+    public WorldRecord restoreBackupAsCopy(
+            String backupFileName, String destinationFolder, String displayName,
+            java.util.UUID requestId, Progress progress
+    ) throws Exception {
+        Progress reporter = progressOrNone(progress);
+        reporter.update(10, "Checking saved world backup.");
+        WorldImportService.ImportTask task =
+                importService.prepareBackup(backupFileName, destinationFolder, displayName, requestId);
+        Exception failure = null;
+        WorldRecord restored = null;
+        try {
+            reporter.update(30, "Verifying and extracting backup.");
+            restored = importService.executeFilePhase(task);
+            reporter.update(90, "Restored world published; finishing.");
+        } catch (Exception exception) {
+            failure = exception;
+        }
+        try {
+            importService.finish(task);
+        } catch (Exception finishFailure) {
+            failure = combine(failure, finishFailure);
+        }
+        if (failure != null) throw failure;
+        reporter.update(95, "Backup restored as a separate world.");
+        return Objects.requireNonNull(restored, "restored");
+    }
+
     private static void requireExportActive(BooleanSupplier cancellationRequested) throws IOException {
         if (cancellationRequested.getAsBoolean()) throw new IOException("World export was cancelled");
     }
