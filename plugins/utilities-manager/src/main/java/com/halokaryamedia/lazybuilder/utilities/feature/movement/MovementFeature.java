@@ -403,7 +403,7 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
         return effect != null
                 && effect.getType() == PotionEffectType.NIGHT_VISION
                 && effect.getAmplifier() == 0
-                && effect.getDuration() >= Integer.MAX_VALUE - 1200
+                && effect.getDuration() >= Integer.MAX_VALUE / 2
                 && !effect.isAmbient()
                 && !effect.hasParticles()
                 && effect.hasIcon();
