@@ -163,6 +163,10 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             return;
         }
 
+        if (request instanceof WorldControlWireProtocol.TeleportWorld teleportRequest) {
+            handleTeleportWorld(player, teleportRequest);
+            return;
+        }
         if (request instanceof WorldControlWireProtocol.GetExportFormats) { handleExportFormats(player); return; }
         if (request instanceof WorldControlWireProtocol.InspectImport inspect) { handleInspectImport(player, inspect); return; }
         if (request instanceof WorldControlWireProtocol.DiscardImport discard) { handleDiscardImport(player, discard); return; }
@@ -205,11 +209,8 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
                         WorldKind.valueOf(create.kind().strip().toUpperCase(Locale.ROOT)));
                 yield new WorldControlWireProtocol.WorldChanged("CREATE", summary(world));
             }
-            case WorldControlWireProtocol.TeleportWorld teleportRequest -> {
-                requireTeleport(player);
-                yield new WorldControlWireProtocol.TeleportOk(summary(
-                        teleport.teleportToWorld(player.getUniqueId(), new WorldId(teleportRequest.worldId()))));
-            }
+            case WorldControlWireProtocol.TeleportWorld ignored ->
+                    throw new IllegalStateException("Teleport World uses completion-aware async path");
             case WorldControlWireProtocol.ArchiveWorld archive -> {
                 requireManage(player);
                 yield new WorldControlWireProtocol.WorldChanged("ARCHIVE", summary(lifecycle.archive(new WorldId(archive.worldId()))));
@@ -253,6 +254,36 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
             case WorldControlWireProtocol.ExportWorld ignored -> throw new IllegalStateException("Export must use async path");
             case WorldControlWireProtocol.ImportWorld ignored -> throw new IllegalStateException("Import must use async path");
         };
+    }
+
+    private void handleTeleportWorld(Player player, WorldControlWireProtocol.TeleportWorld request) {
+        try {
+            requireTeleport(player);
+            teleport.teleportToWorldAsync(player.getUniqueId(), new WorldId(request.worldId()))
+                    .whenComplete((world, failure) -> finishTeleportWorld(player, world, failure));
+        } catch (RuntimeException exception) {
+            send(player, WorldControlWireProtocol.error(exception.getMessage()));
+        }
+    }
+
+    private void finishTeleportWorld(Player player, WorldRecord world, Throwable failure) {
+        if (!org.bukkit.Bukkit.isPrimaryThread()) {
+            if (started && !stopping && plugin.isEnabled()) {
+                plugin.getServer().getScheduler().runTask(plugin, () ->
+                        finishTeleportWorld(player, world, failure));
+            }
+            return;
+        }
+        if (!started || stopping || !player.isOnline()
+                || plugin.getServer().getPlayer(player.getUniqueId()) != player) return;
+        if (failure != null) {
+            Throwable reason = failure instanceof java.util.concurrent.CompletionException
+                    && failure.getCause() != null ? failure.getCause() : failure;
+            String message = reason.getMessage() == null ? "World teleport could not finish" : reason.getMessage();
+            send(player, WorldControlWireProtocol.error(message));
+        } else {
+            send(player, encode(new WorldControlWireProtocol.TeleportOk(summary(world))));
+        }
     }
 
     private void handleExportFormats(Player player) {
