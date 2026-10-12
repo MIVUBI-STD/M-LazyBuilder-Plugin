@@ -102,6 +102,38 @@ class WorldTeleportServiceTest {
         assertEquals(world, teleport.teleportToWorldAsync(player, world.id()).join());
     }
 
+    @Test
+    void worldAndMapTeleportsShareOnePerPlayerOwnerAcrossDifferentWorlds() {
+        WorldRegistry registry = new WorldRegistry();
+        WorldRecord first = new WorldRecord(WorldId.create(), "BuildA", "Build A",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        WorldRecord second = new WorldRecord(WorldId.create(), "BuildB", "Build B",
+                WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        registry.register(first);
+        registry.register(second);
+        FakeRuntime runtime = new FakeRuntime();
+        runtime.pendingTeleport = new CompletableFuture<>();
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
+        WorldTeleportService worldTeleport = new WorldTeleportService(registry, runtimeService, runtime, operations);
+        WorldLocationGateway location = (id, record, x, z, gameMode) ->
+                new WorldLocationGateway.ResolvedLocation(x + 0.5D, 80D, z + 0.5D);
+        WorldLocationTeleportService mapTeleport = new WorldLocationTeleportService(
+                registry, runtimeService, location, operations);
+        UUID player = UUID.randomUUID();
+
+        var pending = worldTeleport.teleportToWorldAsync(player, first.id());
+        assertThrows(IllegalStateException.class,
+                () -> mapTeleport.teleportAsync(player, second.id(), 4, 5));
+        assertTrue(!operations.isBusy(second.id()));
+        runtime.pendingTeleport.complete(null);
+        assertEquals(first, pending.join());
+
+        var next = mapTeleport.teleportAsync(player, second.id(), 4, 5);
+        assertEquals(second, next.join().world());
+        assertTrue(!operations.isBusy(second.id()));
+    }
+
     private static final class FakeRuntime implements WorldRuntimeGateway {
         private boolean loaded;
         private int loadCount;
