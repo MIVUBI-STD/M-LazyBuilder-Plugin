@@ -19,6 +19,16 @@ final class UtilityTelemetryWireProtocolTest {
     }
 
     @Test
+    void unsubscribeRoundTripsWithoutChangingTheLegacySubscribeFormat() throws IOException {
+        byte[] subscribe = UtilityTelemetryWireProtocol.subscribe();
+        byte[] unsubscribe = UtilityTelemetryWireProtocol.unsubscribe();
+        assertEquals(2, subscribe.length);
+        assertEquals(2, unsubscribe.length);
+        assertInstanceOf(UtilityTelemetryWireProtocol.Unsubscribe.class,
+                UtilityTelemetryWireProtocol.decodeRequest(unsubscribe));
+    }
+
+    @Test
     void snapshotRoundTrips() throws IOException {
         byte[] payload = UtilityTelemetryWireProtocol.snapshot("TanaSamawa", 18.5D, 1024L, 4096L);
         UtilityTelemetryWireProtocol.Snapshot snapshot = assertInstanceOf(
