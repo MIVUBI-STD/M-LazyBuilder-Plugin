@@ -57,6 +57,17 @@ public interface WorldRuntimeGateway {
         teleportPlayerToSpawn(playerId, world);
     }
 
+    /**
+     * Result completes only after the teleport succeeds or fails.
+     * Paper overrides this for async chunk preparation; lightweight fake
+     * runtimes retain existing synchronous semantics for tests.
+     */
+    default java.util.concurrent.CompletableFuture<Void> teleportPlayerToSpawnAsync(
+            UUID playerId, WorldRecord world, WorldGameMode gameMode) {
+        teleportPlayerToSpawn(playerId, world, gameMode);
+        return java.util.concurrent.CompletableFuture.completedFuture(null);
+    }
+
     default WorldRuntimeSettings readSettings(WorldRecord world) {
         throw new UnsupportedOperationException("World settings are not supported by this runtime");
     }
