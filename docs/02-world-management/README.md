@@ -101,12 +101,33 @@ world backup ZIPs are in `world-system/backups` and export artifacts are in
 the nested destination directory.
 
 **World backup and full-server restore points are different products.**
-World Manager currently supports creating a per-world backup but does not
-expose a per-world backup-restore flow in Desktop. Archive / Restore only
-changes world lifecycle and must not be presented as restoring a backup.
-Before adding a per-world restore action, use the existing staged import and
-world registry protection boundaries and verify restored-world contents.
-Do not silently overwrite an existing world.
+The Desktop Worlds surface now exposes **Restore from backup → Restore as copy**
+for canonical Launcher-managed workspaces. The backup picker restricts selection
+to regular ZIP files directly under that workspace's `world-system/backups`;
+it rejects redirected backup roots and unsafe selected files. The selected
+backup is imported as a **new managed world** through the existing checksum-
+verified local upload, bounded ZIP extraction, import staging, world registry
+commit and recovery flow. The original world and backup ZIP are not replaced.
+This is intentionally **not** the Archive / Restore lifecycle action.
+
+The current initial implementation uses the loopback upload transport to reuse
+the existing hardened import path. This implies an additional compressed copy
+and staging disk budget and is still subject to the configurable import-upload
+size cap (8 GiB by default). It is *not* a zero-copy or large-backup optimized
+restore implementation. Do not remove the upload limit or bypass archive
+preflight checks as a shortcut. A future optimization may reuse a verified
+read-only backup input in the owning Paper import service, but must retain the
+same validation, explicit non-overwrite publication, transaction/recovery and
+no-second-manager boundaries.
+
+For Create World, a lost HTTP response is not proof of mutation failure.
+Desktop re-reads the current managed-world list and warns on ambiguity instead
+of automatically retrying and potentially creating another world. This
+does not substitute for persistent request-ID-based create idempotency; it
+is a user-safety presentation and reconciliation improvement.
+
+Native UI, real restore round-trip and large backup acceptance on the current
+`Local` revision remain `UNKNOWN / NOT EXECUTED`.
 
 ## Create World
 
