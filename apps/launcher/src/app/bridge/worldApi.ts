@@ -26,6 +26,7 @@ export const worldApi = {
   export: (request: ExportWorldRequest) => invokeRuntime<WorldTaskSnapshot>('world_export', { request }),
   delete: (request: DeleteWorldRequest) => invokeRuntime<WorldTaskSnapshot>('world_delete', { request }),
   pickImport: () => invokeRuntime<string | null>('world_import_pick'),
+  pickBackup: () => invokeRuntime<string | null>('world_backup_pick'),
   uploadImport: (filePath: string) => invokeRuntime<string>('world_import_upload', { filePath }),
   import: (request: ImportWorldRequest) => invokeRuntime<WorldTaskSnapshot>('world_import', { request })
 };
