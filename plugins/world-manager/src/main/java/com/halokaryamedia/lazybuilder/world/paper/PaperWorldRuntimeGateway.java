@@ -307,6 +307,39 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
     }
 
     @Override
+    public java.util.concurrent.CompletableFuture<Void> teleportPlayerToSpawnAsync(
+            UUID playerId, WorldRecord record, WorldGameMode gameMode) {
+        requirePrimaryThread();
+        Objects.requireNonNull(gameMode, "gameMode");
+        Player player = requireOnlinePlayer(playerId);
+        World source = player.getWorld();
+        World target = requireLoadedWorld(record);
+        Location spawn = target.getSpawnLocation();
+        return PaperTeleportChunkPreparation.prepare(
+                target, spawn.getBlockX(), spawn.getBlockZ(), SafeSpawnSearch.HORIZONTAL_RADIUS)
+                .thenCompose(ignored -> {
+                    requirePrimaryThread();
+                    if (!player.isOnline() || server.getPlayer(playerId) != player) {
+                        return java.util.concurrent.CompletableFuture.failedFuture(
+                                new IllegalStateException("Player disconnected while preparing teleport"));
+                    }
+                    if (player.getWorld() != source) {
+                        return java.util.concurrent.CompletableFuture.failedFuture(
+                                new IllegalStateException("Player changed worlds while teleport was preparing"));
+                    }
+                    // Only inspect blocks after all candidate chunks are ready.
+                    Location landing = PaperSafeLanding.resolveSpawn(target, record);
+                    return player.teleportAsync(landing).thenApply(moved -> {
+                        requirePrimaryThread();
+                        if (!moved) throw new IllegalStateException(
+                                "Paper rejected safe world teleport for player " + player.getName());
+                        player.setGameMode(GameMode.valueOf(gameMode.name()));
+                        return (Void) null;
+                    });
+                });
+    }
+
+    @Override
     public WorldRuntimeSettings readSettings(WorldRecord record) {
         requirePrimaryThread();
         World world = requireLoadedWorld(record);
