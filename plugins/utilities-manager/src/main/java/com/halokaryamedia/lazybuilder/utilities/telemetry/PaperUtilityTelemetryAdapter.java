@@ -79,6 +79,8 @@ public final class PaperUtilityTelemetryAdapter implements PluginMessageListener
                 subscribers.add(player.getUniqueId());
                 Sample sample = sampleServer();
                 sendSnapshot(player, sample);
+            } else if (request instanceof UtilityTelemetryWireProtocol.Unsubscribe) {
+                subscribers.remove(player.getUniqueId());
             }
         } catch (Exception exception) {
             plugin.getLogger().fine("Rejected invalid utility telemetry request from " + player.getUniqueId());
