@@ -10,6 +10,7 @@ import com.halokaryamedia.lazybuilder.utilities.feature.worldsafety.WorldSafetyS
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
+import org.bukkit.GameMode;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -148,8 +149,19 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage("/nv - Toggle Night Vision. /nightvision also works.");
             shown++;
         }
-        if (sender.hasPermission("lazybuilder.utilities.gamemode")) {
-            sender.sendMessage("/gmc /gms /gma /gmsp - Familiar gamemode shortcuts.");
+        List<String> permittedModes = new ArrayList<>();
+        for (GameMode mode : GameMode.values()) {
+            if (MovementFeature.hasGameModeAccess(sender, mode)) {
+                permittedModes.add(switch (mode) {
+                    case CREATIVE -> "/gmc";
+                    case SURVIVAL -> "/gms";
+                    case ADVENTURE -> "/gma";
+                    case SPECTATOR -> "/gmsp";
+                });
+            }
+        }
+        if (!permittedModes.isEmpty()) {
+            sender.sendMessage(String.join(" ", permittedModes) + " - Available gamemode shortcuts.");
             shown++;
         }
         if (shown == 0) sender.sendMessage("No Movement utilities are available for your role.");
@@ -287,7 +299,7 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
 
     private boolean canUseGamemode(CommandSender sender) {
         return plugin.featureStatus(MovementFeature.ID) == FeatureStatus.READY
-                && sender.hasPermission("lazybuilder.utilities.gamemode")
+                && MovementFeature.hasGameModeAccess(sender, GameMode.CREATIVE)
                 && plugin.isCommandReady("gmc");
     }
 
