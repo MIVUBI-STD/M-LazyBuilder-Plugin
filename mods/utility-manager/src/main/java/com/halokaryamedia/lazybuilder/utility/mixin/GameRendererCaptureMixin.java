@@ -29,7 +29,18 @@ abstract class GameRendererCaptureMixin {
             CallbackInfo ci
     ) {
         MinecraftClient client = MinecraftClient.getInstance();
-        if (client == null || !CaptureManager.consumeCleanScreenshotRequest()) return;
+        if (client == null) return;
+
+        // If the previous render threw before its RETURN hook, restore the
+        // temporary clean-capture view at the next render entry. Do not keep
+        // the player's HUD hidden after a recoverable frame exception.
+        if (lazybuilder$cleanCaptureActive) {
+            client.options.hudHidden = lazybuilder$previousHudHidden;
+            renderHand = lazybuilder$previousRenderHand;
+            blockOutlineEnabled = lazybuilder$previousBlockOutline;
+            lazybuilder$cleanCaptureActive = false;
+        }
+        if (!CaptureManager.consumeCleanScreenshotRequest()) return;
 
         lazybuilder$cleanCaptureActive = true;
         lazybuilder$previousHudHidden = client.options.hudHidden;
