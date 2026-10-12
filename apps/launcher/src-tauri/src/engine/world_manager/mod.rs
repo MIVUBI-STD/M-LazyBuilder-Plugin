@@ -215,6 +215,19 @@ pub fn start_import_world(request: &ImportWorldRequest) -> Result<WorldTaskSnaps
     request_mutation_json("POST", "/v1/tasks/import", Some(request))
 }
 
+pub fn start_restore_backup(request: &RestoreWorldBackupRequest) -> Result<WorldTaskSnapshot, String> {
+    if request.request_id.len() != 36 || !request.request_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') { return Err("Invalid backup restore request ID".into()); }
+    let file = &request.backup_file_name;
+    if file.is_empty() || !file.to_ascii_lowercase().ends_with(".zip")
+        || file.contains('/') || file.contains('\\') || file == "." || file == ".." {
+        return Err("Choose a ZIP backup belonging to the selected server.".into());
+    }
+    if request.destination_folder.trim().is_empty() || request.display_name.trim().is_empty() {
+        return Err("A destination world name is required.".into());
+    }
+    request_mutation_json("POST", "/v1/tasks/restore-backup", Some(request))
+}
+
 pub fn start_delete_world(request: &DeleteWorldRequest) -> Result<WorldTaskSnapshot, String> {
     validate_world_id(&request.world_id)?;
     if request.typed_display_name.trim().is_empty() {
