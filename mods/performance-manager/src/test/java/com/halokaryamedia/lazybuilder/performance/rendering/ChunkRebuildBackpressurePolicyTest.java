@@ -28,6 +28,19 @@ final class ChunkRebuildBackpressurePolicyTest {
     }
 
     @Test
+    void fullDeferredQueueFailsOpenToVanillaScheduling() {
+        assertTrue(ChunkRebuildBackpressurePolicy.shouldDefer(
+                FramePressure.HEAVY, false, 16, 0,
+                ChunkRebuildBackpressurePolicy.MAX_DEFERRED_TASKS - 1));
+        assertFalse(ChunkRebuildBackpressurePolicy.shouldDefer(
+                FramePressure.HEAVY, false, 16, 0,
+                ChunkRebuildBackpressurePolicy.MAX_DEFERRED_TASKS));
+        assertFalse(ChunkRebuildBackpressurePolicy.shouldDefer(
+                FramePressure.HEAVY, false, 16, 0,
+                ChunkRebuildBackpressurePolicy.MAX_DEFERRED_TASKS + 100));
+    }
+
+    @Test
     void releaseBudgetAlwaysMakesProgress() {
         assertEquals(16, ChunkRebuildBackpressurePolicy.releaseBudget(FramePressure.NORMAL));
         assertEquals(4, ChunkRebuildBackpressurePolicy.releaseBudget(FramePressure.ELEVATED));
