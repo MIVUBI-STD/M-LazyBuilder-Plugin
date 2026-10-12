@@ -15,5 +15,6 @@ class WorldControlCapabilitiesTest {
         assertTrue(capabilities.stream().allMatch(value -> value.startsWith("world.")));
         assertTrue(capabilities.contains("world.list"));
         assertTrue(capabilities.contains("world.tasks"));
+        assertTrue(capabilities.contains("world.backup.restore-copy"));
     }
 }
