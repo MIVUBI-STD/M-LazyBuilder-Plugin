@@ -15,6 +15,7 @@ use crate::engine::world_manager::{
     start_duplicate_world,
     start_export_world,
     start_import_world,
+    start_restore_backup,
     start_restore_world,
     update_world_settings,
     upload_world_import,
