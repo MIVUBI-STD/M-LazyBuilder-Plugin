@@ -236,8 +236,11 @@
 
   async function runImport() {
     const displayName = importName.trim();
-    if (!serverOnline || importBusy || !importPath || !displayName) return;
+    if (!serverOnline || importBusy || operationBusyWorldId || !importPath || !displayName) return;
     importBusy = true;
+    // Reserve the visible operation slot during backup checksum/preflight too,
+    // before Paper has returned a task ID.
+    operationBusyWorldId = '__world-task__';
     operationTask = null;
     error = null;
     notice = null;
