@@ -16,6 +16,18 @@ final class MovementPolicyTest {
     }
 
     @Test
+    void givesEachGameModeItsOwnStablePermissionName() {
+        assertEquals("lazybuilder.utilities.gamemode.creative",
+                MovementFeature.modePermission(GameMode.CREATIVE));
+        assertEquals("lazybuilder.utilities.gamemode.survival",
+                MovementFeature.modePermission(GameMode.SURVIVAL));
+        assertEquals("lazybuilder.utilities.gamemode.adventure",
+                MovementFeature.modePermission(GameMode.ADVENTURE));
+        assertEquals("lazybuilder.utilities.gamemode.spectator",
+                MovementFeature.modePermission(GameMode.SPECTATOR));
+    }
+
+    @Test
     void rejectsNonFiniteAndOutOfRangeFlyMultipliers() {
         assertTrue(MovementFeature.isValidFlyMultiplier(0.1D));
         assertTrue(MovementFeature.isValidFlyMultiplier(10.0D));
