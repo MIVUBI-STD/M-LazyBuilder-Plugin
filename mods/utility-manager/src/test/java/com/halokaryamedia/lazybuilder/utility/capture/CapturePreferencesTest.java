@@ -29,6 +29,15 @@ final class CapturePreferencesTest {
     }
 
     @Test
+    void captureReadbackBudgetAllows4KAndRejectsUnboundedSources() {
+        assertTrue(VideoCaptureSession.withinReadbackBudget(3840, 2160));
+        assertTrue(VideoCaptureSession.withinReadbackBudget(5120, 2880));
+        assertTrue(!VideoCaptureSession.withinReadbackBudget(7680, 4320));
+        assertTrue(!VideoCaptureSession.withinReadbackBudget(Integer.MAX_VALUE, Integer.MAX_VALUE));
+        assertTrue(!VideoCaptureSession.withinReadbackBudget(0, 2160));
+    }
+
+    @Test
     void estimatesRemainPresentationOnlyAndReadable() {
         CapturePreferences preferences = CapturePreferences.defaults()
                 .withVideoResolution(CapturePreferences.VideoResolution.HD_1080)
