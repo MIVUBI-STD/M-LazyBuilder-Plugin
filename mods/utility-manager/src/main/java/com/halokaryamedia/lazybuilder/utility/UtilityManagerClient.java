@@ -105,7 +105,11 @@ public final class UtilityManagerClient implements ClientModInitializer {
             CHAT_COLLAPSE_STATE.clear();
             CompactDebugInteraction.invalidate(client);
             CompactDebugServerState.clear();
-            ReconnectState.capture(client.getCurrentServerEntry());
+            // A nullable JOIN server-list entry must not erase the target
+            // captured by ConnectScreen for a direct connection.
+            if (client.getCurrentServerEntry() != null) {
+                ReconnectState.capture(client.getCurrentServerEntry());
+            }
 
             String target = ReconnectState.serverAddress();
             if (target.isBlank()) target = "Local World";
