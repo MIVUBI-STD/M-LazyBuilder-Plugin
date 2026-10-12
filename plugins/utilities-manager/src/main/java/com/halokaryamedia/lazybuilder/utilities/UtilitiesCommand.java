@@ -139,15 +139,18 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
 
         MovementSettings settings = plugin.movementSettings();
         int shown = 0;
-        if (sender.hasPermission("lazybuilder.utilities.fly") && settings.fly()) {
+        if (sender.hasPermission("lazybuilder.utilities.fly") && settings.fly()
+                && plugin.isCommandReady("fly")) {
             sender.sendMessage("/fly [speed] - Toggle flight or set/update fly speed.");
             shown++;
         }
-        if (sender.hasPermission("lazybuilder.utilities.noclip") && settings.noclip()) {
+        if (sender.hasPermission("lazybuilder.utilities.noclip") && settings.noclip()
+                && plugin.isCommandReady("noclip")) {
             sender.sendMessage("/noclip - Toggle temporary spectator-based noclip.");
             shown++;
         }
-        if (sender.hasPermission("lazybuilder.utilities.nightvision") && settings.nightVision()) {
+        if (sender.hasPermission("lazybuilder.utilities.nightvision") && settings.nightVision()
+                && plugin.isCommandReady("nightvision")) {
             sender.sendMessage((plugin.isCommandAliasReady("nv", "nightvision")
                     ? "/nv or /nightvision" : "/nightvision")
                     + " - Toggle Night Vision.");
@@ -155,7 +158,13 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
         }
         List<String> permittedModes = new ArrayList<>();
         for (GameMode mode : GameMode.values()) {
-            if (MovementFeature.hasGameModeAccess(sender, mode)) {
+            if (MovementFeature.hasGameModeAccess(sender, mode)
+                    && plugin.isCommandReady(switch (mode) {
+                        case CREATIVE -> "gmc";
+                        case SURVIVAL -> "gms";
+                        case ADVENTURE -> "gma";
+                        case SPECTATOR -> "gmsp";
+                    })) {
                 permittedModes.add(switch (mode) {
                     case CREATIVE -> "/gmc";
                     case SURVIVAL -> "/gms";
