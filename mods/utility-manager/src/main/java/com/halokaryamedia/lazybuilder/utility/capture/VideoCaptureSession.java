@@ -16,7 +16,6 @@ import java.nio.channels.Channels;
 import java.nio.channels.WritableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -357,7 +356,8 @@ final class VideoCaptureSession {
         }
 
         try {
-            Files.move(working, mkv, StandardCopyOption.REPLACE_EXISTING);
+            // Another capture or user file may own the destination already.
+            Files.move(working, mkv);
         } catch (IOException error) {
             fail("Unable to finalize MKV recording: " + safeMessage(error));
             publish(notifier, Text.literal(status));
@@ -410,7 +410,7 @@ final class VideoCaptureSession {
         ArrayList<String> command = new ArrayList<>();
         command.add(capabilities.executable());
         command.addAll(List.of(
-                "-hide_banner", "-loglevel", "warning", "-y",
+                "-hide_banner", "-loglevel", "warning", "-n",
                 "-f", "rawvideo",
                 "-pixel_format", "bgra",
                 "-video_size", width + "x" + height,
@@ -460,7 +460,7 @@ final class VideoCaptureSession {
         try {
             remux = new ProcessBuilder(
                     executable,
-                    "-hide_banner", "-loglevel", "warning", "-y",
+                    "-hide_banner", "-loglevel", "warning", "-n",
                     "-i", mkv.toString(),
                     "-c", "copy",
                     "-movflags", "+faststart",
