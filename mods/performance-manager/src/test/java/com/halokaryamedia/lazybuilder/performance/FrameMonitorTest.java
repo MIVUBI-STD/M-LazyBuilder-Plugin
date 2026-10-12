@@ -98,6 +98,28 @@ class FrameMonitorTest {
     }
 
     @Test
+    void proofOnlySeesFreshMeasuredFramesAcrossPauseAndDiscontinuity() {
+        FrameMonitor monitor = new FrameMonitor();
+        monitor.recordFrame(1_000_000_000L, 60);
+        assertTrue(!monitor.hasFreshMeasuredFrame(), "first frame establishes baseline");
+
+        monitor.recordFrame(1_016_000_000L, 60);
+        assertTrue(monitor.hasFreshMeasuredFrame());
+        monitor.pauseFrameClock();
+        assertTrue(!monitor.hasFreshMeasuredFrame());
+
+        monitor.recordFrame(2_000_000_000L, 60);
+        assertTrue(!monitor.hasFreshMeasuredFrame(), "resume establishes baseline");
+        monitor.recordFrame(2_016_000_000L, 60);
+        assertTrue(monitor.hasFreshMeasuredFrame());
+
+        monitor.recordFrame(3_000_000_000L, 60);
+        assertTrue(!monitor.hasFreshMeasuredFrame(), "clock discontinuity is not a sample");
+        monitor.recordFrame(3_016_000_000L, 60);
+        assertTrue(monitor.hasFreshMeasuredFrame());
+    }
+
+    @Test
     void longRenderGapIsTreatedAsDiscontinuity() {
         FrameMonitor monitor = new FrameMonitor();
 
