@@ -16,6 +16,7 @@ public final class UtilityTelemetryWireProtocol {
 
     private static final byte TYPE_SUBSCRIBE = 1;
     private static final byte TYPE_SNAPSHOT = 2;
+    private static final byte TYPE_UNSUBSCRIBE = 3;
 
     private UtilityTelemetryWireProtocol() {
     }
