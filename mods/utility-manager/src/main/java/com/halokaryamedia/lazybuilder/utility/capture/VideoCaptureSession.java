@@ -219,6 +219,10 @@ final class VideoCaptureSession {
 
     void recycleFramePacket(FramePacket packet) {
         if (packet == null) return;
+        // A GPU failure can race the encoder worker's final queue.clear().
+        // Never re-retain a large native buffer after capture has failed
+        // or finished just because render cleanup arrived one frame later.
+        if (state == State.FAILED || state == State.FINISHED || state == State.IDLE) return;
         packet.repeatCount(1);
         freeFrames.offer(packet);
     }
