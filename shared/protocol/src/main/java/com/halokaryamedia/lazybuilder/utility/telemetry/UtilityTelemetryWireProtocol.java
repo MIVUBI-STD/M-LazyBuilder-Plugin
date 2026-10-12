@@ -75,6 +75,7 @@ public final class UtilityTelemetryWireProtocol {
             int type = in.readUnsignedByte();
             Request request = switch (type) {
                 case TYPE_SUBSCRIBE -> new Subscribe();
+                case TYPE_UNSUBSCRIBE -> new Unsubscribe();
                 default -> throw new IOException("Unknown utility telemetry request type: " + type);
             };
             requireFullyConsumed(in);
