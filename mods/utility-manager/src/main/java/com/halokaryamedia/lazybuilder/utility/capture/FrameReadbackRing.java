@@ -112,6 +112,7 @@ final class FrameReadbackRing implements AutoCloseable {
 
             GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, slot.pbo);
             ByteBuffer mapped = null;
+            boolean validCopy = false;
             try {
                 mapped = GL30C.glMapBufferRange(
                         GL21C.GL_PIXEL_PACK_BUFFER,
@@ -120,20 +121,37 @@ final class FrameReadbackRing implements AutoCloseable {
                         GL30C.GL_MAP_READ_BIT
                 );
                 if (mapped == null) {
-                    session.recycleFramePacket(packet);
                     session.recordDroppedFrame();
-                    continue;
+                } else {
+                    packet.buffer().clear();
+                    mapped.position(0);
+                    mapped.limit(slot.capacity);
+                    packet.buffer().put(mapped);
+                    packet.buffer().flip();
+                    validCopy = true;
                 }
-                packet.buffer().clear();
-                mapped.position(0);
-                mapped.limit(slot.capacity);
-                packet.buffer().put(mapped);
-                packet.buffer().flip();
+            } catch (RuntimeException failure) {
+                session.fail("Video GPU transfer failed. Partial recording was kept for recovery.");
+            } finally {
+                try {
+                    // A false unmap result means the GPU buffer's contents
+                    // cannot be trusted. Never enqueue that frame.
+                    if (mapped != null && !GL15C.glUnmapBuffer(GL21C.GL_PIXEL_PACK_BUFFER)) {
+                        validCopy = false;
+                        session.fail("Video GPU buffer became invalid during readback.");
+                    }
+                } catch (RuntimeException failure) {
+                    validCopy = false;
+                    session.fail("Video GPU buffer could not be unmapped safely.");
+                } finally {
+                    slot.releaseFence();
+                }
+            }
+            if (validCopy) {
                 packet.repeatCount(slot.repeatCount);
                 session.submitFramePacket(packet);
-            } finally {
-                if (mapped != null) GL15C.glUnmapBuffer(GL21C.GL_PIXEL_PACK_BUFFER);
-                slot.releaseFence();
+            } else {
+                session.recycleFramePacket(packet);
             }
             }
         } finally {
