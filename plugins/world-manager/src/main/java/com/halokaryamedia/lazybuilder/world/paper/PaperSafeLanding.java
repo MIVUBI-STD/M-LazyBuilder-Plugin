@@ -16,6 +16,9 @@ import java.util.Set;
  * Reads blocks but never creates platforms, rewrites spawn or mutates worlds.
  */
 final class PaperSafeLanding {
+    /** Player collision width is ~0.6 blocks; account for the entire footprint. */
+    private static final double PLAYER_HALF_WIDTH = 0.31D;
+    private static final double FLOOR_LEVEL_TOLERANCE = 1.0E-4D;
     private static final Set<Material> HAZARDS = Set.of(
             Material.CACTUS,
             Material.MAGMA_BLOCK,
@@ -65,8 +68,18 @@ final class PaperSafeLanding {
     /** Never accept liquid, harmful materials, or occupied player headroom. */
     static boolean canLand(World world, int x, int feetY, int z) {
         if (feetY <= world.getMinHeight() || feetY >= world.getMaxHeight() - 1) return false;
-        Location destination = new Location(world, x + 0.5D, feetY, z + 0.5D);
-        if (!world.getWorldBorder().isInside(destination)) return false;
+        double centerX = x + 0.5D;
+        double centerZ = z + 0.5D;
+        // Checking only the center can place half the player's body outside a
+        // narrow/edge world border. Use all four footprint corners.
+        for (double offsetX : new double[]{-PLAYER_HALF_WIDTH, PLAYER_HALF_WIDTH}) {
+            for (double offsetZ : new double[]{-PLAYER_HALF_WIDTH, PLAYER_HALF_WIDTH}) {
+                if (!world.getWorldBorder().isInside(
+                        new Location(world, centerX + offsetX, feetY, centerZ + offsetZ))) {
+                    return false;
+                }
+            }
+        }
 
         Block floor = world.getBlockAt(x, feetY - 1, z);
         Block feet = world.getBlockAt(x, feetY, z);
@@ -74,6 +87,11 @@ final class PaperSafeLanding {
         if (!floor.getType().isSolid() || floor.isPassable() || HAZARDS.contains(floor.getType())) {
             return false;
         }
+        // A fence can extend above the nominal foot level, while a bottom
+        // slab can end below it. Both are poor assumptions for a fixed Y
+        // teleport. The approximate collision bounds reject these cases.
+        double floorTop = floor.getBoundingBox().getMaxY();
+        if (Math.abs(floorTop - feetY) > FLOOR_LEVEL_TOLERANCE) return false;
         return isClear(feet) && isClear(head);
     }
 
