@@ -4,6 +4,37 @@
 
 **Repository source:** `Local` at `cf905b712d5c071c3ae3a4b4eead122909b804cf` at review start. Follow-up changes require rereading HEAD. **Evidence:** source review + official documentation; Maven, Fabric, Paper + EssentialsX/LuckPerms runtime verification **not executed**.
 
+## Implementation checkpoint — 2026-10-13
+
+Status: **SOURCE_IMPLEMENTED, NOT RUNTIME_VERIFIED**.
+
+- Gamemode and Noclip now inspect `player.getGameMode()` after the actual Paper
+  transition before reporting success or committing Noclip state.
+- Legacy `lazybuilder.utilities.gamemode` retains its four-mode grant, with
+  child permission nodes to support explicit per-mode restrictions; `/lb`
+  movement help filters entries by the real permission policy.
+- Night Vision now relinquishes ownership on an external effect change, does
+  not blindly restore over another source, and ignores non-overriding weaker
+  external potion changes. These semantics require Paper event acceptance.
+- Identical effective config reload no longer tears down active Movement state.
+  Changed settings are conservatively deferred while active Fly/Noclip/Night
+  Vision sessions exist. More selective hot reload is **not** claimed.
+- Alias `/nv` is offered only if Paper's active command map still maps it to
+  LazyBuilder; otherwise `/nightvision` remains available.
+- Compact Debug uses a v1-compatible new Unsubscribe request; Paper removes
+  the subscriber and Fabric sends opt-out when the HUD is disabled. Existing
+  40-tick telemetry scheduling remains unchanged.
+- Focused regression tests were added to existing test suites for permission
+  declaration compatibility, protocol subscribe/unsubscribe and Night Vision
+  effect ownership. They are **not yet executed**.
+
+The acceptance matrix below remains the release gate. Additional limitations:
+other plugins may change Fly or potion effects after command execution;
+permission changes without a gamemode event are not continuously polled;
+a real Movement config change is deferred, not hot-migrated, while players have
+an active session. Do not represent those cases as solved or automatically
+add a high-frequency player-state monitor.
+
 ## Existing design worth preserving
 
 - Familiar commands `/gmc /gms /gma /gmsp /fly [speed] /noclip /nightvision (/nv)`; `/lb` is an optional discovery/help surface rather than a replacement language.
