@@ -8,6 +8,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -67,6 +68,49 @@ class WorldLocationTeleportServiceTest {
         assertEquals(0, locations.teleportCount);
     }
 
+    @Test
+    void mapTeleportResultWaitsUntilMovementCompletesAndReleasesLease() {
+        WorldRegistry registry = new WorldRegistry();
+        FakeRuntime runtime = new FakeRuntime();
+        WorldRecord world = new WorldRecord(
+                WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        registry.register(world);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
+        FakeLocationGateway locations = new FakeLocationGateway();
+        locations.pendingTeleport = new CompletableFuture<>();
+        WorldLocationTeleportService service = new WorldLocationTeleportService(
+                registry, runtimeService, locations, operations);
+        UUID player = UUID.randomUUID();
+
+        var future = service.teleportAsync(player, world.id(), 2, 3);
+        assertTrue(!future.isDone());
+        assertEquals(WorldOperationType.TELEPORT, operations.activeOperation(world.id()));
+        assertThrows(IllegalStateException.class, () -> service.teleportAsync(player, world.id(), 2, 3));
+        locations.pendingTeleport.complete(new WorldLocationGateway.ResolvedLocation(2.5D, 80D, 3.5D));
+        assertEquals(2.5D, future.join().resolved().x());
+        assertTrue(!operations.isBusy(world.id()));
+    }
+
+    @Test
+    void asyncMapTeleportFailureReleasesWorldAndPlayerOwnership() {
+        WorldRegistry registry = new WorldRegistry();
+        FakeRuntime runtime = new FakeRuntime();
+        WorldRecord world = new WorldRecord(
+                WorldId.create(), "Build", "Build", WorldKind.FLAT, WorldLifecycle.ACTIVE);
+        registry.register(world);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        WorldRuntimeService runtimeService = new WorldRuntimeService(registry, runtime, operations);
+        FakeLocationGateway locations = new FakeLocationGateway();
+        locations.pendingTeleport = new CompletableFuture<>();
+        WorldLocationTeleportService service = new WorldLocationTeleportService(
+                registry, runtimeService, locations, operations);
+        var pending = service.teleportAsync(UUID.randomUUID(), world.id(), 2, 3);
+        locations.pendingTeleport.completeExceptionally(new IllegalStateException("no safe landing"));
+        assertThrows(java.util.concurrent.CompletionException.class, pending::join);
+        assertTrue(!operations.isBusy(world.id()));
+    }
+
     private static final class FakeLocationGateway implements WorldLocationGateway {
         private UUID playerId;
         private WorldRecord world;
@@ -74,6 +118,7 @@ class WorldLocationTeleportServiceTest {
         private int z;
         private WorldGameMode gameMode;
         private int teleportCount;
+        private CompletableFuture<ResolvedLocation> pendingTeleport;
 
         @Override
         public ResolvedLocation teleportToSafeSurface(UUID playerId, WorldRecord world, int blockX, int blockZ,
@@ -85,6 +130,12 @@ class WorldLocationTeleportServiceTest {
             this.gameMode = gameMode;
             teleportCount++;
             return new ResolvedLocation(blockX + 0.5D, 80.0D, blockZ + 0.5D);
+        }
+        @Override public CompletableFuture<ResolvedLocation> teleportToSafeSurfaceAsync(
+                UUID playerId, WorldRecord world, int blockX, int blockZ, WorldGameMode gameMode) {
+            if (pendingTeleport != null) return pendingTeleport;
+            return WorldLocationGateway.super.teleportToSafeSurfaceAsync(
+                    playerId, world, blockX, blockZ, gameMode);
         }
     }
 
