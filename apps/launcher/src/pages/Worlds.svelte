@@ -684,6 +684,7 @@
   .worlds-page{width:min(920px,100%)}
   .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:16px}.page-head h2{margin:0;font-size:18px}.page-head p{margin:4px 0 0;color:var(--muted);font-size:12px}
   .head-actions,.state-actions,.modal-actions,.archived-actions{display:flex;gap:8px;align-items:center}
+  .head-actions{flex-wrap:wrap;justify-content:flex-end}
   .primary,.secondary,.danger-button{min-height:var(--control-height);border-radius:var(--radius-sm);padding:8px 12px;font-weight:650;cursor:pointer;transition:background-color 120ms ease,border-color 120ms ease,transform 120ms ease}
   .primary{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink)}.primary:hover:not(:disabled){background:var(--accent-hover);border-color:var(--accent-hover)}
   .secondary{border:1px solid var(--border);background:var(--surface-2);color:var(--text)}.secondary:hover:not(:disabled){background:var(--surface-3);border-color:var(--border-strong)}
