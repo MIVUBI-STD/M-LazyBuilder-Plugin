@@ -36,9 +36,9 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
         try {
             switch (action) {
                 case "pregen" -> handlePregen(sender, args);
-                case "pause" -> handleChunkyAction(sender, () -> pregeneration.pause(requireWorld(args)), "Pregeneration paused.");
-                case "continue", "resume" -> handleChunkyAction(sender, () -> pregeneration.resume(requireWorld(args)), "Pregeneration resumed.");
-                case "cancel" -> handleChunkyAction(sender, () -> pregeneration.cancel(requireWorld(args)), "Pregeneration cancelled. Existing generated chunks are retained.");
+                case "pause" -> handleChunkyAction(sender, () -> pregeneration.pause(requireWorld(args)), "Pause request sent to Chunky. Check /chunky progress for its actual state.");
+                case "continue", "resume" -> handleChunkyAction(sender, () -> pregeneration.resume(requireWorld(args)), "Continue request sent to Chunky. Check /chunky progress for its actual state.");
+                case "cancel" -> handleChunkyAction(sender, () -> pregeneration.cancel(requireWorld(args)), "Cancellation requested, NOT completed. Run /chunky confirm in the server console to approve the cancellation.");
                 default -> sender.sendMessage("Usage: /" + label + " status|pregen|pause|continue|cancel");
             }
         } catch (RuntimeException exception) {
@@ -71,7 +71,7 @@ public final class BuildPerformanceCommand implements CommandExecutor, TabComple
         int centerX = args.length >= 5 ? parseInt(args[4], "centerX") : 0;
         int centerZ = args.length >= 6 ? parseInt(args[5], "centerZ") : 0;
         pregeneration.start(world, shape, centerX, centerZ, radius);
-        sender.sendMessage("Chunk pregeneration started for " + world + " with " + shape + " radius " + radius + " blocks.");
+        sender.sendMessage("Chunky start request sent for " + world + " with " + shape + " radius " + radius + " blocks. Check /chunky progress to confirm that it started.");
     }
 
     private static void handleChunkyAction(CommandSender sender, Runnable action, String successMessage) {
