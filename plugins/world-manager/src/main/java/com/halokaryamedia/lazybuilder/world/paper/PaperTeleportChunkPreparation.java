@@ -5,6 +5,7 @@ import org.bukkit.World;
 import java.util.ArrayList;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * A single Paper-owned preparation boundary for the bounded landing search.
@@ -12,6 +13,9 @@ import java.util.concurrent.CompletableFuture;
  * No blocking Future.get/join and no new executor.
  */
 final class PaperTeleportChunkPreparation {
+    /** Timeout cancels continuation, so an expired request never teleports late. */
+    private static final long PREPARATION_TIMEOUT_SECONDS = 45L;
+
     private PaperTeleportChunkPreparation() { }
 
     static CompletableFuture<Void> prepare(World world, int x, int z, int blockRadius) {
@@ -33,6 +37,7 @@ final class PaperTeleportChunkPreparation {
                 futures.add(world.getChunkAtAsync(chunkX, chunkZ, true));
             }
         }
-        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new));
+        return CompletableFuture.allOf(futures.toArray(CompletableFuture[]::new))
+                .orTimeout(PREPARATION_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 }
