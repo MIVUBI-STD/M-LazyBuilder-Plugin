@@ -230,12 +230,14 @@ pub fn start_restore_backup(request: &RestoreWorldBackupRequest) -> Result<World
     // even if both servers contain a backup with the same filename.
     let workspace = crate::engine::workspace_registry::current()?
         .ok_or_else(|| "Select a server before restoring a backup".to_string())?;
-    let root = PathBuf::from(&workspace.path).join("world-system").join("backups");
+    let workspace_root = PathBuf::from(&workspace.path);
+    persistence::safe_path::ensure_real_directory(&workspace_root, "selected server folder")?;
+    let world_system = workspace_root.join("world-system");
+    let root = world_system.join("backups");
+    persistence::safe_path::ensure_real_directory(&world_system, "world-system folder")?;
+    persistence::safe_path::ensure_real_directory(&root, "world backup folder")?;
     let canonical_root = fs::canonicalize(&root)
         .map_err(|_| "The selected server backup folder is unavailable".to_string())?;
-    if root != canonical_root {
-        return Err("The selected server backup folder is redirected or unsafe".into());
-    }
     let selected = PathBuf::from(&request.backup_file_path);
     persistence::safe_path::ensure_regular_file(&selected, "selected world backup")?;
     let canonical_source = fs::canonicalize(&selected)
