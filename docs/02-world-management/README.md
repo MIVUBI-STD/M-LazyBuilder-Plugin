@@ -225,7 +225,8 @@ Teleport is the normal user path into a managed world:
 Teleport request
 → require ACTIVE world
 → load world if needed
-→ teleport player to canonical spawn
+→ resolve a bounded safe landing near the saved spawn
+→ teleport only when the landing is verified
 → apply world-entry game mode
 → authoritative success
 ```
@@ -233,6 +234,19 @@ Teleport request
 Manual Load/Unload is not a prerequisite and is not a user-facing workflow.
 
 Map teleport uses the same world/runtime ownership and only adds spatial location resolution.
+World spawn and map teleport share one Paper-side floor/headroom/hazard/water/
+world-border safety predicate. World-spawn resolution first checks a bounded
+3-block horizontal and vertical neighborhood. For non-Void worlds only, a
+bounded nearby top-surface fallback can resolve an outdated imported spawn
+height. No platform is created, no saved world spawn is rewritten, and no
+unsafe teleport override is exposed in V1. If no safe landing exists the
+player remains at the previous location, the world entry game mode is not
+applied, and the client receives a clear error. Void worlds never get
+synthetic terrain added during teleport.
+
+The pure candidate-search policy has Java 21 standalone test coverage, but
+Paper collision/heightmap behavior, real importing, teleport events from other
+plugins and Fabric UI must still be validated on the exact current revision.
 
 ## World Settings
 
