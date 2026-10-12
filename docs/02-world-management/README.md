@@ -256,12 +256,51 @@ The pure candidate-search policy was independently compiled with Java 21 in a di
 
 but Paper collision/heightmap behavior, real importing, teleport events from
 other plugins and Fabric UI must still be validated on the exact current revision.
-Paper warns that synchronous teleport and chunk loading may stall the main
-server thread for unloaded destinations. The current teleport contract remains
-synchronous; any future asynchronous migration must preserve correlated
-completion, permission checks, operation ownership and post-teleport game-mode
-application without blocking the main thread on a Future. Do not silently
-switch this path to async within the existing immediate-success wire contract.
+### Completion-aware teleport (Local source remediation)
+
+The Paper/Fabric teleport request paths now use a completion-aware sequence:
+
+```text
+World or Map Teleport request
+→ authorize permission and acquire one player + target-world operation lease
+→ ensure managed world is ACTIVE and load world if needed
+→ prepare bounded destination chunks via Paper getChunkAtAsync (45 s cap)
+→ reject expired, disconnected or changed-world requests
+→ resolve a safe landing on the Paper main thread
+→ call player.teleportAsync (never join/get on the main thread)
+→ apply entry game mode only after the teleport returns success
+→ release leases and send the existing TeleportOk or correlated Map error
+```
+
+The timeout is attached to **chunk preparation**, before teleport is invoked,
+so a timed-out preparation cannot trigger a delayed teleport later. It does not
+pretend to cancel a teleport that has already started. Both World and Map
+routes share the same per-player request lease through WorldRuntimeService;
+two outstanding destinations cannot race each other. Map Action V5 preserves
+the original request ID, while World Control continues its existing
+single-pending-request response contract.
+
+**Boundary:** Paper `runtimeService.loadDuringOperation` can still call the
+synchronous world-load operation when the whole world is unloaded; only the
+destination chunk preparation and player movement are asynchronous. This
+does not certify a fully nonblocking world-load pipeline. The existing Paper
+API is only called from the primary server thread during resolution and
+completion; the time-limit callback may complete off-thread and response
+adapters return to the primary thread before messaging the player.
+
+The old synchronous WorldRuntimeGateway/WorldLocationGateway methods remain
+available to test doubles and older internal callers. Production plugin
+message handlers use their new completion-aware methods; they must not send
+TeleportOk when a Future is merely scheduled.
+
+**Required exact-revision acceptance:** Paper 1.21.4 + Fabric with an ungenerated
+destination chunk, loaded world spawn, auto-loaded archived/active boundaries,
+rapid duplicate and cross-world requests, player disconnect/reconnect,
+server shutdown, forced chunk-preparation timeout, cancelled Paper teleport
+event, Void landing, map location errors and post-teleport game mode. Record
+the actual response correlation and confirm that there are no late movements.
+Static wiring checks and unexecuted JUnit test additions do not replace this
+runtime evidence.
 
 ## World Settings
 
