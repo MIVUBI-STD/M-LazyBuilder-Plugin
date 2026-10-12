@@ -132,7 +132,6 @@ final class VideoCaptureSession {
         readyFrames.clear();
         freeFrames.clear();
 
-        long capacityLong = (long) width * (long) height * 4L;
         if (!withinReadbackBudget(width, height)) {
             fail("Game framebuffer is too large for stable video recording. "
                     + "Lower Minecraft display resolution and try again.");
