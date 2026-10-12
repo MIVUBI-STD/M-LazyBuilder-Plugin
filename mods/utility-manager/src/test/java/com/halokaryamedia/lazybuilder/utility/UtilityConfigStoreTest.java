@@ -27,9 +27,9 @@ final class UtilityConfigStoreTest {
         assertTrue(preferences.keepChatDraft());
         assertTrue(preferences.chatSearch());
         assertTrue(preferences.chatTimestamps());
-        assertTrue(preferences.hideChatSigningIndicators());
-        assertTrue(preferences.hideChatReportButton());
-        assertTrue(preferences.suppressNarrator());
+        assertFalse(preferences.hideChatSigningIndicators());
+        assertFalse(preferences.hideChatReportButton());
+        assertFalse(preferences.suppressNarrator());
         assertTrue(preferences.reconnectButton());
         assertFalse(preferences.borderlessWindow());
         assertFalse(preferences.contextualScreenshotNames());
@@ -129,9 +129,9 @@ final class UtilityConfigStoreTest {
         assertFalse(preferences.keepChatDraft());
         assertTrue(preferences.chatSearch());
         assertTrue(preferences.chatTimestamps());
-        assertTrue(preferences.hideChatSigningIndicators());
-        assertTrue(preferences.hideChatReportButton());
-        assertTrue(preferences.suppressNarrator());
+        assertFalse(preferences.hideChatSigningIndicators());
+        assertFalse(preferences.hideChatReportButton());
+        assertFalse(preferences.suppressNarrator());
         assertTrue(preferences.reconnectButton());
         assertTrue(preferences.contextualScreenshotNames());
         assertTrue(preferences.instantCreativeSearch());
