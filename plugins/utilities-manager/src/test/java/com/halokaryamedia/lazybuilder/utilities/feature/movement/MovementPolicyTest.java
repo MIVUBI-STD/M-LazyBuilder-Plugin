@@ -1,6 +1,8 @@
 package com.halokaryamedia.lazybuilder.utilities.feature.movement;
 
 import org.bukkit.GameMode;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,6 +27,17 @@ final class MovementPolicyTest {
                 MovementFeature.modePermission(GameMode.ADVENTURE));
         assertEquals("lazybuilder.utilities.gamemode.spectator",
                 MovementFeature.modePermission(GameMode.SPECTATOR));
+    }
+
+    @Test
+    void identifiesOnlyTheLongLivedPotionShapeOwnedByLazyBuilder() {
+        assertTrue(MovementFeature.isOwnedNightVision(new PotionEffect(
+                PotionEffectType.NIGHT_VISION, Integer.MAX_VALUE, 0, false, false, true)));
+        assertFalse(MovementFeature.isOwnedNightVision(new PotionEffect(
+                PotionEffectType.NIGHT_VISION, 1000, 0, false, false, true)));
+        assertFalse(MovementFeature.isOwnedNightVision(new PotionEffect(
+                PotionEffectType.NIGHT_VISION, Integer.MAX_VALUE, 1, false, false, true)));
+        assertFalse(MovementFeature.isOwnedNightVision(null));
     }
 
     @Test
