@@ -1139,12 +1139,10 @@ public final class LazyBuilderSettingsScreen extends Screen {
 
     private void updateNarratorSuppression(boolean enabled) {
         UtilityPreferences updated = UtilityManagerClient.preferences().withSuppressNarrator(enabled);
+        // The preference owner captures/restores the previous vanilla options.
+        // Do not force OFF here before that capture, or toggling the setting
+        // back off could never restore the player's previous narrator mode.
         UtilityManagerClient.updatePreferences(updated);
-        if (enabled && client != null) {
-            client.options.getNarrator().setValue(NarratorMode.OFF);
-            client.options.getNarratorHotkey().setValue(false);
-            client.options.write();
-        }
         refreshCategory();
     }
 
