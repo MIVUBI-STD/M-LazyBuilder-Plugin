@@ -29,6 +29,22 @@ final class PerformanceRuntimeProofLogger {
     private int framesUntilSample = SAMPLE_INTERVAL_FRAMES;
     private long sample;
 
+    /**
+     * End the current proof window on focus loss/world exit. Subsequent frames
+     * start a fresh benchmark session; background gaps never contaminate p99.
+     */
+    void pause() {
+        if (!enabled || worldIdentity == null) return;
+        worldIdentity = null;
+        framesUntilSample = SAMPLE_INTERVAL_FRAMES;
+        sample = 0L;
+        proofHistogram.reset();
+    }
+
+    static boolean isValidProofSample(int sampleCount, double frameTimeMs) {
+        return sampleCount > 0 && Double.isFinite(frameTimeMs) && frameTimeMs > 0.0D;
+    }
+
     void record(MinecraftClient client, FrameMonitor frameMonitor) {
         if (!enabled || client == null || client.world == null || frameMonitor == null) return;
 
