@@ -48,6 +48,12 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
         this.settings = Objects.requireNonNull(settings, "settings");
     }
 
+    /** Do not reset active player-owned movement effects during an unrelated reload. */
+    public boolean hasActiveSessions() {
+        return states.values().stream()
+                .anyMatch(state -> state.flyActive || state.noclipActive || state.nightVisionActive);
+    }
+
     @Override
     public String id() {
         return ID;
