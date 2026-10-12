@@ -129,11 +129,30 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
 
     @Override
     public StagedImport stageArchive(String artifactName, Path workspace, String expectedSha256) throws IOException {
+        requireSafeImportsRoot();
+        return stageArchivePath(resolveArtifact(artifactName), workspace, expectedSha256, false);
+    }
+
+    @Override
+    public StagedImport stageReadOnlyBackup(Path backupZip, Path workspace, String expectedSha256)
+            throws IOException {
+        Path artifact = Objects.requireNonNull(backupZip, "backupZip").toAbsolutePath().normalize();
+        if (!Files.isRegularFile(artifact, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(artifact)) {
+            throw new IOException("Backup source is missing or unsafe");
+        }
+        if (expectedSha256 == null) {
+            throw new IOException("Direct backup restore requires a pinned SHA-256");
+        }
+        return stageArchivePath(artifact, workspace, expectedSha256, true);
+    }
+
+    private StagedImport stageArchivePath(
+            Path artifact, Path workspace, String expectedSha256, boolean directBackup
+    ) throws IOException {
         if (expectedSha256 != null && !expectedSha256.matches("[0-9a-f]{64}")) {
             throw new IllegalArgumentException("Invalid expected import SHA-256");
         }
-        requireSafeImportsRoot();
-        Path artifact = resolveArtifact(artifactName);
         Path target = Objects.requireNonNull(workspace, "workspace").toAbsolutePath().normalize();
         if (Files.exists(target)) throw new IOException("Import workspace already exists: " + target.getFileName());
 
@@ -144,7 +163,7 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         ArchiveEstimate estimate = estimateArchive(artifact);
         long requiredFreeBytes = requiredFreeBytes(estimate.uncompressedBytes(), estimate.entries());
         long compressedBytes = 0;
-        if (expectedSha256 != null) {
+        if (expectedSha256 != null && !directBackup) {
             compressedBytes = Files.size(artifact);
             try {
                 requiredFreeBytes = Math.addExact(requiredFreeBytes, compressedBytes);
@@ -162,7 +181,13 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
         boolean success = false;
         try {
             Path extracted = target;
-            if (expectedSha256 != null) {
+            if (directBackup) {
+                // A server-owned backup never moves into the import inbox.
+                // Reverify before and after extraction to reject modified source bytes.
+                verifyReadOnlyDigest(artifact, expectedSha256);
+                extractBounded(artifact, target);
+                verifyReadOnlyDigest(artifact, expectedSha256);
+            } else if (expectedSha256 != null) {
                 // Keep input and extraction isolated inside the already-owned workspace.
                 // A crash can therefore be reclaimed by the existing workspace recovery.
                 Path sourceSnapshot = target.resolve(".lazybuilder-import-source.zip");
@@ -203,6 +228,28 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
             return new StagedImport(target, edition, trustedFormat);
         } finally {
             if (!success) deleteTree(target);
+        }
+    }
+
+    private static void verifyReadOnlyDigest(Path archive, String expectedSha256) throws IOException {
+        if (!Files.isRegularFile(archive, LinkOption.NOFOLLOW_LINKS)
+                || Files.isSymbolicLink(archive)) {
+            throw new IOException("Read-only backup ZIP became unsafe");
+        }
+        MessageDigest digest;
+        try {
+            digest = MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException unavailable) {
+            throw new IllegalStateException("JVM does not support SHA-256", unavailable);
+        }
+        byte[] bytes = new byte[IO_BUFFER_BYTES];
+        try (InputStream input = Files.newInputStream(archive, StandardOpenOption.READ)) {
+            for (int count; (count = input.read(bytes)) >= 0;) {
+                if (count > 0) digest.update(bytes, 0, count);
+            }
+        }
+        if (!HexFormat.of().formatHex(digest.digest()).equals(expectedSha256)) {
+            throw new IOException("World backup was modified during restore; original ZIP preserved");
         }
     }
 
