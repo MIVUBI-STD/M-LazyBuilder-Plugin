@@ -167,9 +167,11 @@
           createOpen = false;
           notice = 'A matching new world is listed after the response was interrupted. Check the Worlds list before attempting another creation.';
         } else {
+          createOpen = false;
           error = presentRuntimeError(value, 'World creation could not be confirmed. Check the Worlds list before retrying to avoid creating duplicates.');
         }
       } catch {
+        createOpen = false;
         error = presentRuntimeError(value, 'World creation could not be confirmed. Check the Worlds list after the server reconnects before retrying.');
       }
     } finally {
@@ -236,6 +238,7 @@
     const displayName = importName.trim();
     if (!serverOnline || importBusy || !importPath || !displayName) return;
     importBusy = true;
+    operationTask = null;
     error = null;
     notice = null;
     outputFolderHint = null;
@@ -273,7 +276,14 @@
       importPath = '';
       importName = '';
     } catch (value) {
-      if (pageActive) error = presentRuntimeError(value, 'Could not import this world.');
+      if (pageActive) {
+        if (operationTask?.state === 'FAILED') {
+          // Same request ID would replay a terminal failure; allow explicit retry.
+          pendingImportRequestId = null;
+          importOpen = true;
+        }
+        error = presentRuntimeError(value, 'World import or restore did not finish. Review the error before trying again.');
+      }
     } finally {
       importBusy = false;
       if (pageActive) {
@@ -624,6 +634,7 @@
     <div use:dialogFocus={{ onEscape: () => (importOpen = false), initialFocusSelector: '.secondary.compact', escapeDisabled: importBusy }} class="modal" role="dialog" aria-modal="true" aria-labelledby="import-world-title">
       <div class="modal-head"><div><h2 id="import-world-title">{backupRestoreMode ? 'Restore backup as copy' : 'Import world'}</h2><p>{backupRestoreMode ? 'Create a new world from this server backup. The original world and ZIP stay unchanged.' : 'Add a Java or Bedrock world (.zip or .mcworld) to this server.'}</p></div><button class="icon-button" aria-label="Close import world dialog" disabled={importBusy} onclick={() => (importOpen = false)}>×</button></div>
       <label>World file<div class="file-picker"><span title={importPath}>{importPath ? importPath.split(/[\\/]/).pop() : 'No file selected'}</span><button class="secondary compact" disabled={importBusy} onclick={backupRestoreMode ? pickWorldBackup : pickImport}>Choose file</button></div></label>
+      {#if backupRestoreMode}<p class="field-hint">Large backups need additional temporary disk space and are subject to server upload limits.</p>{/if}
       <label>World name<input bind:value={importName} disabled={!importPath || importBusy} placeholder="Imported World" /></label>
       <div class="modal-actions"><button class="secondary" disabled={importBusy} onclick={() => (importOpen = false)}>Cancel</button><button class="primary" disabled={importBusy || !importPath || !importName.trim()} onclick={runImport}>{importBusy ? (backupRestoreMode ? 'Restoring copy…' : 'Importing…') : (backupRestoreMode ? 'Restore as copy' : 'Import world')}</button></div>
     </div>
