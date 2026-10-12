@@ -143,6 +143,8 @@
     error = null;
     notice = null;
     outputFolderHint = null;
+    const existingIds = new Set(worlds.map((world) => world.id));
+    const requestedKind = createType;
     try {
       await runtimeProduct.worlds.create({
         folderName: folderName(displayName, 'world'),
@@ -154,11 +156,39 @@
       notice = `World created: ${displayName}.`;
       createName = '';
     } catch (value) {
-      if (pageActive) error = presentRuntimeError(value, 'Could not create this world.');
+      if (!pageActive) return;
+      // A network timeout is not evidence that Paper rejected the create.
+      // Re-read authoritative world state before suggesting that the user retry.
+      try {
+        const current = await runtimeProduct.worlds.list();
+        const matchingNew = current.filter((world) => !existingIds.has(world.id)
+          && world.displayName === displayName && world.kind === requestedKind);
+        if (matchingNew.length === 1) {
+          createOpen = false;
+          notice = 'A matching new world is listed after the response was interrupted. Check the Worlds list before attempting another creation.';
+        } else {
+          error = presentRuntimeError(value, 'World creation could not be confirmed. Check the Worlds list before retrying to avoid creating duplicates.');
+        }
+      } catch {
+        error = presentRuntimeError(value, 'World creation could not be confirmed. Check the Worlds list after the server reconnects before retrying.');
+      }
     } finally {
       busy = false;
       if (pageActive) await refresh(false);
     }
+  }
+
+  function openStandardImport() {
+    if (backupRestoreMode) {
+      importPath = '';
+      importName = '';
+      pendingImportArtifact = null;
+      pendingImportRequestId = null;
+      pendingImportDestinationFolder = null;
+    }
+    backupRestoreMode = false;
+    importOpen = true;
+    if (!importPath) void pickImport();
   }
 
   async function pickWorldBackup() {
@@ -172,7 +202,7 @@
         pendingImportDestinationFolder = null;
       }
       const name = selected.split(/[\\/]/).pop() || 'World Backup';
-      const originalName = name.replace(/-[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\\.zip$/i, '').replace(/[-_]+/g, ' ').trim();
+      const originalName = name.replace(/-[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\.zip$/i, '').replace(/[-_]+/g, ' ').trim();
       importPath = selected;
       importName = (originalName || 'World') + ' Restored Copy';
       backupRestoreMode = true;
@@ -473,7 +503,7 @@
     {#if serverOnline}
       <div class="head-actions">
         <button class="secondary" disabled={busy || importBusy || operationBusyWorldId !== null} onclick={pickWorldBackup}>Restore from backup…</button>
-        <button class="secondary" disabled={busy || importBusy || operationBusyWorldId !== null} onclick={() => { backupRestoreMode = false; importOpen = true; if (!importPath) void pickImport(); }}>Import</button>
+        <button class="secondary" disabled={busy || importBusy || operationBusyWorldId !== null} onclick={openStandardImport}>Import</button>
         <button class="primary" disabled={busy || importBusy || operationBusyWorldId !== null} onclick={() => { createName = ''; createType = 'FLAT'; createOpen = true; }}>Create world</button>
       </div>
     {/if}
