@@ -110,7 +110,7 @@ public final class UtilitiesManagerPlugin extends JavaPlugin {
             return false;
         }
 
-        if (sameEffectiveConfiguration(candidate)) {
+        if (featureFailures.isEmpty() && sameEffectiveConfiguration(candidate)) {
             // A no-op reload must never reset active Noclip/Fly or replace
             // a potion effect just to reapply identical settings.
             reloadConfig();
