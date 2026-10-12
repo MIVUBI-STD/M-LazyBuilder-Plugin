@@ -54,29 +54,36 @@ final class FrameReadbackRing implements AutoCloseable {
         int required = (int) requiredLong;
 
         int previousPackBuffer = GL11C.glGetInteger(GL21C.GL_PIXEL_PACK_BUFFER_BINDING);
-        slot.ensureCapacity(required);
-        GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, slot.pbo);
         try {
+            slot.ensureCapacity(required);
+            GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, slot.pbo);
             framebuffer.beginRead();
-            GL11C.glReadPixels(
-                    0,
-                    0,
-                    width,
-                    height,
-                    GL12C.GL_BGRA,
-                    GL11C.GL_UNSIGNED_BYTE,
-                    0L
-            );
-            framebuffer.endRead();
+            try {
+                GL11C.glReadPixels(
+                        0, 0, width, height,
+                        GL12C.GL_BGRA, GL11C.GL_UNSIGNED_BYTE, 0L
+                );
+            } finally {
+                // Never leave Minecraft's read framebuffer bound when an
+                // OpenGL readback throws. Pixel-pack binding is restored below.
+                framebuffer.endRead();
+            }
 
             slot.fence = GL32C.glFenceSync(GL32C.GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+            if (slot.fence == 0L) {
+                session.fail("Video capture could not create a GPU readback fence.");
+                return false;
+            }
             slot.repeatCount = Math.max(1, repeatCount);
+            cursor = (cursor + 1) % SLOT_COUNT;
+            return true;
+        } catch (RuntimeException failure) {
+            slot.releaseFence();
+            session.fail("Video GPU readback failed. Partial recording was kept for recovery.");
+            return false;
         } finally {
             GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, previousPackBuffer);
         }
-
-        cursor = (cursor + 1) % SLOT_COUNT;
-        return true;
     }
 
     void drainReady(VideoCaptureSession session) {
