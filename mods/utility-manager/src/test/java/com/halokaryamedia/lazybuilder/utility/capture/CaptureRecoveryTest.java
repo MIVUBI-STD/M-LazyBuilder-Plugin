@@ -50,6 +50,27 @@ final class CaptureRecoveryTest {
     }
 
     @Test
+    void recoveryRejectsSymlinksAndDirectoriesBeforeCallingEncoder() throws Exception {
+        Path ordinary = tempDir.resolve("safe.mkv.partial");
+        Files.writeString(ordinary, "raw-frames");
+        assertTrue(CaptureRecovery.isSafePartial(ordinary));
+
+        Path directory = tempDir.resolve("not-a-video.mkv.partial");
+        Files.createDirectory(directory);
+        assertTrue(!CaptureRecovery.isSafePartial(directory));
+
+        Path linked = tempDir.resolve("external.mkv.partial");
+        try {
+            Files.createSymbolicLink(linked, ordinary);
+        } catch (UnsupportedOperationException | IOException unavailable) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false,
+                    "Symbolic links not available on this filesystem");
+        }
+        assertTrue(!CaptureRecovery.isSafePartial(linked));
+        assertEquals("raw-frames", Files.readString(ordinary));
+    }
+
+    @Test
     void firstRecoveredTargetIsStableWhenUnused() {
         assertEquals(
                 tempDir.resolve("session_recovered.mkv"),
