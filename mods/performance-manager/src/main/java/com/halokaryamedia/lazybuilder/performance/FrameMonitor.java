@@ -32,8 +32,10 @@ public final class FrameMonitor {
     private FramePressure pressure = FramePressure.NORMAL;
     private long currentFrameNanos;
     private long previousFrameNanos = Long.MIN_VALUE;
+    private boolean freshMeasuredFrame;
 
     public void recordFrame(long nowNanos, int targetFps) {
+        freshMeasuredFrame = false;
         currentFrameNanos = nowNanos;
         if (previousFrameNanos == Long.MIN_VALUE) {
             previousFrameNanos = nowNanos;
@@ -68,6 +70,7 @@ public final class FrameMonitor {
     public void pauseFrameClock() {
         previousFrameNanos = Long.MIN_VALUE;
         currentFrameNanos = 0L;
+        freshMeasuredFrame = false;
     }
 
     /** Resets rolling pressure history when the active world/session changes. */
@@ -94,6 +97,7 @@ public final class FrameMonitor {
         if (!Double.isFinite(targetFrameMs) || targetFrameMs <= 0.0D) targetFrameMs = DEFAULT_TARGET_FRAME_MS;
 
         currentFrameMs = frameTimeMs;
+        freshMeasuredFrame = true;
         double replaced = frameTimes[cursor];
         if (sampleCount < WINDOW_SIZE) {
             sampleCount++;
@@ -136,6 +140,14 @@ public final class FrameMonitor {
 
     public int sampleCount() {
         return sampleCount;
+    }
+
+    /**
+     * True only when the latest recorded frame produced a valid new timing
+     * observation (not a pause, first baseline or clock discontinuity).
+     */
+    public boolean hasFreshMeasuredFrame() {
+        return freshMeasuredFrame;
     }
 
     private void updatePressure(double currentFrameMs, double targetFrameMs) {
