@@ -93,7 +93,9 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
                     .append(Component.space())
                     .append(quickLink("Noclip", "/noclip", "Temporary spectator-based noclip", canUseNoclip(player)))
                     .append(Component.space())
-                    .append(quickLink("NV", "/nv", "Toggle Night Vision", canUseNightVision(player)))
+                    .append(quickLink("NV",
+                            plugin.isCommandAliasReady("nv", "nightvision") ? "/nv" : "/nightvision",
+                            "Toggle Night Vision", canUseNightVision(player)))
                     .append(Component.space())
                     .append(quickLink("Creative", "/gmc", "Switch to Creative", canUseGamemode(player)));
             player.sendMessage(quick);
@@ -146,7 +148,9 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
             shown++;
         }
         if (sender.hasPermission("lazybuilder.utilities.nightvision") && settings.nightVision()) {
-            sender.sendMessage("/nv - Toggle Night Vision. /nightvision also works.");
+            sender.sendMessage((plugin.isCommandAliasReady("nv", "nightvision")
+                    ? "/nv or /nightvision" : "/nightvision")
+                    + " - Toggle Night Vision.");
             shown++;
         }
         List<String> permittedModes = new ArrayList<>();
@@ -258,7 +262,9 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
         showFeatureStatus(sender, "Movement", MovementFeature.ID);
         showFeatureStatus(sender, "Build Helpers", BuildHelpersFeature.ID);
         showFeatureStatus(sender, "World Safety", WorldSafetyFeature.ID);
-        sender.sendMessage("Commands: " + plugin.readyCommandCount() + "/" + plugin.canonicalCommandCount() + " ready (+ /nv alias)");
+        sender.sendMessage("Command bindings: " + plugin.readyCommandCount()
+                + "/" + plugin.canonicalCommandCount() + " registered"
+                + (plugin.isCommandAliasReady("nv", "nightvision") ? " (+ /nv alias)" : ""));
 
         List<String> shadowed = plugin.shadowedCommands();
         if (!shadowed.isEmpty()) {
