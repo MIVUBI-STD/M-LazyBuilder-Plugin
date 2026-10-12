@@ -2,6 +2,13 @@ name: Performance Manager Verify
 
 on:
   workflow_dispatch:
+  push:
+    branches: [Local]
+    paths:
+      - 'mods/performance-manager/**'
+      - 'tooling/windows-toolchain/**'
+      - 'toolchain.json'
+      - '.github/workflows/performance-manager-verify.yml'
 
 permissions:
   contents: read
