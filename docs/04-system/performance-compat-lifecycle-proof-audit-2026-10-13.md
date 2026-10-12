@@ -59,6 +59,67 @@ The existing shader/resource reload invalidator holds shader-sensitive state, wh
 | World change/shutdown | Stale shader callback does not mutate newer instance or generation | Regression source added; runtime untested |
 | Alt-tab/minimize in proof mode | Histogram window resets; only fresh frame samples count | Regression source added; runtime untested |
 
+## Follow-up — bounded chunk work and idle-culling cost
+
+A later source pass identified two additional Performance Manager integration
+risks and made narrow changes within **existing** lifecycle owners:
+
+**P1 — abrupt all-at-once chunk work on user opt-out.** Previously
+`PerformanceRuntime.updatePreferences` called
+`ChunkRebuildBackpressure.releaseAll` synchronously when a user disabled
+`Rendering Optimizations`. The existing queue may hold up to 128 deferred
+tasks, so that single settings action could schedule the whole backlog on one
+client frame. The change removes that unbounded opt-out flush.
+`PerformanceRuntime.tick` continues to drain the same
+`ChunkRebuildBackpressure` queue even when rendering optimizations are
+disabled, with a bounded 16-task normal-mode release policy per tick.
+`ChunkBuilder.reset/stop` still owns cancellation through the existing mixin.
+**No task is intentionally discarded when changing settings.**
+
+**P1 — concurrent admission into a detached queue.** Queue capacity had been
+checked before insertion and removal of an empty queue could race a producer
+which already held its state reference. `DeferredState` now performs
+capacity check + insertion under its one narrow lock, and closes when removed
+from the registry or cancelled. A producer with a stale closed reference
+fails open to vanilla `ChunkBuilder.send`, never enqueuing unreachable work.
+No second queue/manager was introduced. This does **not** claim that
+`ChunkBuilder.send` itself is race-free under all third-party mods.
+
+The nested `DeferredState<T>` is the existing queue with a generic type
+parameter solely to permit meaningful tests without mocking Minecraft
+task internals. `ChunkRebuildBackpressureStateTest` covers capacity,
+closing with and without pending work, and eight concurrent producers.
+`ChunkRebuildBackpressurePolicyTest` checks fail-open admission at 128.
+`PerformanceRuntimeFocusPolicyTest` checks the bounded release budget
+after opt-out. **These tests are source only until Gradle executes.**
+
+**P2 — avoid default-off culling diagnostic allocations.** With entity and
+block-entity culling both disabled by default, the governor previously read
+`CullingRuntime.snapshot()` and two `StageTimingMetrics.snapshot()`
+objects every client tick, even though none could influence culling policy.
+Now those snapshots are sampled only if at least one culling capability
+is enabled. Other governor inputs (frame pressure, heap ratio, chunk
+backlogs) remain active and unchanged. No permanent instrumentation was
+added.
+
+### Native acceptance for these changes
+
+- Disable Rendering Optimizations with a full deferred queue and verify
+  task progression over several ticks, not a single large spike.
+- Switch worlds or stop a ChunkBuilder while multiple producers are
+  submitting tasks; verify no stale queue retains work and that vanilla
+  scheduling remains correct.
+- Disable culling on a large map; verify default-off idle tick overhead is
+  lower without a difference in entity visibility or frame pressure.
+- Test with Sodium/ImmediatelyFast and without them; confirm domain
+  ownership still determines which mixins are applied.
+- Compare before/after p95/p99 frame times and rebuild backlog progression
+  on the same Windows/Fabric 1.21.4 environment.
+
+The optional full-drain method remains in the source for explicit lifecycle
+callers but is not used by the normal Settings opt-out path. Native proofs
+and exact-head Gradle remain **pending**.
+
 ## Keep out of scope until test hardware is available
 
 No new renderer implementation, shader engine, cache database, permanent FPS overlay, process monitor, telemetry worker, forced garbage collector, graphics-quality reduction or automatic profile switching. Keep current Minecraft-native Settings vocabulary and expose detailed diagnostics only on demand / in explicit proof runs.
