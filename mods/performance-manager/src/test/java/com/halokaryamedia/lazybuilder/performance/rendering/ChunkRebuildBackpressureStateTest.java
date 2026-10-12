@@ -19,7 +19,7 @@ final class ChunkRebuildBackpressureStateTest {
         var state = new ChunkRebuildBackpressure.DeferredState<Integer>();
         assertTrue(state.addIfCapacity(1, 3));
         assertFalse(state.closeIfEmpty(), "pending work must not be detached");
-        assertEquals(1, state.poll());
+        assertEquals(Integer.valueOf(1), state.poll());
         assertTrue(state.closeIfEmpty(), "empty state can now detach safely");
         assertFalse(state.addIfCapacity(2, 3), "stale producer must fail open");
         assertNull(state.poll());
@@ -31,7 +31,7 @@ final class ChunkRebuildBackpressureStateTest {
         assertTrue(state.addIfCapacity(1, 3));
         state.close();
         assertFalse(state.addIfCapacity(2, 3));
-        assertEquals(1, state.poll(), "existing work remains available for cancellation");
+        assertEquals(Integer.valueOf(1), state.poll(), "existing work remains available for cancellation");
         assertNull(state.poll());
     }
 
