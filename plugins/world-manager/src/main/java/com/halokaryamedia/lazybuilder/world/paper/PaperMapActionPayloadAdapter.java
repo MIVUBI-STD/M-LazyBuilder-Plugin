@@ -138,13 +138,39 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
 
     private void handleTeleport(Player player, MapActionWireProtocol.TeleportLocation request) {
         try {
-            var result = teleportService.teleport(
-                    player.getUniqueId(), request.worldId(), request.blockX(), request.blockZ());
+            teleportService.teleportAsync(
+                    player.getUniqueId(), request.worldId(), request.blockX(), request.blockZ())
+                    .whenComplete((result, failure) -> finishMapTeleport(player, request, result, failure));
+        } catch (RuntimeException exception) {
+            send(player, MapActionWireProtocol.error(request.requestId(), exception.getMessage()));
+        }
+    }
+
+    private void finishMapTeleport(
+            Player player,
+            MapActionWireProtocol.TeleportLocation request,
+            WorldLocationTeleportService.TeleportResult result,
+            Throwable failure
+    ) {
+        if (!org.bukkit.Bukkit.isPrimaryThread()) {
+            if (started && !stopping && plugin.isEnabled()) {
+                plugin.getServer().getScheduler().runTask(plugin, () ->
+                        finishMapTeleport(player, request, result, failure));
+            }
+            return;
+        }
+        if (!started || stopping || !player.isOnline()
+                || plugin.getServer().getPlayer(player.getUniqueId()) != player) return;
+        if (failure != null) {
+            Throwable reason = failure instanceof java.util.concurrent.CompletionException
+                    && failure.getCause() != null ? failure.getCause() : failure;
+            String message = reason.getMessage() == null
+                    ? "Map teleport could not finish" : reason.getMessage();
+            send(player, MapActionWireProtocol.error(request.requestId(), message));
+        } else {
             var location = result.resolved();
             send(player, MapActionWireProtocol.teleportOk(
                     request.requestId(), request.worldId(), location.x(), location.y(), location.z()));
-        } catch (RuntimeException exception) {
-            send(player, MapActionWireProtocol.error(request.requestId(), exception.getMessage()));
         }
     }
 
