@@ -28,6 +28,32 @@ final class MemoryDeduplicatorTest {
     }
 
     @Test
+    void lookupIsBoundedAndStillReusesPreviouslyStoredQuadsWhenFull() {
+        int[] first = {0, 42, 7, 99};
+        assertSame(first, MemoryDeduplicator.canonicalize(first));
+        // Unique arrays deliberately remain small, so the entry-count cap
+        // is reached before the aggregate raw vertex-data budget.
+        for (int index = 1; index < MemoryDeduplicator.MAX_UNIQUE_QUADS; index++) {
+            MemoryDeduplicator.canonicalize(new int[]{index, 42, 7, 99});
+        }
+        assertEquals(MemoryDeduplicator.MAX_UNIQUE_QUADS,
+                MemoryDeduplicator.cachedQuadCount());
+
+        int[] newUnseen = {Integer.MIN_VALUE, 42, 7, 99};
+        assertSame(newUnseen, MemoryDeduplicator.canonicalize(newUnseen));
+        assertEquals(MemoryDeduplicator.MAX_UNIQUE_QUADS,
+                MemoryDeduplicator.cachedQuadCount());
+        assertSame(first, MemoryDeduplicator.canonicalize(new int[]{0, 42, 7, 99}));
+    }
+
+    @Test
+    void oversizedModdedVertexArrayIsNotRetained() {
+        int[] oversized = new int[1024];
+        assertSame(oversized, MemoryDeduplicator.canonicalize(oversized));
+        assertEquals(0, MemoryDeduplicator.cachedQuadCount());
+    }
+
+    @Test
     void differentVertexArraysRemainDistinct() {
         int[] first = {1, 2, 3, 4};
         int[] second = {1, 2, 3, 5};
