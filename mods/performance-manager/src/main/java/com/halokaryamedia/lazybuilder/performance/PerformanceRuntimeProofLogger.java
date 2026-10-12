@@ -56,6 +56,7 @@ final class PerformanceRuntimeProofLogger {
             LOGGER.info("LB_PERF_PROOF_BEGIN interval_frames={}", SAMPLE_INTERVAL_FRAMES);
         }
 
+        if (!isValidProofSample(frameMonitor.sampleCount(), frameMonitor.currentFrameTimeMs())) return;
         proofHistogram.record(frameMonitor.currentFrameTimeMs());
 
         if (--framesUntilSample > 0) return;
