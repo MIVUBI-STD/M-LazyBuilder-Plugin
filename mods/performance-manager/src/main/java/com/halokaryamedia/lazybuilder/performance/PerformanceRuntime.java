@@ -91,17 +91,35 @@ public final class PerformanceRuntime {
         if (foreground && (preferences.entityCulling() || preferences.blockEntityCulling())) {
             cullingRuntime.tick(client, preferences, frameMonitor.pressure(), governorProfile);
         }
-        if (client != null && client.worldRenderer != null && preferences.renderingOptimizations()) {
-            int releaseBudget = Math.min(
-                    governorProfile.rebuildReleaseBudget(),
-                    com.halokaryamedia.lazybuilder.performance.rendering.ChunkRebuildBackpressurePolicy
-                            .releaseBudget(frameMonitor.pressure())
+        if (client != null && client.worldRenderer != null) {
+            // Deferred vanilla work must continue draining even if the user
+            // turns our optimization off. Never dump all 128 tasks from an
+            // options callback into one frame.
+            int releaseBudget = deferredDrainBudget(
+                    preferences.renderingOptimizations(),
+                    governorProfile,
+                    frameMonitor.pressure()
             );
             ChunkRebuildBackpressure.drain(
                     client.worldRenderer.getChunkBuilder(),
                     releaseBudget
             );
         }
+    }
+
+    static int deferredDrainBudget(
+            boolean renderingOptimizations,
+            PerformanceGovernor.Profile governorProfile,
+            FramePressure pressure
+    ) {
+        int vanillaLimit = com.halokaryamedia.lazybuilder.performance.rendering.ChunkRebuildBackpressurePolicy
+                .releaseBudget(renderingOptimizations ? pressure : FramePressure.NORMAL);
+        if (!renderingOptimizations) return vanillaLimit;
+        return Math.min(
+                governorProfile == null ? PerformanceGovernor.Profile.balanced().rebuildReleaseBudget()
+                        : governorProfile.rebuildReleaseBudget(),
+                vanillaLimit
+        );
     }
 
     static boolean shouldUseFramePressure(boolean foreground, int sampleCount) {
@@ -196,10 +214,9 @@ public final class PerformanceRuntime {
             return;
         }
         if (renderingDisabled) {
-            MinecraftClient client = MinecraftClient.getInstance();
-            if (client != null && client.worldRenderer != null) {
-                ChunkRebuildBackpressure.releaseAll(client.worldRenderer.getChunkBuilder());
-            }
+            // Rendering is no longer optimizing new tasks. The existing client
+            // tick continues to release previously deferred work in bounded
+            // batches, rather than synchronously flushing up to 128 rebuilds.
             // Exclusive residents were recovered above; mirrored arena/residency state
             // is now redundant and must not retain GPU/cache resources while disabled.
             TerrainGpuResidencyTracker.clear();
