@@ -28,6 +28,44 @@ public final class WorldLocationTeleportService {
         this.runtimeService.attachOperations(this.operations);
     }
 
+    /** Asynchronous variant; ownership lasts through actual destination arrival. */
+    public java.util.concurrent.CompletableFuture<TeleportResult> teleportAsync(
+            UUID playerId, WorldId worldId, int blockX, int blockZ) {
+        Objects.requireNonNull(playerId, "playerId");
+        Objects.requireNonNull(worldId, "worldId");
+        var playerLease = runtimeService.acquirePlayerTeleport(playerId);
+        try {
+            var worldLease = operations.acquire(worldId, WorldOperationType.TELEPORT);
+            try {
+                WorldRecord world = registry.find(worldId)
+                        .orElseThrow(() -> new IllegalArgumentException("World is not managed: " + worldId));
+                if (world.lifecycle() != WorldLifecycle.ACTIVE) {
+                    throw new IllegalStateException("Archived worlds cannot be used for map teleport: " + world.folderName());
+                }
+                runtimeService.loadDuringOperation(worldId);
+                WorldRecord selected = registry.find(worldId)
+                        .orElseThrow(() -> new IllegalStateException("World disappeared during teleport: " + worldId));
+                if (selected.lifecycle() != WorldLifecycle.ACTIVE) {
+                    throw new IllegalStateException("World lifecycle changed during teleport: " + selected.folderName());
+                }
+                var future = locationGateway.teleportToSafeSurfaceAsync(
+                        playerId, selected, blockX, blockZ,
+                        WorldGameMode.valueOf(selected.defaultGameMode()))
+                        .thenApply(resolved -> new TeleportResult(selected, blockX, blockZ, resolved));
+                return future.whenComplete((result, failure) -> {
+                    try { worldLease.close(); }
+                    finally { playerLease.close(); }
+                });
+            } catch (RuntimeException | Error failure) {
+                worldLease.close();
+                throw failure;
+            }
+        } catch (RuntimeException | Error failure) {
+            playerLease.close();
+            throw failure;
+        }
+    }
+
     public TeleportResult teleport(UUID playerId, WorldId worldId, int blockX, int blockZ) {
         Objects.requireNonNull(playerId, "playerId");
         Objects.requireNonNull(worldId, "worldId");
