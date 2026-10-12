@@ -343,7 +343,9 @@ public final class MovementFeature implements UtilityFeature, Listener, CommandE
         if (!(event.getEntity() instanceof Player player)
                 || event.getModifiedType() != PotionEffectType.NIGHT_VISION) return;
         UUID id = player.getUniqueId();
-        if (internalPotionChanges.contains(id)) return;
+        if (internalPotionChanges.contains(id)
+                || (event.getAction() == EntityPotionEffectEvent.Action.CHANGED
+                        && !event.isOverride())) return;
         PlayerUtilityState state = states.get(id);
         if (state == null || !state.nightVisionActive) return;
         state.nightVisionActive = false;
