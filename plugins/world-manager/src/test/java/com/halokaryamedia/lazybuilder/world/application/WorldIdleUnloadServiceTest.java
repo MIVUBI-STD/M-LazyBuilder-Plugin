@@ -96,6 +96,38 @@ class WorldIdleUnloadServiceTest {
         assertEquals(1, fixture.runtime.unloadCount);
     }
 
+    @Test
+    void externalPregenerationProtectionPreventsUnloadUntilAFreshIdleWindowExpires() {
+        WorldRegistry registry = new WorldRegistry();
+        WorldRecord world = world();
+        registry.register(world);
+        WorldOperationCoordinator operations = new WorldOperationCoordinator();
+        FakeRuntime runtime = new FakeRuntime(operations, world);
+        WorldRuntimeService runtimeService = new WorldRuntimeService(
+                registry, runtime, operations, ignored -> false);
+        boolean[] externalPregenerationActive = {true};
+        WorldIdleUnloadService service = new WorldIdleUnloadService(
+                registry,
+                runtimeService,
+                operations,
+                ignored -> runtime.loaded,
+                ignored -> false,
+                ignored -> externalPregenerationActive[0],
+                Duration.ofSeconds(30));
+
+        service.tick(1_000L);
+        service.tick(61_000L);
+        assertTrue(runtime.loaded, "external generation must prevent idle unload");
+
+        externalPregenerationActive[0] = false;
+        service.tick(62_000L);
+        service.tick(91_000L);
+        assertTrue(runtime.loaded, "external work ending must start a fresh idle window");
+        service.tick(92_000L);
+        assertFalse(runtime.loaded);
+        assertEquals(1, runtime.unloadCount);
+    }
+
     private static Fixture fixture(boolean protectedWorld) {
         WorldRegistry registry = new WorldRegistry();
         WorldRecord world = world();
