@@ -633,6 +633,7 @@
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !importBusy && (importOpen = false)}>
     <div use:dialogFocus={{ onEscape: () => (importOpen = false), initialFocusSelector: '.secondary.compact', escapeDisabled: importBusy }} class="modal" role="dialog" aria-modal="true" aria-labelledby="import-world-title">
       <div class="modal-head"><div><h2 id="import-world-title">{backupRestoreMode ? 'Restore backup as copy' : 'Import world'}</h2><p>{backupRestoreMode ? 'Create a new world from this server backup. The original world and ZIP stay unchanged.' : 'Add a Java or Bedrock world (.zip or .mcworld) to this server.'}</p></div><button class="icon-button" aria-label="Close import world dialog" disabled={importBusy} onclick={() => (importOpen = false)}>×</button></div>
+      <RuntimeErrorNotice {error} />
       <label>World file<div class="file-picker"><span title={importPath}>{importPath ? importPath.split(/[\\/]/).pop() : 'No file selected'}</span><button class="secondary compact" disabled={importBusy} onclick={backupRestoreMode ? pickWorldBackup : pickImport}>Choose file</button></div></label>
       {#if backupRestoreMode}<p class="field-hint">Large backups need additional temporary disk space and are subject to server upload limits.</p>{/if}
       <label>World name<input bind:value={importName} disabled={!importPath || importBusy} placeholder="Imported World" /></label>
