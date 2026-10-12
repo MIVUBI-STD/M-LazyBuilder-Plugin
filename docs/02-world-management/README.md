@@ -244,9 +244,15 @@ player remains at the previous location, the world entry game mode is not
 applied, and the client receives a clear error. Void worlds never get
 synthetic terrain added during teleport.
 
-The pure candidate-search policy has Java 21 standalone test coverage, but
-Paper collision/heightmap behavior, real importing, teleport events from other
-plugins and Fabric UI must still be validated on the exact current revision.
+The pure candidate-search policy has Java 21 standalone harness coverage,
+but Paper collision/heightmap behavior, real importing, teleport events from
+other plugins and Fabric UI must still be validated on the exact current revision.
+Paper warns that synchronous teleport and chunk loading may stall the main
+server thread for unloaded destinations. The current teleport contract remains
+synchronous; any future asynchronous migration must preserve correlated
+completion, permission checks, operation ownership and post-teleport game-mode
+application without blocking the main thread on a Future. Do not silently
+switch this path to async within the existing immediate-success wire contract.
 
 ## World Settings
 
