@@ -86,6 +86,12 @@ final class VideoCaptureSession {
     private int fps;
     private long nextDiskCheckNanos;
 
+    /** Source readback memory includes both CPU packets and GPU PBO slots. */
+    static boolean withinReadbackBudget(int width, int height) {
+        return width > 0 && height > 0
+                && (long) width * (long) height <= MAX_SOURCE_FRAME_BYTES / 4L;
+    }
+
     State state() { return state; }
     String status() { return status; }
     long submittedFrames() { return submittedFrames; }
@@ -127,7 +133,7 @@ final class VideoCaptureSession {
         freeFrames.clear();
 
         long capacityLong = (long) width * (long) height * 4L;
-        if (capacityLong <= 0L || capacityLong > MAX_SOURCE_FRAME_BYTES) {
+        if (!withinReadbackBudget(width, height)) {
             fail("Game framebuffer is too large for stable video recording. "
                     + "Lower Minecraft display resolution and try again.");
             return false;
