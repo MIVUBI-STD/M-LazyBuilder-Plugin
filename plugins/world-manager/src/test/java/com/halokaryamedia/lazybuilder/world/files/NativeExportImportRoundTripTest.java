@@ -6,8 +6,11 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.DataOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.zip.GZIPOutputStream;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -79,6 +82,49 @@ class NativeExportImportRoundTripTest {
         assertFalse(Files.exists(worlds.resolve("Imported/.lazybuilder-publish-pending")));
         assertFalse(Files.exists(worlds.resolve("Imported_nether/.lazybuilder-family-publish-pending")));
         assertFalse(Files.exists(worlds.resolve("Imported_the_end/.lazybuilder-family-publish-pending")));
+    }
+
+    @Test
+    void worldBackupZipRestoresAsACopyWithoutOverwritingSourceOrBackup() throws Exception {
+        Path worlds = Files.createDirectories(tempDir.resolve("worlds"));
+        Path original = Files.createDirectories(worlds.resolve("Builder-Original"));
+        Files.createDirectories(original.resolve("region"));
+        writeJava1214LevelDat(original.resolve("level.dat"));
+        byte[] regionBytes = new byte[]{1, 3, 5, 7, 9};
+        Files.write(original.resolve("region/r.0.0.mca"), regionBytes);
+
+        Path backupRoot = Files.createDirectories(tempDir.resolve("backups"));
+        Path backup = new LocalWorldBackupStore(backupRoot).createBackup(
+                original, "Builder-Original-11111111-2222-3333-4444-555555555555");
+        byte[] backupBytes = Files.readAllBytes(backup);
+        byte[] originalBytes = Files.readAllBytes(original.resolve("level.dat"));
+
+        // This is the current Desktop restore-as-copy route: preserve the ZIP
+        // in backups/, upload an inbox copy, stage with its admitted digest,
+        // then publish under a new folder through the canonical World repository.
+        Path imports = Files.createDirectories(tempDir.resolve("imports"));
+        Path upload = Files.copy(backup, imports.resolve(backup.getFileName()));
+        String digest = HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(upload)));
+        LocalWorldImportArtifactStore importStore = new LocalWorldImportArtifactStore(
+                imports, 10_000, 1024L * 1024L * 1024L);
+
+        Path work = Files.createDirectories(tempDir.resolve("work"));
+        WorldImportArtifactStore.StagedImport staged = importStore.stageArchive(
+                upload.getFileName().toString(), work.resolve("restore-staging"), digest);
+        assertEquals(WorldImportArtifactStore.DetectedEdition.JAVA, staged.edition());
+        assertEquals("JAVA_1_21_4", staged.trustedFormat());
+
+        LocalWorldFileRepository repository = new LocalWorldFileRepository(worlds, work);
+        repository.publishStagedWorld(staged.worldDirectory(), "Builder-Restored-Copy");
+        repository.markPublishedWorldCommitted("Builder-Restored-Copy");
+
+        assertArrayEquals(originalBytes, Files.readAllBytes(original.resolve("level.dat")));
+        assertArrayEquals(regionBytes, Files.readAllBytes(original.resolve("region/r.0.0.mca")));
+        assertArrayEquals(regionBytes, Files.readAllBytes(worlds.resolve("Builder-Restored-Copy/region/r.0.0.mca")));
+        assertArrayEquals(backupBytes, Files.readAllBytes(backup));
+        assertTrue(Files.isRegularFile(worlds.resolve("Builder-Original/level.dat")));
+        assertTrue(Files.isRegularFile(worlds.resolve("Builder-Restored-Copy/level.dat")));
     }
 
     private static void writeJava1214LevelDat(Path path) throws Exception {
