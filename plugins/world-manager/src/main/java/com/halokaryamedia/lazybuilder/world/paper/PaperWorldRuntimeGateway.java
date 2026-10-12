@@ -455,8 +455,9 @@ public final class PaperWorldRuntimeGateway implements WorldRuntimeGateway {
         requirePrimaryThread();
         Player player = requireOnlinePlayer(playerId);
         World target = requireLoadedWorld(record);
-        if (!player.teleport(target.getSpawnLocation())) {
-            throw new IllegalStateException("Paper rejected teleport for player " + player.getName());
+        Location landing = PaperSafeLanding.resolveSpawn(target, record);
+        if (!player.teleport(landing)) {
+            throw new IllegalStateException("Paper rejected safe world teleport for player " + player.getName());
         }
         if (gameMode != null) player.setGameMode(GameMode.valueOf(gameMode.name()));
     }
