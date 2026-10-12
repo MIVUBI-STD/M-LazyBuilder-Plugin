@@ -14,6 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class NativeExportImportRoundTripTest {
     @TempDir Path tempDir;
@@ -125,6 +126,42 @@ class NativeExportImportRoundTripTest {
         assertArrayEquals(backupBytes, Files.readAllBytes(backup));
         assertTrue(Files.isRegularFile(worlds.resolve("Builder-Original/level.dat")));
         assertTrue(Files.isRegularFile(worlds.resolve("Builder-Restored-Copy/level.dat")));
+    }
+
+    @Test
+    void directBackupRestoreUsesReadOnlyArchiveWithoutAnyUploadCopy() throws Exception {
+        Path source = Files.createDirectories(tempDir.resolve("direct-original"));
+        Files.createDirectories(source.resolve("region"));
+        writeJava1214LevelDat(source.resolve("level.dat"));
+        Files.write(source.resolve("region/r.0.0.mca"), new byte[]{2, 4, 6});
+
+        Path backupsRoot = Files.createDirectories(tempDir.resolve("direct-backups"));
+        LocalWorldBackupStore backups = new LocalWorldBackupStore(backupsRoot);
+        Path backup = backups.createBackup(source, "direct-11111111-2222-3333-4444-555555555555");
+        String name = backup.getFileName().toString();
+        assertEquals(backup, backups.requireExistingBackup(name));
+        byte[] preserved = Files.readAllBytes(backup);
+        String digest = HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(preserved));
+
+        Path inbox = Files.createDirectories(tempDir.resolve("direct-imports"));
+        LocalWorldImportArtifactStore imports = new LocalWorldImportArtifactStore(
+                inbox, 10_000, 1024L * 1024L * 1024L);
+        Path work = Files.createDirectories(tempDir.resolve("direct-work"));
+        WorldImportArtifactStore.StagedImport staged =
+                imports.stageReadOnlyBackup(backup, work.resolve("direct-restore"), digest);
+
+        assertEquals("JAVA_1_21_4", staged.trustedFormat());
+        assertTrue(Files.isRegularFile(staged.worldDirectory().resolve("region/r.0.0.mca")));
+        assertFalse(Files.exists(staged.worldDirectory().resolve(".lazybuilder-import-source.zip")));
+        assertArrayEquals(preserved, Files.readAllBytes(backup));
+        try (var entries = Files.list(inbox)) {
+            assertEquals(0L, entries.count(), "direct restore should not create an upload artifact");
+        }
+        assertThrows(java.io.IOException.class, () ->
+                imports.stageReadOnlyBackup(backup, work.resolve("wrong-digest"), "0".repeat(64)));
+        assertArrayEquals(preserved, Files.readAllBytes(backup));
+        assertThrows(IllegalArgumentException.class, () -> backups.requireExistingBackup("../outside.zip"));
     }
 
     private static void writeJava1214LevelDat(Path path) throws Exception {
