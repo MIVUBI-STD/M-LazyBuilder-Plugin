@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(ChunkBuilder.class)
 abstract class ChunkBuilderBackpressureMixin {
     @Shadow private ClientWorld world;
+    @Shadow private boolean stopped;
 
     @Inject(method = "setWorld(Lnet/minecraft/client/world/ClientWorld;)V", at = @At("HEAD"))
     private void lazybuilder$cancelPriorWorldDeferredTasks(ClientWorld nextWorld, CallbackInfo ci) {
@@ -27,7 +28,9 @@ abstract class ChunkBuilderBackpressureMixin {
 
     @Inject(method = "send", at = @At("HEAD"), cancellable = true)
     private void lazybuilder$deferChunkTask(ChunkBuilder.BuiltChunk.Task task, CallbackInfo ci) {
-        if (!PerformanceManagerClient.preferences().renderingOptimizations()) return;
+        // The stop/reset hook cancels the old queue, but a concurrent late
+        // send must not create a new deferred queue on a stopped builder.
+        if (this.stopped || !PerformanceManagerClient.preferences().renderingOptimizations()) return;
         ChunkBuilder self = (ChunkBuilder) (Object) this;
         if (ChunkRebuildBackpressure.deferIfNeeded(self, task, PerformanceManagerClient.pressure())) {
             ci.cancel();
