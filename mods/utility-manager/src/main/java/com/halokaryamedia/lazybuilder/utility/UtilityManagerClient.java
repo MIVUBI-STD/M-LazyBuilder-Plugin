@@ -174,8 +174,10 @@ public final class UtilityManagerClient implements ClientModInitializer {
             client.execute(CompactDebugNetworking::requestSnapshot);
         }
         if (narratorPreferenceChanged) {
-            client.execute(() -> NarratorSuppressionController.applyIfEnabled(
-                    client, updated.suppressNarrator()));
+            client.execute(() -> {
+                NarratorSuppressionController.applyIfEnabled(client, updated.suppressNarrator());
+                client.options.write();
+            });
         }
     }
 
