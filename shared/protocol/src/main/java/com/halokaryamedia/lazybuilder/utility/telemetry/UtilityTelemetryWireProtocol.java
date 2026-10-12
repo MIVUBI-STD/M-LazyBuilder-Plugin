@@ -55,6 +55,10 @@ public final class UtilityTelemetryWireProtocol {
         return encode(TYPE_SUBSCRIBE, out -> { });
     }
 
+    public static byte[] unsubscribe() {
+        return encode(TYPE_UNSUBSCRIBE, out -> { });
+    }
+
     public static byte[] snapshot(String worldName, double cpuPercent, long usedMemoryBytes, long maxMemoryBytes) {
         Snapshot snapshot = new Snapshot(worldName, cpuPercent, usedMemoryBytes, maxMemoryBytes);
         return encode(TYPE_SNAPSHOT, out -> {
