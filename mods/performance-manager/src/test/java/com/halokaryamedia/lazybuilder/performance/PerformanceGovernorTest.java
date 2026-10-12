@@ -30,6 +30,38 @@ final class PerformanceGovernorTest {
     }
 
     @Test
+    void nonFiniteTelemetryNeverEntersProtectiveModeByAccident() {
+        PerformanceGovernor governor = new PerformanceGovernor();
+        PerformanceGovernor.Input invalid = new PerformanceGovernor.Input(
+                FramePressure.NORMAL,
+                Double.NaN,
+                0,
+                0,
+                8,
+                Double.POSITIVE_INFINITY,
+                0L,
+                0L,
+                Double.NaN
+        );
+        for (int i = 0; i < 180; i++) governor.update(invalid);
+        assertEquals(PerformanceGovernor.Mode.BALANCED, governor.profile().mode());
+        assertEquals(0.0D, invalid.frameControlMs());
+        assertEquals(0.0D, invalid.usedMemoryRatio());
+        assertEquals(0.0D, invalid.cullingCpuAverageMs());
+    }
+
+    @Test
+    void longSustainedPressureKeepsStableProtectiveDecision() {
+        PerformanceGovernor governor = new PerformanceGovernor();
+        PerformanceGovernor.Input heavy = new PerformanceGovernor.Input(
+                FramePressure.HEAVY, 80.0D, 96, 60, 0, 0.95D, 500, 1, 0.9D
+        );
+        for (int i = 0; i < 100_000; i++) governor.update(heavy);
+        assertEquals(PerformanceGovernor.Mode.PROTECTIVE, governor.profile().mode());
+        assertTrue(governor.profile().chunkUploadBudget() <= 12);
+    }
+
+    @Test
     void poorCullingProfitabilityReducesBudget() {
         PerformanceGovernor governor = new PerformanceGovernor();
         PerformanceGovernor.Profile profile = governor.update(new PerformanceGovernor.Input(
