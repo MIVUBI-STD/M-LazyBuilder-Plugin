@@ -136,6 +136,7 @@ pub fn run() {
             commands::world_manager::world_delete,
             commands::world_manager::world_import_pick,
             commands::world_manager::world_backup_pick,
+            commands::world_manager::world_backup_restore_copy,
             commands::world_manager::world_import_upload,
             commands::world_manager::world_import
         ])
