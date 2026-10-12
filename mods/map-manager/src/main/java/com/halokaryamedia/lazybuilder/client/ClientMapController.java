@@ -188,7 +188,9 @@ public final class ClientMapController {
             case MapActionWireProtocol.ErrorResponse error -> {
                 boolean matched = error.requestId() == 0L;
                 boolean changed = false;
-                if (teleportRequestId != 0L && error.requestId() == teleportRequestId) {
+                boolean teleportFailure = teleportRequestId != 0L
+                        && error.requestId() == teleportRequestId;
+                if (teleportFailure) {
                     teleportRequestId = 0L;
                     matched = true;
                     changed = true;
@@ -208,7 +210,16 @@ public final class ClientMapController {
                     lastError = error.message();
                     revision++;
                 }
-                notifier.accept("LazyBuilder: " + error.message());
+                String detail = error.message();
+                String lower = detail.toLowerCase(java.util.Locale.ROOT);
+                if (teleportFailure && (lower.contains("no safe surface")
+                        || lower.contains("no safe landing"))) {
+                    notifier.accept("LazyBuilder: No safe landing here. Choose another map location.");
+                } else if (teleportFailure && lower.contains("outside the world border")) {
+                    notifier.accept("LazyBuilder: That map point is outside the world border.");
+                } else {
+                    notifier.accept("LazyBuilder: " + detail);
+                }
             }
         }
     }
