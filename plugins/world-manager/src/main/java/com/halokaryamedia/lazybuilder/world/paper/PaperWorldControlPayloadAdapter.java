@@ -279,7 +279,9 @@ public final class PaperWorldControlPayloadAdapter implements PluginMessageListe
         if (failure != null) {
             Throwable reason = failure instanceof java.util.concurrent.CompletionException
                     && failure.getCause() != null ? failure.getCause() : failure;
-            String message = reason.getMessage() == null ? "World teleport could not finish" : reason.getMessage();
+            String message = reason instanceof java.util.concurrent.TimeoutException
+                    ? "Preparing destination took too long. No teleport occurred; please retry."
+                    : reason.getMessage() == null ? "World teleport could not finish" : reason.getMessage();
             send(player, WorldControlWireProtocol.error(message));
         } else {
             send(player, encode(new WorldControlWireProtocol.TeleportOk(summary(world))));
