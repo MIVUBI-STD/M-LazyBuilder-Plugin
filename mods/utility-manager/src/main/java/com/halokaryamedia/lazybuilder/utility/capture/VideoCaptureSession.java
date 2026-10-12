@@ -60,6 +60,8 @@ final class VideoCaptureSession {
 
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder/Capture/Video");
     private static final int FRAME_POOL_SIZE = 3;
+    /** Three direct CPU buffers plus three GPU PBOs; refuse unbounded readback allocations. */
+    private static final long MAX_SOURCE_FRAME_BYTES = 64L * 1024L * 1024L;
     private static final long MIN_FREE_DISK_BYTES = 1024L * 1024L * 1024L;
     private static final long DISK_CHECK_INTERVAL_NANOS = TimeUnit.SECONDS.toNanos(5L);
 
@@ -125,8 +127,9 @@ final class VideoCaptureSession {
         freeFrames.clear();
 
         long capacityLong = (long) width * (long) height * 4L;
-        if (capacityLong <= 0L || capacityLong > Integer.MAX_VALUE) {
-            fail("Recording resolution is too large.");
+        if (capacityLong <= 0L || capacityLong > MAX_SOURCE_FRAME_BYTES) {
+            fail("Game framebuffer is too large for stable video recording. "
+                    + "Lower Minecraft display resolution and try again.");
             return false;
         }
         int capacity = (int) capacityLong;
@@ -157,6 +160,10 @@ final class VideoCaptureSession {
                     try {
                         runEncoder(gameDirectory.toPath(), snapshot, working, mkv, mp4, notifier);
                     } finally {
+                        // A finished/failed recording must not hold several 4K
+                        // direct buffers in the singleton queue until next F9.
+                        readyFrames.clear();
+                        freeFrames.clear();
                         synchronized (VideoCaptureSession.this) {
                             writerThread = null;
                         }
@@ -460,13 +467,17 @@ final class VideoCaptureSession {
         try {
             remux = new ProcessBuilder(
                     executable,
-                    "-hide_banner", "-loglevel", "warning", "-n",
+                    "-hide_banner", "-loglevel", "warning", "-nostdin", "-n",
                     "-i", mkv.toString(),
                     "-c", "copy",
                     "-movflags", "+faststart",
                     mp4.toString()
-            ).redirectErrorStream(true).start();
-            if (!remux.waitFor(30, TimeUnit.SECONDS)) {
+            ).redirectErrorStream(true)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+            // Multi-gigabyte MKV stream copies may exceed thirty seconds on
+            // an ordinary SSD. Preserve the source MKV even if timed out.
+            if (!remux.waitFor(5, TimeUnit.MINUTES)) {
                 remux.destroyForcibly();
                 return false;
             }
