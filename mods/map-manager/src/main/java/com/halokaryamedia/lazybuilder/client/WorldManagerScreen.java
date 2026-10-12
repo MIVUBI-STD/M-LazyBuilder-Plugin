@@ -632,7 +632,8 @@ public final class WorldManagerScreen extends Screen {
     private static String friendlyError(String message) {
         if (message == null || message.isBlank()) return "World Manager could not complete the request.";
         String lower = message.toLowerCase(Locale.ROOT);
-        if (lower.contains("no safe landing") || lower.contains("safe world teleport")) {
+        if (lower.contains("no safe landing") || lower.contains("no safe surface")
+                || lower.contains("safe world teleport")) {
             return "Unsafe world spawn. Check the landing area and retry.";
         }
         if (lower.contains("permission")) return "Your server role does not allow this action.";
