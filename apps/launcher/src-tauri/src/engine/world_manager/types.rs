@@ -52,6 +52,8 @@ pub struct ExportWorldRequest {
 pub struct RestoreWorldBackupRequest {
     pub request_id: String,
     pub backup_file_name: String,
+    #[serde(skip_serializing)]
+    pub backup_file_path: String,
     pub destination_folder: String,
     pub display_name: String,
 }
