@@ -238,13 +238,22 @@ World spawn and map teleport share one Paper-side floor/headroom/hazard/water/
 world-border safety predicate. World-spawn resolution first checks a bounded
 3-block horizontal and vertical neighborhood. For non-Void worlds only, a
 bounded nearby top-surface fallback can resolve an outdated imported spawn
-height. No platform is created, no saved world spawn is rewritten, and no
+height. Map-teleport surface resolution now scans at most 17 foot-level
+candidates (surface height and 16 below), rather than descending to the
+bottom of the world and unexpectedly landing deep underground. The safety
+predicate checks all four corners of the player's approximate 0.6-block
+footprint against the world border and rejects floors whose approximate
+collision top is not at the intended standing Y (including fences and
+lower slabs). Paper's block bounding boxes are approximate, so these checks
+are conservative safeguards, not proof of exact collision freedom.
+No platform is created, no saved world spawn is rewritten, and no
 unsafe teleport override is exposed in V1. If no safe landing exists the
 player remains at the previous location, the world entry game mode is not
 applied, and the client receives a clear error. Void worlds never get
 synthetic terrain added during teleport.
 
-The pure candidate-search policy has Java 21 standalone harness coverage,
+The pure candidate-search policy was independently compiled with Java 21 in a disposable harness and passed nine basic assertions covering candidate order, bounds and fallback. These do not replace Maven/JUnit or the live Paper acceptance matrix.
+
 but Paper collision/heightmap behavior, real importing, teleport events from
 other plugins and Fabric UI must still be validated on the exact current revision.
 Paper warns that synchronous teleport and chunk loading may stall the main
