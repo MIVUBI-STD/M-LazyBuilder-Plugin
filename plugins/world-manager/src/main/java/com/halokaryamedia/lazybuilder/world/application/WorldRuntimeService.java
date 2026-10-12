@@ -6,6 +6,9 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 
 import java.util.Objects;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
 import java.util.function.Predicate;
 
 /** Canonical runtime load boundary. Loaded/unloaded is derived from Paper, not stored as world state. */
@@ -13,6 +16,8 @@ public final class WorldRuntimeService {
     private final WorldRegistry registry;
     private final WorldRuntimeGateway runtime;
     private final Predicate<WorldRecord> additionalPlayerPresence;
+    /** One shared in-flight teleport owner across World and Map requests. */
+    private final Set<UUID> teleportingPlayers = new HashSet<>();
     private WorldOperationCoordinator operations;
 
     public WorldRuntimeService(WorldRegistry registry, WorldRuntimeGateway runtime) {
@@ -51,6 +56,31 @@ public final class WorldRuntimeService {
         }
         if (operations != coordinator) {
             throw new IllegalStateException("WorldRuntimeService already uses a different operation coordinator");
+        }
+    }
+
+    /** Protects a player from overlapping requests to different managed worlds. */
+    public synchronized PlayerTeleportLease acquirePlayerTeleport(UUID playerId) {
+        UUID player = Objects.requireNonNull(playerId, "playerId");
+        if (!teleportingPlayers.add(player)) {
+            throw new IllegalStateException("A teleport is already in progress for this player");
+        }
+        return new PlayerTeleportLease(player);
+    }
+
+    public final class PlayerTeleportLease implements AutoCloseable {
+        private final UUID playerId;
+        private boolean closed;
+
+        private PlayerTeleportLease(UUID playerId) { this.playerId = playerId; }
+
+        @Override
+        public void close() {
+            synchronized (WorldRuntimeService.this) {
+                if (closed) return;
+                teleportingPlayers.remove(playerId);
+                closed = true;
+            }
         }
     }
 
