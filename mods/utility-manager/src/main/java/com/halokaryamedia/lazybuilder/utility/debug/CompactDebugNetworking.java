@@ -28,6 +28,12 @@ public final class CompactDebugNetworking {
         ClientPlayNetworking.send(new UtilityTelemetryPayload(UtilityTelemetryWireProtocol.subscribe()));
     }
 
+    /** Stop hidden-HUD updates without requiring a new polling service. */
+    public static void stopSnapshots() {
+        if (!registered || !ClientPlayNetworking.canSend(UtilityTelemetryPayload.ID)) return;
+        ClientPlayNetworking.send(new UtilityTelemetryPayload(UtilityTelemetryWireProtocol.unsubscribe()));
+    }
+
     private static void accept(byte[] bytes) {
         try {
             UtilityTelemetryWireProtocol.Response response = UtilityTelemetryWireProtocol.decodeResponse(bytes);
