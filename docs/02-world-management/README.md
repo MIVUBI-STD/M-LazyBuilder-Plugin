@@ -105,20 +105,31 @@ The Desktop Worlds surface now exposes **Restore from backup → Restore as copy
 for canonical Launcher-managed workspaces. The backup picker restricts selection
 to regular ZIP files directly under that workspace's `world-system/backups`;
 it rejects redirected backup roots and unsafe selected files. The selected
-backup is imported as a **new managed world** through the existing checksum-
-verified local upload, bounded ZIP extraction, import staging, world registry
-commit and recovery flow. The original world and backup ZIP are not replaced.
-This is intentionally **not** the Archive / Restore lifecycle action.
+backup is imported as a **new managed world** through the existing read-only
+backup resolver and canonical WorldImportService. It uses bounded ZIP entry and
+uncompressed-size checks, available-disk preflight, a request-pinned SHA-256
+and a post-extraction SHA-256 check before staged world publication. The
+original world and original backup ZIP remain unchanged. This is **not** the
+Archive / Restore lifecycle action.
 
-The current initial implementation uses the loopback upload transport to reuse
-the existing hardened import path. This implies an additional compressed copy
-and staging disk budget and is still subject to the configurable import-upload
-size cap (8 GiB by default). It is *not* a zero-copy or large-backup optimized
-restore implementation. Do not remove the upload limit or bypass archive
-preflight checks as a shortcut. A future optimization may reuse a verified
-read-only backup input in the owning Paper import service, but must retain the
-same validation, explicit non-overwrite publication, transaction/recovery and
-no-second-manager boundaries.
+The current direct-restore route does **not** transmit the ZIP over the local
+HTTP upload endpoint or create an additional compressed ZIP staging copy.
+Consequently the default 8 GiB *upload* cap does not apply to a server-owned
+backup restore. The existing archive file-count and uncompressed-size limits
+(e.g. 100,000 files / 16 GiB at default configuration) **still apply**, and
+disk space for extracted data and any required conversion is still necessary.
+The backup source is accepted only from the selected server's canonical
+`world-system/backups` directory. Launcher rechecks the selected server and
+the original picker path immediately before invoking Paper so a stale picker
+selection from another workspace cannot silently target a different backup.
+Only its validated leaf filename is serialized to the Paper API.
+
+The request ID and destination folder persist across ambiguous UI responses.
+Paper replays committed results from world-registry import provenance with a
+`backup:` source namespace rather than starting a second restore.
+Do not claim that this is a transactional point-in-time snapshot of a backup
+being modified by an unrelated process; the source is expected to remain
+immutable and checksum verification rejects changed bytes before publication.
 
 For Create World, a lost HTTP response is not proof of mutation failure.
 Desktop re-reads the current managed-world list and warns on ambiguity instead
