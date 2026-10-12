@@ -258,6 +258,7 @@ export const runtimePreviewProduct = {
     updateSettings: async (worldId: string, request: UpdateWorldSettingsRequest): Promise<WorldSettingsSnapshot> => ({ id: worldId, displayName: worlds.find((world) => world.id === worldId)?.displayName ?? 'World', defaultGameMode: request.defaultGameMode ?? 'CREATIVE', timeOfDayTicks: request.timeOfDayTicks ?? 6000, weather: request.weather ?? 'CLEAR', naturalSpawning: request.naturalSpawning ?? false, daylightCycle: request.daylightCycle ?? true, weatherCycle: request.weatherCycle ?? true }),
     tasks: async () => [completedTask()], task: async (_taskId: string) => completedTask(), archive: async (worldId: string) => completedTask(worldId), restore: async (worldId: string) => completedTask(worldId), backup: async (worldId: string) => completedTask(worldId),
     duplicate: async (request: { worldId: string }) => completedTask(request.worldId), export: async (request: { worldId: string }) => completedTask(request.worldId), delete: async (request: { worldId: string }) => completedTask(request.worldId),
-    pickImport: async () => 'D:\\Imports\\Example World.zip', uploadImport: async (_filePath: string) => 'preview-import.zip', import: async (_request: unknown) => completedTask('preview-import')
+    pickImport: async () => 'D:\\Imports\\Example World.zip',
+    pickBackup: async () => 'D:\\LazyBuilder\\MIVUBI Build Server\\world-system\\backups\\Tana-Samawa-3e539c14-a84c-4892-8cc3-41c2e7d41c88.zip', uploadImport: async (_filePath: string) => 'preview-import.zip', import: async (_request: unknown) => completedTask('preview-import')
   }
 };
