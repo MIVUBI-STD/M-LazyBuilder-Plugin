@@ -111,6 +111,7 @@ final class FrameReadbackRing implements AutoCloseable {
             }
 
             GL15C.glBindBuffer(GL21C.GL_PIXEL_PACK_BUFFER, slot.pbo);
+            int repeats = slot.repeatCount; // releaseFence resets this to zero
             ByteBuffer mapped = null;
             boolean validCopy = false;
             try {
@@ -148,7 +149,7 @@ final class FrameReadbackRing implements AutoCloseable {
                 }
             }
             if (validCopy) {
-                packet.repeatCount(slot.repeatCount);
+                packet.repeatCount(repeats);
                 session.submitFramePacket(packet);
             } else {
                 session.recycleFramePacket(packet);
