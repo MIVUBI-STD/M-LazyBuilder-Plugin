@@ -65,7 +65,24 @@ permissions:
     description: View the safe LazyBuilder Utilities discovery/help hub.
     default: true
   lazybuilder.utilities.gamemode:
-    description: Use familiar LazyBuilder gamemode shortcuts.
+    description: Use familiar LazyBuilder gamemode shortcuts (legacy all-modes grant).
+    default: false
+    children:
+      lazybuilder.utilities.gamemode.creative: true
+      lazybuilder.utilities.gamemode.survival: true
+      lazybuilder.utilities.gamemode.adventure: true
+      lazybuilder.utilities.gamemode.spectator: true
+  lazybuilder.utilities.gamemode.creative:
+    description: Allow switching to Creative through LazyBuilder.
+    default: false
+  lazybuilder.utilities.gamemode.survival:
+    description: Allow switching to Survival through LazyBuilder.
+    default: false
+  lazybuilder.utilities.gamemode.adventure:
+    description: Allow switching to Adventure through LazyBuilder.
+    default: false
+  lazybuilder.utilities.gamemode.spectator:
+    description: Allow switching to Spectator through LazyBuilder.
     default: false
   lazybuilder.utilities.fly:
     description: Use LazyBuilder Fly.
