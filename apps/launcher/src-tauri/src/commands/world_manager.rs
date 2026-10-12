@@ -1,6 +1,9 @@
 use crate::commands::error::{CommandError, CommandResult, RecoveryAction};
 use crate::engine::server_start_lock::ServerStartLease;
+use crate::engine::persistence::safe_path;
 use crate::engine::workspace_registry;
+use std::fs;
+use std::path::PathBuf;
 use crate::engine::world_manager::{
     create_world,
     get_world_settings,
@@ -108,6 +111,47 @@ pub fn world_import_pick() -> Option<String> {
         .add_filter("Minecraft world", &["zip", "mcworld"])
         .pick_file()
         .map(|path| path.to_string_lossy().to_string())
+}
+
+/// Pick one existing World-Manager backup. The selected artifact enters the
+/// ordinary verified Import World path; originals remain untouched.
+#[tauri::command]
+pub fn world_backup_pick() -> CommandResult<Option<String>> {
+    let workspace = workspace_registry::current()
+        .map_err(CommandError::from)?
+        .ok_or_else(|| CommandError::new("WORKSPACE_REQUIRED", "Open a server before restoring a world backup."))?;
+    let workspace_root = fs::canonicalize(&workspace.path)
+        .map_err(|error| CommandError::new("BACKUP_FOLDER_UNAVAILABLE", format!("Could not inspect this server folder: {error}")))?;
+    let world_system = workspace_root.join("world-system");
+    let backup_root = world_system.join("backups");
+
+    // Reparse/symlink redirection of the managed backup directory is never
+    // accepted as authorization to import a file from an unrelated folder.
+    let real_backups = fs::canonicalize(&backup_root).map_err(|_| CommandError::new(
+        "BACKUP_FOLDER_UNAVAILABLE", "This server has no accessible world backups folder yet."
+    ))?;
+    if real_backups != backup_root {
+        return Err(CommandError::new(
+            "BACKUP_FOLDER_UNSAFE", "This server's backup folder redirects outside its managed location."
+        ));
+    }
+    let selected = rfd::FileDialog::new()
+        .set_directory(&backup_root)
+        .add_filter("World backup ZIP", &["zip"])
+        .pick_file();
+    let Some(selected) = selected else { return Ok(None); };
+    safe_path::ensure_regular_file(&selected, "selected world backup")
+        .map_err(|error| CommandError::new("BACKUP_FILE_UNSAFE", error))?;
+    let canonical = fs::canonicalize(&selected)
+        .map_err(|error| CommandError::new("BACKUP_FILE_UNAVAILABLE", format!("Cannot open the selected backup: {error}")))?;
+    if canonical.parent() != Some(real_backups.as_path())
+        || !canonical.extension().and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case("zip")) {
+        return Err(CommandError::new(
+            "BACKUP_FILE_UNSAFE", "Choose a world backup ZIP directly inside this server's world-system/backups folder."
+        ));
+    }
+    Ok(Some(canonical.to_string_lossy().into_owned()))
 }
 
 #[tauri::command]
