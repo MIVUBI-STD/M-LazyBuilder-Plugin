@@ -14,6 +14,23 @@ pub fn entry_exists(path: &Path, label: &str) -> Result<bool, String> {
     }
 }
 
+/// Refuse symbolic-link and Windows reparse-point directories, including
+/// junctions. Call at every managed-root boundary before resolving children.
+pub fn ensure_real_directory(path: &Path, label: &str) -> Result<(), String> {
+    let metadata = fs::symlink_metadata(path).map_err(|error| format!("Could not inspect {label}: {error}"))?;
+    if metadata.file_type().is_symlink() {
+        return Err(format!("LazyBuilder refused a symbolic link as {label}"));
+    }
+    #[cfg(windows)]
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(format!("LazyBuilder refused a Windows reparse point as {label}"));
+    }
+    if !metadata.file_type().is_dir() {
+        return Err(format!("LazyBuilder expected {label} to be a directory"));
+    }
+    Ok(())
+}
+
 pub fn ensure_regular_file(path: &Path, label: &str) -> Result<(), String> {
     let metadata = fs::symlink_metadata(path).map_err(|error| format!("Could not inspect {label}: {error}"))?;
     if metadata.file_type().is_symlink() {
