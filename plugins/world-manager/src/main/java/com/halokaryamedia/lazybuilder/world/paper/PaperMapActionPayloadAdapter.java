@@ -164,7 +164,9 @@ public final class PaperMapActionPayloadAdapter implements PluginMessageListener
         if (failure != null) {
             Throwable reason = failure instanceof java.util.concurrent.CompletionException
                     && failure.getCause() != null ? failure.getCause() : failure;
-            String message = reason.getMessage() == null
+            String message = reason instanceof java.util.concurrent.TimeoutException
+                    ? "Loading the selected map location took too long. Choose a location and retry."
+                    : reason.getMessage() == null
                     ? "Map teleport could not finish" : reason.getMessage();
             send(player, MapActionWireProtocol.error(request.requestId(), message));
         } else {
