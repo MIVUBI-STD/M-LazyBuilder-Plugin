@@ -139,9 +139,9 @@ final class VideoCaptureSession {
         }
         // Large direct CPU packets are created on the encoder worker, never
         // on Minecraft's render thread when the player presses F9.
-        Path outputDirectory = gameDirectory.toPath().resolve("captures").resolve("videos");
+        Path outputDirectory;
         try {
-            Files.createDirectories(outputDirectory);
+            outputDirectory = CaptureStoragePaths.createVideoDirectory(gameDirectory.toPath());
             if (Files.getFileStore(outputDirectory).getUsableSpace() < MIN_FREE_DISK_BYTES) {
                 fail("At least 1 GB of free disk space is required to start recording.");
                 return false;
