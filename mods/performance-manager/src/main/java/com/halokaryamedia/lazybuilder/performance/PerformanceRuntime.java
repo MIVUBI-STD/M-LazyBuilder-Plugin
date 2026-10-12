@@ -162,17 +162,24 @@ public final class PerformanceRuntime {
         long max = jvm.maxMemory();
         double memoryRatio = max <= 0L ? 0.0D : Math.min(1.0D, used / (double) max);
 
-        CullingRuntime.Snapshot culling = cullingRuntime.snapshot();
-        StageTimingMetrics.Snapshot entityTiming =
-                StageTimingMetrics.snapshot(StageTimingMetrics.Stage.ENTITY_CULLING);
-        StageTimingMetrics.Snapshot blockTiming =
-                StageTimingMetrics.snapshot(StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING);
-        long cacheHits = culling.entityCacheHits() + culling.blockEntityCacheHits();
-        long occluded = culling.entityOccludedDecisions() + culling.blockEntityOccludedDecisions();
-        double cullingCpu = Math.max(
-                culling.sampledAverageEvaluationMs(),
-                Math.max(entityTiming.averageMs(), blockTiming.averageMs())
-        );
+        long cacheHits = 0L;
+        long occluded = 0L;
+        double cullingCpu = 0.0D;
+        if (preferences.entityCulling() || preferences.blockEntityCulling()) {
+            // Off by default: avoid creating diagnostic snapshots every
+            // client tick for a capability the player did not enable.
+            CullingRuntime.Snapshot culling = cullingRuntime.snapshot();
+            StageTimingMetrics.Snapshot entityTiming =
+                    StageTimingMetrics.snapshot(StageTimingMetrics.Stage.ENTITY_CULLING);
+            StageTimingMetrics.Snapshot blockTiming =
+                    StageTimingMetrics.snapshot(StageTimingMetrics.Stage.BLOCK_ENTITY_CULLING);
+            cacheHits = culling.entityCacheHits() + culling.blockEntityCacheHits();
+            occluded = culling.entityOccludedDecisions() + culling.blockEntityOccludedDecisions();
+            cullingCpu = Math.max(
+                    culling.sampledAverageEvaluationMs(),
+                    Math.max(entityTiming.averageMs(), blockTiming.averageMs())
+            );
+        }
 
         return governor.update(new PerformanceGovernor.Input(
                 frameMonitor.pressure(),
