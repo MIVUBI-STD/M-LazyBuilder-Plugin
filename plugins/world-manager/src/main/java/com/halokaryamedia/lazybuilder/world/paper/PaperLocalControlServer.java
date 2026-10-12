@@ -543,8 +543,17 @@ public final class PaperLocalControlServer {
             UUID removable = null;
             for (Map.Entry<UUID, ImportAdmission> entry : importAdmissions.entrySet()) {
                 WorldRecord world = registry.findByImportRequestId(entry.getKey()).orElse(null);
-                if (world == null) continue;
                 WorldTaskSnapshot prior = tasks.find(entry.getValue().taskId()).orElse(null);
+                // A definitively failed, uncommitted task may be retired to
+                // admit a fresh retry. Never retire an unknown/running task.
+                if (world == null) {
+                    if (prior != null && prior.state()
+                            == com.halokaryamedia.lazybuilder.world.task.WorldTaskState.FAILED) {
+                        removable = entry.getKey();
+                        break;
+                    }
+                    continue;
+                }
                 if (prior != null && prior.state()
                         != com.halokaryamedia.lazybuilder.world.task.WorldTaskState.SUCCEEDED) continue;
                 WorldRecord.ImportProvenance provenance = world.importProvenance();
