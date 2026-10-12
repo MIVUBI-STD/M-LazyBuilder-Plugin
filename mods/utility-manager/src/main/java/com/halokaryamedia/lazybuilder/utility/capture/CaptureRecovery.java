@@ -76,8 +76,7 @@ final class CaptureRecovery {
                 if (Thread.currentThread().isInterrupted()) return;
                 // Never follow a forged recording entry into unrelated user
                 // files or turn its symlink into a misleading recovered video.
-                if (!Files.isRegularFile(partial, LinkOption.NOFOLLOW_LINKS)
-                        || Files.isSymbolicLink(partial)) {
+                if (!isSafePartial(partial)) {
                     failed++;
                     LOGGER.warn("Skipping unsafe interrupted recording entry {}", partial);
                     continue;
@@ -123,6 +122,12 @@ final class CaptureRecovery {
         } else {
             status = "No recovery needed";
         }
+    }
+
+    /** Do not permit interrupted-file recovery to follow a forged link. */
+    static boolean isSafePartial(Path partial) {
+        return partial != null && Files.isRegularFile(partial, LinkOption.NOFOLLOW_LINKS)
+                && !Files.isSymbolicLink(partial);
     }
 
     private static boolean remux(String executable, Path input, Path output) {
