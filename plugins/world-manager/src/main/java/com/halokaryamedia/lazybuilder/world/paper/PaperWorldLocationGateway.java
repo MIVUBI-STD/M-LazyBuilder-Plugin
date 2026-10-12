@@ -57,6 +57,52 @@ public final class PaperWorldLocationGateway implements WorldLocationGateway {
         return new ResolvedLocation(destination.getX(), destination.getY(), destination.getZ());
     }
 
+    @Override
+    public java.util.concurrent.CompletableFuture<ResolvedLocation> teleportToSafeSurfaceAsync(
+            UUID playerId, WorldRecord record, int blockX, int blockZ, WorldGameMode gameMode) {
+        requirePrimaryThread();
+        Objects.requireNonNull(record, "record");
+        Objects.requireNonNull(gameMode, "gameMode");
+        Player player = requireOnlinePlayer(playerId);
+        World source = player.getWorld();
+        World world = requireLoadedWorld(record);
+        boolean voidWorld = record.kind() == WorldKind.VOID;
+        Location spawn = voidWorld ? world.getSpawnLocation() : null;
+        if (!voidWorld) {
+            Location borderProbe = new Location(world, blockX + 0.5D,
+                    world.getMinHeight() + 1.0D, blockZ + 0.5D);
+            if (!world.getWorldBorder().isInside(borderProbe)) {
+                throw new IllegalArgumentException("Requested map location is outside the world border");
+            }
+        }
+
+        int prepareX = voidWorld ? spawn.getBlockX() : blockX;
+        int prepareZ = voidWorld ? spawn.getBlockZ() : blockZ;
+        int radius = voidWorld ? SafeSpawnSearch.HORIZONTAL_RADIUS : 0;
+        return PaperTeleportChunkPreparation.prepare(world, prepareX, prepareZ, radius)
+                .thenCompose(ignored -> {
+                    requirePrimaryThread();
+                    if (!player.isOnline() || server.getPlayer(playerId) != player) {
+                        return java.util.concurrent.CompletableFuture.failedFuture(
+                                new IllegalStateException("Player disconnected while preparing map teleport"));
+                    }
+                    if (player.getWorld() != source) {
+                        return java.util.concurrent.CompletableFuture.failedFuture(
+                                new IllegalStateException("Player changed worlds while map teleport was preparing"));
+                    }
+                    Location destination = voidWorld
+                            ? PaperSafeLanding.resolveSpawn(world, record)
+                            : resolveSafeSurface(world, blockX, blockZ, player);
+                    return player.teleportAsync(destination).thenApply(moved -> {
+                        requirePrimaryThread();
+                        if (!moved) throw new IllegalStateException(
+                                "Paper rejected map teleport for player " + player.getName());
+                        player.setGameMode(GameMode.valueOf(gameMode.name()));
+                        return new ResolvedLocation(destination.getX(), destination.getY(), destination.getZ());
+                    });
+                });
+    }
+
     private static Location resolveSafeSurface(World world, int blockX, int blockZ, Player player) {
         int highest = world.getHighestBlockYAt(blockX, blockZ, HeightMap.MOTION_BLOCKING_NO_LEAVES);
         int maxFeetY = Math.min(highest + 1, world.getMaxHeight() - 2);
