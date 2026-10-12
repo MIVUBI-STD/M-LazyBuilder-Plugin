@@ -942,7 +942,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         Section screenshot = new Section("SCREENSHOT");
         screenshot.rows.add(Row.value(
                 "Screenshot Quality",
-                "Choose smaller JPEG captures, high-quality JPEG, or lossless PNG.",
+                "F2 and clean screenshots use lossless PNG by default. Choose JPEG for smaller files.",
                 capture.screenshotQuality().label(),
                 this::openScreenshotQualityChoice
         ));
@@ -984,7 +984,7 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
         video.rows.add(Row.value(
                 "Frame Rate",
-                "Use a stable recording frame rate independent from Minecraft's current FPS.",
+                "Target recording frame rate; repeated or dropped frames are possible when Minecraft or the encoder is overloaded.",
                 capture.videoFrameRate().label(),
                 this::openVideoFrameRateChoice
         ));
@@ -1011,8 +1011,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
         video.rows.add(Row.status(
                 "Output",
-                "Recording is written safely to MKV first, then automatically remuxed to MP4.",
-                "MP4 · Safe"
+                "Saved under captures/videos. Recording uses MKV first and converts to MP4 when possible; MKV remains if conversion fails.",
+                "captures/videos"
         ));
         video.rows.add(Row.status(
                 "Recording",
@@ -1036,8 +1036,8 @@ public final class LazyBuilderSettingsScreen extends Screen {
         ));
         behavior.rows.add(Row.status(
                 "Video Readback",
-                "Triple-buffered GPU readback drops capture work instead of blocking Minecraft when pressure is high.",
-                "Non-blocking"
+                "Triple-buffered GPU readback drops late frames to prioritize Minecraft rendering; very large source frames are refused for memory safety.",
+                "Bounded"
         ));
         sections.add(behavior);
     }
