@@ -22,9 +22,12 @@ public final class MemoryDeduplicator implements SimpleSynchronousResourceReload
      * and unmodified rather than becoming permanent session-wide entries.
      */
     static final int MAX_UNIQUE_QUADS = 131_072;
+    private static final int MAX_VERTEX_INTS_PER_QUAD = 256;
+    private static final int MAX_CACHED_VERTEX_INTS = 8_388_608; // 32 MiB of raw vertex-array data
     private static final Object CACHE_LOCK = new Object();
     private static final ConcurrentMap<IntArrayKey, int[]> BAKED_QUADS = new ConcurrentHashMap<>();
     private static int cachedEntries;
+    private static int cachedVertexInts;
 
     private MemoryDeduplicator() {
     }
@@ -47,7 +50,8 @@ public final class MemoryDeduplicator implements SimpleSynchronousResourceReload
     }
 
     static int[] canonicalize(int[] vertices) {
-        if (vertices == null || vertices.length == 0) return vertices;
+        if (vertices == null || vertices.length == 0
+                || vertices.length > MAX_VERTEX_INTS_PER_QUAD) return vertices;
         IntArrayKey probe = new IntArrayKey(vertices);
         int[] existing = BAKED_QUADS.get(probe);
         if (existing != null) return existing;
@@ -58,9 +62,11 @@ public final class MemoryDeduplicator implements SimpleSynchronousResourceReload
         synchronized (CACHE_LOCK) {
             existing = BAKED_QUADS.get(probe);
             if (existing != null) return existing;
-            if (cachedEntries >= MAX_UNIQUE_QUADS) return vertices;
+            if (cachedEntries >= MAX_UNIQUE_QUADS
+                    || vertices.length > MAX_CACHED_VERTEX_INTS - cachedVertexInts) return vertices;
             BAKED_QUADS.put(probe, vertices);
             cachedEntries++;
+            cachedVertexInts += vertices.length;
             return vertices;
         }
     }
@@ -70,6 +76,7 @@ public final class MemoryDeduplicator implements SimpleSynchronousResourceReload
         synchronized (CACHE_LOCK) {
             BAKED_QUADS.clear();
             cachedEntries = 0;
+            cachedVertexInts = 0;
         }
     }
 
