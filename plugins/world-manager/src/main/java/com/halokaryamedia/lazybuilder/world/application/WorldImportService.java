@@ -5,6 +5,7 @@ import com.halokaryamedia.lazybuilder.world.conversion.ConversionRuntimeStore;
 import com.halokaryamedia.lazybuilder.world.conversion.ConversionUpdateService;
 import com.halokaryamedia.lazybuilder.world.conversion.ConverterAdapter;
 import com.halokaryamedia.lazybuilder.world.files.WorldFileRepository;
+import com.halokaryamedia.lazybuilder.world.files.WorldBackupStore;
 import com.halokaryamedia.lazybuilder.world.files.WorldImportArtifactStore;
 import com.halokaryamedia.lazybuilder.world.registry.WorldId;
 import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
@@ -16,6 +17,11 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldRegistryTransactions;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -31,6 +37,7 @@ public final class WorldImportService {
     private final WorldRegistryPersistence persistence;
     private final WorldFileRepository files;
     private final WorldImportArtifactStore imports;
+    private final WorldBackupStore backups;
     private final ConversionRuntimeStore conversionStore;
     private final ConversionUpdateService updateService;
     private final ConverterAdapter converter;
@@ -51,10 +58,26 @@ public final class WorldImportService {
             ConverterAdapter converter,
             ConversionJobCoordinator conversionJobs
     ) {
+        this(registry, persistence, files, imports, conversionStore,
+                updateService, converter, conversionJobs, null);
+    }
+
+    public WorldImportService(
+            WorldRegistry registry,
+            WorldRegistryPersistence persistence,
+            WorldFileRepository files,
+            WorldImportArtifactStore imports,
+            ConversionRuntimeStore conversionStore,
+            ConversionUpdateService updateService,
+            ConverterAdapter converter,
+            ConversionJobCoordinator conversionJobs,
+            WorldBackupStore backups
+    ) {
         this.registry = Objects.requireNonNull(registry, "registry");
         this.persistence = Objects.requireNonNull(persistence, "persistence");
         this.files = Objects.requireNonNull(files, "files");
         this.imports = Objects.requireNonNull(imports, "imports");
+        this.backups = backups; // Optional for legacy test fixtures; direct restore fails closed without it.
         this.conversionStore = Objects.requireNonNull(conversionStore, "conversionStore");
         this.updateService = Objects.requireNonNull(updateService, "updateService");
         this.converter = Objects.requireNonNull(converter, "converter");
@@ -144,6 +167,47 @@ public final class WorldImportService {
         }
     }
 
+    /**
+     * Prepare a backup-origin import without a loopback upload or a second
+     * world publication path. The original backup ZIP stays read-only.
+     */
+    public ImportTask prepareBackup(
+            String backupFileName, String destinationFolder, String displayName, UUID requestId
+    ) {
+        Objects.requireNonNull(requestId, "requestId");
+        if (backups == null) throw new IllegalStateException("Direct backup restore is not configured");
+        if (registry.findByImportRequestId(requestId).isPresent()) {
+            throw new IllegalStateException("Backup restore request already committed: " + requestId);
+        }
+        Path source;
+        String digest;
+        try {
+            source = backups.requireExistingBackup(backupFileName);
+            digest = sourceDigest(source);
+        } catch (IOException failure) {
+            throw new IllegalStateException("Could not safely open world backup: " + backupFileName, failure);
+        }
+        WorldRecord destination = new WorldRecord(
+                WorldId.create(), destinationFolder, displayName, WorldKind.IMPORTED,
+                WorldLifecycle.ACTIVE, WorldRecord.DEFAULT_GAME_MODE,
+                new WorldRecord.ImportProvenance(requestId, backupFileName, displayName, digest));
+        WorldRegistry.FolderReservation reservation = registry.reserveFolder(destination.folderName());
+        return new ImportTask(UUID.randomUUID(), backupFileName, destination, reservation, source);
+    }
+
+    private static String sourceDigest(Path source) throws IOException {
+        MessageDigest digest;
+        try { digest = MessageDigest.getInstance("SHA-256"); }
+        catch (NoSuchAlgorithmException unavailable) { throw new IllegalStateException("SHA-256 is unavailable", unavailable); }
+        try (InputStream in = Files.newInputStream(source)) {
+            byte[] buffer = new byte[64 * 1024];
+            for (int read; (read = in.read(buffer)) >= 0;) {
+                if (read > 0) digest.update(buffer, 0, read);
+            }
+        }
+        return HexFormat.of().formatHex(digest.digest());
+    }
+
     public WorldRecord executeFilePhase(ImportTask task) {
         Objects.requireNonNull(task, "task");
         task.requireOpen();
@@ -155,8 +219,9 @@ public final class WorldImportService {
             stagedInput = files.reserveWorkspace(task.operationId);
             String expectedSha256 = task.destination.importProvenance() == null
                     ? null : task.destination.importProvenance().artifactSha256();
-            WorldImportArtifactStore.StagedImport staged =
-                    imports.stageArchive(task.artifactName, stagedInput, expectedSha256);
+            WorldImportArtifactStore.StagedImport staged = task.backupSource == null
+                    ? imports.stageArchive(task.artifactName, stagedInput, expectedSha256)
+                    : imports.stageReadOnlyBackup(task.backupSource, stagedInput, expectedSha256);
             publishSource = staged.worldDirectory();
 
             boolean nativeTrusted = staged.edition() == WorldImportArtifactStore.DetectedEdition.JAVA
@@ -196,6 +261,7 @@ public final class WorldImportService {
                         ? io : new IOException("Could not finalize committed world publication marker", cleanupFailure);
             }
 
+            if (task.backupSource == null) {
             pendingCommittedArtifactCleanup.add(task.artifactName);
             try {
                 imports.markCommittedCleanupPending(task.artifactName);
@@ -212,6 +278,7 @@ public final class WorldImportService {
                 task.artifactCleanupFailure = cleanupFailure;
             } else if (cleanupFailure != null) {
                 task.artifactCleanupFailure.addSuppressed(cleanupFailure);
+            }
             }
             return task.destination;
         } catch (IOException | RuntimeException exception) {
@@ -243,7 +310,7 @@ public final class WorldImportService {
                         // Startup publication reconciliation uses persisted registry truth.
                     }
                 }
-                if (task.completed && task.artifactCleanupFailure != null) {
+                if (task.backupSource == null && task.completed && task.artifactCleanupFailure != null) {
                     IOException cleanupFailure = retryCommittedArtifactCleanup(task.artifactName);
                     task.artifactCleanupFailure = cleanupFailure;
                 }
@@ -253,7 +320,7 @@ public final class WorldImportService {
                 } finally {
                     // Compare operation IDs: a repeated finish from an older
                     // task must never release a newer claim on the same source.
-                    releaseArtifact(task.artifactName, task.operationId);
+                    if (task.backupSource == null) releaseArtifact(task.artifactName, task.operationId);
                 }
             }
         }
@@ -343,6 +410,7 @@ public final class WorldImportService {
     public static final class ImportTask {
         private final UUID operationId;
         private final String artifactName;
+        private final Path backupSource;
         private final WorldRecord destination;
         private final WorldRegistry.FolderReservation destinationReservation;
         private boolean completed;
@@ -352,8 +420,14 @@ public final class WorldImportService {
 
         private ImportTask(UUID operationId, String artifactName, WorldRecord destination,
                            WorldRegistry.FolderReservation destinationReservation) {
+            this(operationId, artifactName, destination, destinationReservation, null);
+        }
+
+        private ImportTask(UUID operationId, String artifactName, WorldRecord destination,
+                           WorldRegistry.FolderReservation destinationReservation, Path backupSource) {
             this.operationId = Objects.requireNonNull(operationId, "operationId");
             this.artifactName = Objects.requireNonNull(artifactName, "artifactName");
+            this.backupSource = backupSource;
             this.destination = Objects.requireNonNull(destination, "destination");
             this.destinationReservation = Objects.requireNonNull(destinationReservation, "destinationReservation");
         }
