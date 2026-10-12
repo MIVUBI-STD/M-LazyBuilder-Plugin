@@ -23,10 +23,11 @@ public final class LocalWorldBackupStore implements WorldBackupStore {
         if (!name.toLowerCase(Locale.ROOT).endsWith(".zip")) {
             throw new IOException("World backup must be a ZIP archive");
         }
-        // Reject roots redirected by symlinks/junctions and non-direct-child names.
+        // A canonical path is not necessarily text-equal to its original spelling
+        // on Windows (case changes or extended-length path prefixes).
+        // Validate the backup-root entry, the leaf, and their *canonical* relationship.
         if (!Files.isDirectory(backupRoot, LinkOption.NOFOLLOW_LINKS)
-                || Files.isSymbolicLink(backupRoot)
-                || !backupRoot.toRealPath().equals(backupRoot)) {
+                || Files.isSymbolicLink(backupRoot)) {
             throw new IOException("World backup root is missing or unsafe");
         }
         Path file = backupRoot.resolve(name).normalize();
@@ -34,6 +35,11 @@ public final class LocalWorldBackupStore implements WorldBackupStore {
                 || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
                 || Files.isSymbolicLink(file)) {
             throw new IOException("World backup ZIP is missing or unsafe: " + name);
+        }
+        Path canonicalRoot = backupRoot.toRealPath();
+        Path canonicalFile = file.toRealPath();
+        if (!canonicalRoot.equals(canonicalFile.getParent())) {
+            throw new IOException("World backup ZIP resolves outside its managed folder: " + name);
         }
         return file;
     }
