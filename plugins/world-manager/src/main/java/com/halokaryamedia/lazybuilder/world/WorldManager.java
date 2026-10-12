@@ -201,7 +201,7 @@ public final class WorldManager {
         this.worldImportService = new WorldImportService(
                 worldRegistry, registryPersistence, worldFileRepository,
                 worldImportArtifactStore, conversionRuntimeStore, conversionUpdateService,
-                converterAdapter, conversionJobCoordinator);
+                converterAdapter, conversionJobCoordinator, worldBackupStore);
     }
 
     public void start() {
