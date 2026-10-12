@@ -31,6 +31,8 @@
   let createName = '';
   let createType: 'FLAT' | 'VOID' = 'FLAT';
   let importOpen = false;
+  let backupRestoreMode = false;
+  let pendingImportDestinationFolder: string | null = null;
   let importPath = '';
   let importName = '';
   let importBusy = false;
@@ -159,6 +161,28 @@
     }
   }
 
+  async function pickWorldBackup() {
+    if (importBusy || operationBusyWorldId) return;
+    try {
+      const selected = await runtimeProduct.worlds.pickBackup();
+      if (!pageActive || !selected) return;
+      if (selected !== importPath) {
+        pendingImportArtifact = null;
+        pendingImportRequestId = null;
+        pendingImportDestinationFolder = null;
+      }
+      const name = selected.split(/[\\/]/).pop() || 'World Backup';
+      const originalName = name.replace(/-[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}\\.zip$/i, '').replace(/[-_]+/g, ' ').trim();
+      importPath = selected;
+      importName = (originalName || 'World') + ' Restored Copy';
+      backupRestoreMode = true;
+      importOpen = true;
+      error = null;
+    } catch (value) {
+      if (pageActive) error = presentRuntimeError(value, 'Could not select a world backup.');
+    }
+  }
+
   async function pickImport() {
     if (importBusy) return;
     try {
@@ -167,6 +191,7 @@
       if (selected !== importPath) {
         pendingImportArtifact = null;
         pendingImportRequestId = null;
+        pendingImportDestinationFolder = null;
       }
       importPath = selected;
       const fileName = selected.split(/[\\/]/).pop() || 'Imported World';
@@ -193,20 +218,28 @@
       // page navigation. If task admission fails, retain its name for retry.
       const requestId = pendingImportRequestId ?? crypto.randomUUID();
       pendingImportRequestId = requestId;
+      const destinationFolder = pendingImportDestinationFolder ?? (backupRestoreMode
+        ? `${folderName(displayName, 'restored-world')}-${crypto.randomUUID().slice(0, 8)}`
+        : folderName(displayName, 'imported-world'));
+      pendingImportDestinationFolder = destinationFolder;
       const submittedTask = await runtimeProduct.worlds.import({
         requestId,
         artifactName,
-        destinationFolder: folderName(displayName, 'imported-world'),
+        destinationFolder,
         displayName
       });
-      pendingImportArtifact = null;
-      pendingImportRequestId = null;
       if (!pageActive) return;
       operationTask = submittedTask;
       importOpen = false;
       const completedHere = await pollTask(submittedTask.taskId);
       if (!completedHere || !pageActive) return;
-      notice = `World imported: ${displayName}.`;
+      notice = backupRestoreMode
+        ? `World restored as a separate copy: ${displayName}. The original world and backup ZIP were not overwritten.`
+        : `World imported: ${displayName}.`;
+      pendingImportArtifact = null;
+      pendingImportRequestId = null;
+      pendingImportDestinationFolder = null;
+      backupRestoreMode = false;
       importPath = '';
       importName = '';
     } catch (value) {
@@ -435,11 +468,12 @@
   <header class="page-head">
     <div>
       <h2>Worlds</h2>
-      <p>Create, import, and manage worlds. World backups are separate from full-server restore points.</p>
+      <p>Create, import, and manage worlds. Backups can be restored as separate copies.</p>
     </div>
     {#if serverOnline}
       <div class="head-actions">
-        <button class="secondary" disabled={busy || importBusy || operationBusyWorldId !== null} onclick={() => { importOpen = true; if (!importPath) void pickImport(); }}>Import</button>
+        <button class="secondary" disabled={busy || importBusy || operationBusyWorldId !== null} onclick={pickWorldBackup}>Restore from backup…</button>
+        <button class="secondary" disabled={busy || importBusy || operationBusyWorldId !== null} onclick={() => { backupRestoreMode = false; importOpen = true; if (!importPath) void pickImport(); }}>Import</button>
         <button class="primary" disabled={busy || importBusy || operationBusyWorldId !== null} onclick={() => { createName = ''; createType = 'FLAT'; createOpen = true; }}>Create world</button>
       </div>
     {/if}
@@ -558,10 +592,10 @@
 {#if importOpen}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !importBusy && (importOpen = false)}>
     <div use:dialogFocus={{ onEscape: () => (importOpen = false), initialFocusSelector: '.secondary.compact', escapeDisabled: importBusy }} class="modal" role="dialog" aria-modal="true" aria-labelledby="import-world-title">
-      <div class="modal-head"><div><h2 id="import-world-title">Import world</h2><p>Add a Java or Bedrock world (.zip or .mcworld) to this server.</p></div><button class="icon-button" aria-label="Close import world dialog" disabled={importBusy} onclick={() => (importOpen = false)}>×</button></div>
-      <label>World file<div class="file-picker"><span title={importPath}>{importPath ? importPath.split(/[\\/]/).pop() : 'No file selected'}</span><button class="secondary compact" disabled={importBusy} onclick={pickImport}>Choose file</button></div></label>
+      <div class="modal-head"><div><h2 id="import-world-title">{backupRestoreMode ? 'Restore backup as copy' : 'Import world'}</h2><p>{backupRestoreMode ? 'Create a new world from this server backup. The original world and ZIP stay unchanged.' : 'Add a Java or Bedrock world (.zip or .mcworld) to this server.'}</p></div><button class="icon-button" aria-label="Close import world dialog" disabled={importBusy} onclick={() => (importOpen = false)}>×</button></div>
+      <label>World file<div class="file-picker"><span title={importPath}>{importPath ? importPath.split(/[\\/]/).pop() : 'No file selected'}</span><button class="secondary compact" disabled={importBusy} onclick={backupRestoreMode ? pickWorldBackup : pickImport}>Choose file</button></div></label>
       <label>World name<input bind:value={importName} disabled={!importPath || importBusy} placeholder="Imported World" /></label>
-      <div class="modal-actions"><button class="secondary" disabled={importBusy} onclick={() => (importOpen = false)}>Cancel</button><button class="primary" disabled={importBusy || !importPath || !importName.trim()} onclick={runImport}>{importBusy ? 'Importing…' : 'Import world'}</button></div>
+      <div class="modal-actions"><button class="secondary" disabled={importBusy} onclick={() => (importOpen = false)}>Cancel</button><button class="primary" disabled={importBusy || !importPath || !importName.trim()} onclick={runImport}>{importBusy ? (backupRestoreMode ? 'Restoring copy…' : 'Importing…') : (backupRestoreMode ? 'Restore as copy' : 'Import world')}</button></div>
     </div>
   </div>
 {/if}
