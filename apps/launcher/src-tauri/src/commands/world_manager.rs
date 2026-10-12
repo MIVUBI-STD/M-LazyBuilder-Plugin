@@ -24,6 +24,7 @@ use crate::engine::world_manager::{
     DuplicateWorldRequest,
     ExportWorldRequest,
     ImportWorldRequest,
+    RestoreWorldBackupRequest,
     ManagedWorldSummary,
     UpdateWorldSettingsRequest,
     WorldSettingsSnapshot,
