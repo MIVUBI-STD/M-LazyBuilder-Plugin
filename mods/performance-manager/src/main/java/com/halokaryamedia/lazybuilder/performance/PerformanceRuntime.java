@@ -40,6 +40,7 @@ public final class PerformanceRuntime {
                 || !client.isWindowFocused()
                 || client.getWindow().isMinimized()) {
             frameMonitor.pauseFrameClock();
+            proofLogger.pause();
             return;
         }
 
