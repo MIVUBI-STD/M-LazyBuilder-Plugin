@@ -65,6 +65,49 @@ Runtime safety rules:
 - active world-operation leases block conflicting external runtime changes;
 - automatic unload is delayed by idle timeout to avoid thrashing.
 
+### Optional Chunky pregeneration and idle unload
+
+World Manager's existing 30-second idle check does not unload a managed world while
+Chunky reports active pregeneration for its overworld, Nether or End world-family
+name. The guard uses the optional Chunky service API `version()/isRunning(world)`
+without adding a Chunky runtime dependency or a second scheduler. If Chunky is
+enabled but its service API/version cannot be inspected, idle unload is
+conservatively held and a warning is logged once. This avoids interrupting
+external generation, but may keep empty worlds resident until the integration
+is repaired. Without Chunky, normal idle unload behavior is unchanged.
+
+The `/lazyperf` command bridge sends Chunky commands, so successful Bukkit
+dispatch alone is **not** proof that Chunky accepted or finished an operation.
+Especially, `/lazyperf cancel <world>` sends Chunky's pending cancel request:
+a separate `/chunky confirm` from the **server console** is required to commit
+that cancellation. Messages must say *requested* rather than *completed*.
+Confirm active progress in Chunky itself.
+
+The canonical work needed for release proof is a real Paper + compatible Chunky
+session that covers active overworld/Nether/End jobs, pause/continue/cancel,
+incompatible or unregistered service API, and idle-unload resumption after job
+completion. The injected protection-predicate JUnit fixture covers the idle
+timer contract only, not live plugin service discovery.
+
+### Launcher World UI and output folders
+
+The Desktop Worlds page keeps familiar world actions in the existing per-world
+menu, displays readable result messages, and uses an activity indicator instead
+of treating phase checkpoints as measured byte progress. After a successful
+world backup or export it can open the active server's folder using the
+existing Launcher workspace command. For Launcher-managed canonical workspaces,
+world backup ZIPs are in `world-system/backups` and export artifacts are in
+`world-system/exports`. Opening the server folder does not automatically open
+the nested destination directory.
+
+**World backup and full-server restore points are different products.**
+World Manager currently supports creating a per-world backup but does not
+expose a per-world backup-restore flow in Desktop. Archive / Restore only
+changes world lifecycle and must not be presented as restoring a backup.
+Before adding a per-world restore action, use the existing staged import and
+world registry protection boundaries and verify restored-world contents.
+Do not silently overwrite an existing world.
+
 ## Create World
 
 ```text
