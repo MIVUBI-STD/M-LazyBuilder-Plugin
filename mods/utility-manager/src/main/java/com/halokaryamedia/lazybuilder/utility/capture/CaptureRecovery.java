@@ -74,6 +74,14 @@ final class CaptureRecovery {
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory, "*.mkv.partial")) {
             for (Path partial : stream) {
                 if (Thread.currentThread().isInterrupted()) return;
+                // Never follow a forged recording entry into unrelated user
+                // files or turn its symlink into a misleading recovered video.
+                if (!Files.isRegularFile(partial, LinkOption.NOFOLLOW_LINKS)
+                        || Files.isSymbolicLink(partial)) {
+                    failed++;
+                    LOGGER.warn("Skipping unsafe interrupted recording entry {}", partial);
+                    continue;
+                }
 
                 String fileName = partial.getFileName().toString();
                 String stem = fileName.substring(0, fileName.length() - ".mkv.partial".length());
