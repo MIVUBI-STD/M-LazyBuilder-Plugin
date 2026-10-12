@@ -28,6 +28,6 @@ public abstract class ConnectScreenMixin {
             CookieStorage cookieStorage,
             CallbackInfo ci
     ) {
-        ReconnectState.capture(info);
+        ReconnectState.captureAttempt(info, address);
     }
 }
