@@ -1,6 +1,7 @@
 package com.halokaryamedia.lazybuilder.performance;
 
 import com.halokaryamedia.lazybuilder.performance.culling.CullingRuntime;
+import com.halokaryamedia.lazybuilder.performance.memory.MemoryDeduplicator;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkPipelineMetrics;
 import com.halokaryamedia.lazybuilder.performance.rendering.ChunkRebuildBackpressure;
 import com.halokaryamedia.lazybuilder.performance.rendering.GpuStageTimer;
@@ -183,6 +184,7 @@ public final class PerformanceRuntime {
         boolean cullingDisabled = (preferences.entityCulling() && !updated.entityCulling())
                 || (preferences.blockEntityCulling() && !updated.blockEntityCulling());
         boolean renderingDisabled = preferences.renderingOptimizations() && !updated.renderingOptimizations();
+        boolean memoryDisabled = preferences.memoryOptimizations() && !updated.memoryOptimizations();
         if (renderingDisabled && !TerrainPhysicalArenaManager.recoverAllExclusive()) {
             lastPreferenceUpdateStatus = "rendering-disable-blocked:terrain-recovery-failed";
             return;
@@ -201,6 +203,7 @@ public final class PerformanceRuntime {
         configStore.save(updated);
         lastPreferenceUpdateStatus = "applied";
         if (cullingDisabled) cullingRuntime.clear();
+        if (memoryDisabled) MemoryDeduplicator.clearCache();
     }
 
     public String lastPreferenceUpdateStatus() {
