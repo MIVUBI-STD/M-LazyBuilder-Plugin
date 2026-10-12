@@ -90,6 +90,38 @@ After a forcibly destroyed FFmpeg process, `VideoCaptureSession` could still inv
 
 Run the same SHA through Fabric Gradle verification and Windows native FFmpeg/OpenGL acceptance. Existing test source does not constitute executed test evidence. Neither a prior CI run nor `get_commit_combined_status` returning no checks proves PASS.
 
+## Follow-up reliability implementation
+
+The initial source remediation was followed by a second pass on the exact
+`Local` Capture code:
+
+- CPU `FramePacket` direct buffers are now allocated on the existing FFmpeg
+  writer thread, *after* encoder availability is checked, rather than
+  allocating three large direct buffers synchronously when the user presses F9.
+  The recording stays in `STARTING` until the encoder and pool are prepared.
+  GPU PBO allocation remains render-thread-owned because OpenGL context
+  ownership cannot be transferred casually.
+- `FrameReadbackRing.capture` now restores Minecraft's read-framebuffer and
+  pixel-pack-buffer state in `finally`; a zero GPU fence or runtime readback
+  failure stops recording instead of pretending that a frame was captured.
+- GPU-mapped bytes are submitted to the FFmpeg queue **only after**
+  `glUnmapBuffer` returns a trustworthy result. A failed map, copy, or
+  unmap causes packet recycling, fence cleanup and a failure status instead
+  of forwarding an invalid frame. Repeat-frame pacing is captured before
+  fence cleanup resets its slot metadata.
+
+**Local proof performed here:** an independent Java 21 Files.move no-clobber
+fixture passed on a Linux/container filesystem, showing an existing image
+was preserved and a free destination accepted a new output. This **does
+not** count as the repo's JUnit suite, a Windows filesystem test, an F2
+capture test, or a GPU/FFmpeg performance measurement.
+
+**Remaining operational concerns:** on shutdown, screenshot worker
+termination and encoder thread finalization may block for bounded waits;
+recordings at 4K can still consume hundreds of MiB in combined GPU
+and native CPU buffers. Measure that behavior on Windows before lowering
+budgets arbitrarily or changing the renderer/encoder architecture.
+
 ## Deferred issues
 
 - Client screenshot link/open-folder convenience: evaluate after usability testing; no new file browser is approved by default.
