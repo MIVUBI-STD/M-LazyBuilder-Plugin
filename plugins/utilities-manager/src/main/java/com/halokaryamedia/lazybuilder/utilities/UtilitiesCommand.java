@@ -51,8 +51,8 @@ public final class UtilitiesCommand implements CommandExecutor, TabCompleter {
                 if (!requirePermission(sender, "lazybuilder.utilities.reload")) yield true;
                 boolean success = plugin.reloadUtilities();
                 sender.sendMessage(success
-                        ? "LazyBuilder Utilities reloaded."
-                        : "Utilities reload failed; previous runtime was kept when possible. Check console if needed.");
+                        ? "LazyBuilder Utilities settings checked and applied."
+                        : "Utilities reload not applied: " + plugin.reloadFailureReason());
                 yield true;
             }
             default -> {
