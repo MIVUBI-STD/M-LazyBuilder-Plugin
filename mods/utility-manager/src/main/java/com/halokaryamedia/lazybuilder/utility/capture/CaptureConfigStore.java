@@ -8,6 +8,9 @@ import java.io.Reader;
 import java.io.Writer;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.StandardOpenOption;
+import java.nio.channels.FileChannel;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Locale;
@@ -26,8 +29,12 @@ public final class CaptureConfigStore {
 
     public CapturePreferences load() {
         CapturePreferences defaults = CapturePreferences.defaults();
-        if (!Files.isRegularFile(configFile)) {
+        if (!Files.exists(configFile, LinkOption.NOFOLLOW_LINKS)) {
             save(defaults);
+            return defaults;
+        }
+        if (!Files.isRegularFile(configFile, LinkOption.NOFOLLOW_LINKS)) {
+            LOGGER.warn("Unsafe Capture preferences path {}; preserving it and using defaults", configFile);
             return defaults;
         }
 
@@ -92,23 +99,38 @@ public final class CaptureConfigStore {
         );
 
         Path parent = configFile.getParent();
-        Path temporary = configFile.resolveSibling(configFile.getFileName() + ".tmp");
+        Path temporary = null;
         try {
             if (parent != null) Files.createDirectories(parent);
+            if (Files.exists(configFile, LinkOption.NOFOLLOW_LINKS)
+                    && !Files.isRegularFile(configFile, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("Refusing to replace an unsafe Capture preferences target");
+            }
+            // A predictable .tmp name may already be a symbolic link or another
+            // session's data. Own a newly created temporary file exclusively.
+            temporary = Files.createTempFile(parent, FILE_NAME + ".", ".tmp");
             try (Writer writer = Files.newBufferedWriter(temporary)) {
                 properties.store(writer, "LazyBuilder Capture preferences");
             }
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
             try {
-                Files.move(temporary, configFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+                Files.move(temporary, configFile,
+                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException ignored) {
                 Files.move(temporary, configFile, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException error) {
-            LOGGER.warn("Unable to persist capture preferences to {}", configFile, error);
-            try {
-                Files.deleteIfExists(temporary);
-            } catch (IOException cleanupError) {
-                LOGGER.debug("Unable to remove temporary capture config {}", temporary, cleanupError);
+            LOGGER.warn("Unable to persist Capture preferences to {}; keeping current settings",
+                    configFile, error);
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException cleanupError) {
+                    LOGGER.debug("Unable to remove temporary Capture config {}", temporary, cleanupError);
+                }
             }
         }
     }
