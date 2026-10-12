@@ -16,10 +16,9 @@ import javax.imageio.stream.ImageOutputStream;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.IOException;
-import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.LinkOption;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.util.Iterator;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.RejectedExecutionException;
@@ -113,9 +112,13 @@ public final class ScreenshotCaptureService {
             CapturePreferences.ScreenshotQuality quality,
             Consumer<Text> messageReceiver
     ) {
-        Path temporary = target.resolveSibling(target.getFileName() + ".part");
+        Path temporary = null;
         try {
             Files.createDirectories(target.getParent());
+            // Never write to a predictable .part path. Another process or
+            // session may own that name, including a symbolic link.
+            temporary = Files.createTempFile(target.getParent(),
+                    ".lazybuilder-screenshot-", ".part");
 
             BufferedImage image = new BufferedImage(
                     width,
@@ -139,7 +142,7 @@ public final class ScreenshotCaptureService {
         } catch (Exception error) {
             LOGGER.warn("Unable to save screenshot {}", target, error);
             try {
-                Files.deleteIfExists(temporary);
+                if (temporary != null) Files.deleteIfExists(temporary);
             } catch (IOException cleanupError) {
                 LOGGER.debug("Unable to remove partial screenshot {}", temporary, cleanupError);
             }
@@ -165,17 +168,16 @@ public final class ScreenshotCaptureService {
         }
     }
 
-    private static void moveIntoPlace(Path temporary, Path target) throws IOException {
-        try {
-            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
-        }
+    static void moveIntoPlace(Path temporary, Path target) throws IOException {
+        // Publication is no-clobber. ATOMIC_MOVE can replace an existing target
+        // on some filesystem providers, and REPLACE_EXISTING is never safe
+        // when a user file appears after uniqueTarget() checked the name.
+        Files.move(temporary, target);
     }
 
     private static Path uniqueTarget(Path directory, String requested) {
         Path candidate = directory.resolve(requested);
-        if (!Files.exists(candidate)) return candidate;
+        if (!Files.exists(candidate, LinkOption.NOFOLLOW_LINKS)) return candidate;
 
         String fileName = candidate.getFileName().toString();
         int dot = fileName.lastIndexOf('.');
@@ -183,7 +185,7 @@ public final class ScreenshotCaptureService {
         String extension = dot > 0 ? fileName.substring(dot) : "";
         for (int index = 2; index < 10_000; index++) {
             Path next = directory.resolve(stem + "_" + index + extension);
-            if (!Files.exists(next)) return next;
+            if (!Files.exists(next, LinkOption.NOFOLLOW_LINKS)) return next;
         }
         return directory.resolve(stem + "_" + System.nanoTime() + extension);
     }
