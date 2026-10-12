@@ -10,6 +10,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class PerformanceMixinRegistrationTest {
     @Test
+    void chunkBackpressureMixinRetainsWorldHandoffAndShutdownHooks() throws IOException {
+        String resource = "com/halokaryamedia/lazybuilder/performance/mixin/ChunkBuilderBackpressureMixin.class";
+        try (var stream = getClass().getClassLoader().getResourceAsStream(resource)) {
+            assertNotNull(stream, "ChunkBuilderBackpressureMixin must be packaged");
+            String bytecode = new String(stream.readAllBytes(), StandardCharsets.ISO_8859_1);
+            assertTrue(bytecode.contains("setWorld"),
+                    "switching ClientWorld must cancel the prior world deferred queue");
+            assertTrue(bytecode.contains("lazybuilder$cancelPriorWorldDeferredTasks"));
+            assertTrue(bytecode.contains("stopped"),
+                    "stopped builder must never admit new optional deferral");
+            assertTrue(bytecode.contains("lazybuilder$cancelDeferredTasks"),
+                    "reset/stop must continue to cancel stale deferred work");
+        }
+    }
+
+    @Test
     void performanceMixinsStayRegisteredInClientRuntime() throws IOException {
         try (var stream = PerformanceMixinRegistrationTest.class.getClassLoader()
                 .getResourceAsStream("lazybuilder-performance-manager.mixins.json")) {
