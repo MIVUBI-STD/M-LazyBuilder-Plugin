@@ -8,5 +8,15 @@ import java.util.UUID;
 public interface WorldLocationGateway {
     ResolvedLocation teleportToSafeSurface(UUID playerId, WorldRecord world, int blockX, int blockZ, WorldGameMode gameMode);
 
+    /**
+     * Delivers a result only when the actual teleport has completed.
+     * Paper overrides to prepare destination chunks without blocking.
+     */
+    default java.util.concurrent.CompletableFuture<ResolvedLocation> teleportToSafeSurfaceAsync(
+            UUID playerId, WorldRecord world, int blockX, int blockZ, WorldGameMode gameMode) {
+        return java.util.concurrent.CompletableFuture.completedFuture(
+                teleportToSafeSurface(playerId, world, blockX, blockZ, gameMode));
+    }
+
     record ResolvedLocation(double x, double y, double z) {}
 }
