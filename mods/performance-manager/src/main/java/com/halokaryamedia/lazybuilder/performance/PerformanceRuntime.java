@@ -67,6 +67,11 @@ public final class PerformanceRuntime {
         // frame performance. Reset the previous pressure/governor window only
         // at the focus boundary, not continuously while backgrounded.
         boolean foreground = isForegroundWorld(client);
+        if (!foreground) {
+            // Minimized clients may stop producing WorldRenderEvents entirely,
+            // so the per-frame pause path alone cannot close a proof window.
+            proofLogger.pause();
+        }
         if (foreground != foregroundWorldActive) {
             foregroundWorldActive = foreground;
             frameMonitor.resetSession();
