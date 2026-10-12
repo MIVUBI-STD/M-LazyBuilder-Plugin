@@ -247,6 +247,10 @@ pub fn start_restore_backup(request: &RestoreWorldBackupRequest) -> Result<World
             != Some(request.backup_file_name.as_str()) {
         return Err("The selected backup does not belong to this server. Choose it again.".into());
     }
+    let server = bridge_status()?;
+    if !server.capabilities.iter().any(|capability| capability == "world.backup.restore-copy") {
+        return Err("This server's World Manager needs updating before Restore as Copy can be used.".into());
+    }
     request_mutation_json("POST", "/v1/tasks/restore-backup", Some(request))
 }
 
