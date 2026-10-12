@@ -11,6 +11,7 @@ final class WorldControlCapabilities {
             "world.archive",
             "world.restore",
             "world.backup",
+            "world.backup.restore-copy",
             "world.duplicate",
             "world.export",
             "world.import",
