@@ -49,7 +49,12 @@ public final class ChunkRebuildBackpressure {
         }
 
         state = stateFor(builder);
-        state.add(task);
+        // The first queue-length check above is advisory: concurrent chunk
+        // workers may race before insertion. Enforce the cap atomically on
+        // the owning queue and fail open to the vanilla scheduler if full.
+        if (!state.addIfCapacity(task, ChunkRebuildBackpressurePolicy.MAX_DEFERRED_TASKS)) {
+            return false;
+        }
         ChunkPipelineMetrics.recordRebuildBackpressureDeferral();
         return true;
     }
@@ -150,8 +155,10 @@ public final class ChunkRebuildBackpressure {
     private static final class DeferredState {
         private final ArrayDeque<ChunkBuilder.BuiltChunk.Task> queue = new ArrayDeque<>();
 
-        synchronized void add(ChunkBuilder.BuiltChunk.Task task) {
+        synchronized boolean addIfCapacity(ChunkBuilder.BuiltChunk.Task task, int limit) {
+            if (queue.size() >= limit) return false;
             queue.addLast(task);
+            return true;
         }
 
         synchronized ChunkBuilder.BuiltChunk.Task poll() {
