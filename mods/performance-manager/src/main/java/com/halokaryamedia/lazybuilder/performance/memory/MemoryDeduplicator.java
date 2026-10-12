@@ -16,7 +16,15 @@ import java.util.concurrent.ConcurrentMap;
 /** Shares identical vanilla baked-quad vertex arrays and drops the cache on resource reload. */
 public final class MemoryDeduplicator implements SimpleSynchronousResourceReloadListener {
     private static final Identifier ID = Identifier.of("lazybuilder_performance_manager", "memory_dedup");
+    /**
+     * Cache unique model data only up to a predictable ceiling. Once full,
+     * already-known duplicates still share storage; novel arrays remain valid
+     * and unmodified rather than becoming permanent session-wide entries.
+     */
+    static final int MAX_UNIQUE_QUADS = 131_072;
+    private static final Object CACHE_LOCK = new Object();
     private static final ConcurrentMap<IntArrayKey, int[]> BAKED_QUADS = new ConcurrentHashMap<>();
+    private static int cachedEntries;
 
     private MemoryDeduplicator() {
     }
@@ -41,12 +49,28 @@ public final class MemoryDeduplicator implements SimpleSynchronousResourceReload
     static int[] canonicalize(int[] vertices) {
         if (vertices == null || vertices.length == 0) return vertices;
         IntArrayKey probe = new IntArrayKey(vertices);
-        int[] existing = BAKED_QUADS.putIfAbsent(probe, vertices);
-        return existing == null ? vertices : existing;
+        int[] existing = BAKED_QUADS.get(probe);
+        if (existing != null) return existing;
+
+        // Synchronize cold insertion with resource reload/cache disable.
+        // Hot-path cache hits are still lock-free, and no eviction of data
+        // referenced by baked models is necessary for correctness.
+        synchronized (CACHE_LOCK) {
+            existing = BAKED_QUADS.get(probe);
+            if (existing != null) return existing;
+            if (cachedEntries >= MAX_UNIQUE_QUADS) return vertices;
+            BAKED_QUADS.put(probe, vertices);
+            cachedEntries++;
+            return vertices;
+        }
     }
 
-    static void clearCache() {
-        BAKED_QUADS.clear();
+    /** Dropping dedup lookup ownership never modifies already-baked quads. */
+    public static void clearCache() {
+        synchronized (CACHE_LOCK) {
+            BAKED_QUADS.clear();
+            cachedEntries = 0;
+        }
     }
 
     @Override
