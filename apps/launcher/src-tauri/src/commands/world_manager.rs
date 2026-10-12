@@ -156,6 +156,13 @@ pub fn world_backup_pick() -> CommandResult<Option<String>> {
 }
 
 #[tauri::command]
+pub async fn world_backup_restore_copy(request: RestoreWorldBackupRequest) -> CommandResult<WorldTaskSnapshot> {
+    let target = active_world_target()?;
+    run_targeted_mutation("Restore world backup as copy", target,
+        move || start_restore_backup(&request)).await
+}
+
+#[tauri::command]
 pub async fn world_import_upload(file_path: String) -> CommandResult<String> {
     let target = active_world_target()?;
     run_targeted_mutation("World import upload", target, move || upload_world_import(&file_path)).await
