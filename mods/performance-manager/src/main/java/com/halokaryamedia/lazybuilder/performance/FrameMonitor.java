@@ -149,9 +149,11 @@ public final class FrameMonitor {
         boolean bad = severe || currentFrameMs >= badFrameMs || averageMs >= elevatedAverageMs;
         boolean stable = currentFrameMs < badFrameMs && averageMs < elevatedAverageMs;
 
-        severeSamples = severe ? severeSamples + 1 : 0;
-        badSamples = bad ? badSamples + 1 : 0;
-        stableFrames = stable ? stableFrames + 1 : 0;
+        // These counters only drive 3/30/60-frame transitions. Saturation
+        // prevents needless lifetime growth in sessions left open for days.
+        severeSamples = severe ? Math.min(3, severeSamples + 1) : 0;
+        badSamples = bad ? Math.min(3, badSamples + 1) : 0;
+        stableFrames = stable ? Math.min(60, stableFrames + 1) : 0;
 
         if (pressure != FramePressure.HEAVY && severeSamples >= 3) {
             pressure = FramePressure.HEAVY;
