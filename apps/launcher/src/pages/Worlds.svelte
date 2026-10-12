@@ -18,6 +18,7 @@
   let worlds: ManagedWorldSummary[] = [];
   let search = '';
   let error: RuntimeErrorPresentation | null = null;
+  let notice: string | null = null;
   let busy = false;
   let serverState: ServerState = 'Offline';
   let serverOnline = false;
@@ -126,6 +127,7 @@
     if (!displayName || !serverOnline || busy) return;
     busy = true;
     error = null;
+    notice = null;
     try {
       await runtimeProduct.worlds.create({
         folderName: folderName(displayName, 'world'),
@@ -134,6 +136,7 @@
       });
       if (!pageActive) return;
       createOpen = false;
+      notice = `World created: ${displayName}.`;
       createName = '';
     } catch (value) {
       if (pageActive) error = presentRuntimeError(value, 'Could not create this world.');
@@ -166,6 +169,7 @@
     if (!serverOnline || importBusy || !importPath || !displayName) return;
     importBusy = true;
     error = null;
+    notice = null;
     try {
       const artifactName = pendingImportArtifact?.sourcePath === importPath
         ? pendingImportArtifact.artifactName
@@ -188,6 +192,7 @@
       importOpen = false;
       const completedHere = await pollTask(submittedTask.taskId);
       if (!completedHere || !pageActive) return;
+      notice = `World imported: ${displayName}.`;
       importPath = '';
       importName = '';
     } catch (value) {
@@ -196,6 +201,7 @@
       importBusy = false;
       if (pageActive) {
         operationTask = null;
+        operationBusyWorldId = null;
         await refresh(false);
       }
     }
@@ -244,13 +250,21 @@
     if (operationBusyWorldId) return;
     operationBusyWorldId = world.id;
     error = null;
+    notice = null;
     try {
       operationTask = action === 'backup'
         ? await runtimeProduct.worlds.backup(world.id)
         : action === 'archive'
           ? await runtimeProduct.worlds.archive(world.id)
           : await runtimeProduct.worlds.restore(world.id);
-      await pollTask(operationTask.taskId);
+      const completed = await pollTask(operationTask.taskId);
+      if (completed && pageActive) {
+        notice = action === 'backup'
+          ? `World backup created for ${world.displayName}. It is stored in this server's World Manager backup folder, separate from full-server restore points.`
+          : action === 'archive'
+            ? `${world.displayName} archived. Use Restore in Archived worlds to reactivate it; this is not a backup restore.`
+            : `${world.displayName} reactivated from archive.`;
+      }
     } catch (value) {
       if (pageActive) error = presentRuntimeError(value, `Could not ${action} this world.`);
     } finally {
@@ -307,6 +321,8 @@
     if (!duplicateSource || operationBusyWorldId || !duplicateName.trim()) return;
     operationBusyWorldId = duplicateSource.id;
     error = null;
+    notice = null;
+    const originalName = duplicateSource.displayName;
     try {
       operationTask = await runtimeProduct.worlds.duplicate({
         worldId: duplicateSource.id,
@@ -315,7 +331,8 @@
       });
       if (!pageActive) return;
       closePanels();
-      await pollTask(operationTask.taskId);
+      const completed = await pollTask(operationTask.taskId);
+      if (completed && pageActive) notice = `A separate copy of ${originalName} was created.`;
     } catch (value) {
       if (pageActive) error = presentRuntimeError(value, 'Could not duplicate this world.');
     } finally {
@@ -331,6 +348,7 @@
     if (!exportSource || operationBusyWorldId || !exportName.trim()) return;
     operationBusyWorldId = exportSource.id;
     error = null;
+    notice = null;
     try {
       operationTask = await runtimeProduct.worlds.export({
         worldId: exportSource.id,
@@ -339,7 +357,13 @@
       });
       if (!pageActive) return;
       closePanels();
-      await pollTask(operationTask.taskId);
+      const completed = await pollTask(operationTask.taskId);
+      if (completed && pageActive) {
+        const artifact = operationTask?.result;
+        notice = artifact
+          ? `Export ready: ${artifact}. Find it in this server's World Manager exports folder.`
+          : `World export completed. Find the file in this server's World Manager exports folder.`;
+      }
     } catch (value) {
       if (pageActive) error = presentRuntimeError(value, 'Could not export this world.');
     } finally {
@@ -355,6 +379,8 @@
     if (!deleteSource || deleteConfirmation.trim() !== deleteSource.displayName || operationBusyWorldId) return;
     operationBusyWorldId = deleteSource.id;
     error = null;
+    notice = null;
+    const deletedName = deleteSource.displayName;
     try {
       operationTask = await runtimeProduct.worlds.delete({
         worldId: deleteSource.id,
@@ -362,7 +388,8 @@
       });
       if (!pageActive) return;
       closePanels();
-      await pollTask(operationTask.taskId);
+      const completed = await pollTask(operationTask.taskId);
+      if (completed && pageActive) notice = `World deleted: ${deletedName}.`;
     } catch (value) {
       if (pageActive) error = presentRuntimeError(value, 'Could not delete this world.');
     } finally {
@@ -388,7 +415,7 @@
   <header class="page-head">
     <div>
       <h2>Worlds</h2>
-      <p>Create, import, back up and organize build worlds.</p>
+      <p>Create, import, and manage worlds. World backups are separate from full-server restore points.</p>
     </div>
     {#if serverOnline}
       <div class="head-actions">
@@ -399,6 +426,7 @@
   </header>
 
   <RuntimeErrorNotice {error} onAction={hasErrorAction() ? handleErrorAction : undefined} />
+  {#if notice}<div class="world-notice" role="status">{notice}</div>{/if}
 
   {#if !serverOnline}
     <section class="state-card">
@@ -413,8 +441,8 @@
     {#if operationTask && ['QUEUED', 'RUNNING'].includes(operationTask.state)}
       <div class="task-strip" aria-live="polite">
         <span>{operationTask.message || 'Working…'}</span>
-        <div class="progress"><i style={`width:${Math.max(2, operationTask.progressPercent)}%`}></i></div>
-        <strong>{operationTask.progressPercent}%</strong>
+        <div class="task-activity" aria-hidden="true"><i></i></div>
+        <strong>{operationTask.state === 'QUEUED' ? 'Queued' : 'In progress'}</strong>
       </div>
     {/if}
 
@@ -455,7 +483,7 @@
                 <div class="menu-popover">
                   <button disabled={operationBusyWorldId !== null || settingsBusy} onclick={() => openSettings(world)}>World settings</button>
                   <div class="menu-separator"></div>
-                  <button disabled={operationBusyWorldId !== null} onclick={() => runWorldTask(world, 'backup')}>Create backup</button>
+                  <button disabled={operationBusyWorldId !== null} onclick={() => runWorldTask(world, 'backup')}>Create world backup</button>
                   <button disabled={operationBusyWorldId !== null} onclick={() => { closePanels(); duplicateSource = world; duplicateName = `${world.displayName} Copy`; }}>Duplicate world…</button>
                   <button disabled={operationBusyWorldId !== null} onclick={() => { closePanels(); exportSource = world; exportName = `${slugify(world.displayName) || 'world'}-export`; }}>Export…</button>
                   <button disabled={operationBusyWorldId !== null} onclick={() => runWorldTask(world, 'archive')}>Archive</button>
@@ -503,7 +531,7 @@
 {#if importOpen}
   <div class="modal-backdrop" role="presentation" onclick={(event) => event.currentTarget === event.target && !importBusy && (importOpen = false)}>
     <div use:dialogFocus={{ onEscape: () => (importOpen = false), initialFocusSelector: '.secondary.compact', escapeDisabled: importBusy }} class="modal" role="dialog" aria-modal="true" aria-labelledby="import-world-title">
-      <div class="modal-head"><div><h2 id="import-world-title">Import world</h2><p>Add an existing Java world to this server.</p></div><button class="icon-button" aria-label="Close import world dialog" disabled={importBusy} onclick={() => (importOpen = false)}>×</button></div>
+      <div class="modal-head"><div><h2 id="import-world-title">Import world</h2><p>Add a Java or Bedrock world (.zip or .mcworld) to this server.</p></div><button class="icon-button" aria-label="Close import world dialog" disabled={importBusy} onclick={() => (importOpen = false)}>×</button></div>
       <label>World file<div class="file-picker"><span title={importPath}>{importPath ? importPath.split(/[\\/]/).pop() : 'No file selected'}</span><button class="secondary compact" disabled={importBusy} onclick={pickImport}>Choose file</button></div></label>
       <label>World name<input bind:value={importName} disabled={!importPath || importBusy} placeholder="Imported World" /></label>
       <div class="modal-actions"><button class="secondary" disabled={importBusy} onclick={() => (importOpen = false)}>Cancel</button><button class="primary" disabled={importBusy || !importPath || !importName.trim()} onclick={runImport}>{importBusy ? 'Importing…' : 'Import world'}</button></div>
@@ -577,7 +605,10 @@
   .search-field{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:0 11px;min-height:var(--control-height);border:1px solid var(--border-soft);border-radius:var(--radius-sm);background:var(--surface);color:var(--muted)}
   .search-field:focus-within{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 10%,transparent)}.search-field input{width:100%;border:0;outline:0;background:transparent;color:var(--text)}
   .task-strip{display:grid;grid-template-columns:minmax(0,1fr) minmax(160px,320px) auto;gap:12px;align-items:center;margin-bottom:12px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);font-size:11px}
-  .progress{height:5px;overflow:hidden;border-radius:999px;background:var(--surface-3)}.progress i{display:block;height:100%;background:var(--accent)}
+  .task-activity{height:5px;overflow:hidden;border-radius:999px;background:var(--surface-3)}.task-activity i{display:block;height:100%;width:30%;border-radius:999px;background:var(--accent);animation:world-task-active 1.5s ease-in-out infinite alternate}
+  @keyframes world-task-active{from{transform:translateX(0)}to{transform:translateX(230%)}}
+  @media(prefers-reduced-motion:reduce){.task-activity i{animation:none;width:100%}}
+  .world-notice{margin-bottom:12px;padding:11px 12px;border:1px solid var(--accent-border);border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--text-soft);font-size:12px;line-height:1.5}
   .world-list{overflow:visible;border:1px solid var(--border-soft);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow-card)}
   .world-row{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;min-height:64px;padding:10px 12px;border-bottom:1px solid var(--border-soft);transition:background-color 120ms ease}.world-row:last-child{border-bottom:0}.world-row:hover{background:rgba(255,255,255,.018)}.world-row.archived{opacity:.76}
   .world-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:9px;background:var(--surface-2);color:var(--muted)}.world-icon svg{width:18px;height:18px}
