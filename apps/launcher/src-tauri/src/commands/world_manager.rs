@@ -121,21 +121,24 @@ pub fn world_backup_pick() -> CommandResult<Option<String>> {
     let workspace = workspace_registry::current()
         .map_err(CommandError::from)?
         .ok_or_else(|| CommandError::new("WORKSPACE_REQUIRED", "Open a server before restoring a world backup."))?;
-    let workspace_root = fs::canonicalize(&workspace.path)
+    let configured_root = PathBuf::from(&workspace.path);
+    safe_path::ensure_real_directory(&configured_root, "selected server folder")
+        .map_err(|error| CommandError::new("BACKUP_FOLDER_UNSAFE", error))?;
+    let workspace_root = fs::canonicalize(configured_root)
         .map_err(|error| CommandError::new("BACKUP_FOLDER_UNAVAILABLE", format!("Could not inspect this server folder: {error}")))?;
     let world_system = workspace_root.join("world-system");
     let backup_root = world_system.join("backups");
 
-    // Reparse/symlink redirection of the managed backup directory is never
-    // accepted as authorization to import a file from an unrelated folder.
+    // Validate each owned directory as a real directory first. On Windows,
+    // canonicalize() may return a \\?\ path, so raw string comparison against
+    // noncanonical path spelling is incorrect.
+    safe_path::ensure_real_directory(&world_system, "world-system folder")
+        .map_err(|error| CommandError::new("BACKUP_FOLDER_UNSAFE", error))?;
+    safe_path::ensure_real_directory(&backup_root, "world backup folder")
+        .map_err(|error| CommandError::new("BACKUP_FOLDER_UNSAFE", error))?;
     let real_backups = fs::canonicalize(&backup_root).map_err(|_| CommandError::new(
         "BACKUP_FOLDER_UNAVAILABLE", "This server has no accessible world backups folder yet."
     ))?;
-    if real_backups != backup_root {
-        return Err(CommandError::new(
-            "BACKUP_FOLDER_UNSAFE", "This server's backup folder redirects outside its managed location."
-        ));
-    }
     let selected = rfd::FileDialog::new()
         .set_directory(&backup_root)
         .add_filter("World backup ZIP", &["zip"])
