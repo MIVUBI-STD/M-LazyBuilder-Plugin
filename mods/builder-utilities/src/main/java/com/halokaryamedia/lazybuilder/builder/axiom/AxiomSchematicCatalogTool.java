@@ -145,7 +145,6 @@ public final class AxiomSchematicCatalogTool implements CustomTool {
 
     @Override
     public void render(Camera camera, float tickDelta, long time, MatrixStack poseStack, Matrix4f projection) {
-        mutation.pump();
         OperationState outcome = mutation.pollOutcome();
         if (outcome != null) {
             idleStatus = "Last operation: " + outcome;

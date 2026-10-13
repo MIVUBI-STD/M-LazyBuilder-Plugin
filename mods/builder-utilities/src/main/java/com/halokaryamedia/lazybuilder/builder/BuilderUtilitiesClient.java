@@ -15,7 +15,10 @@ import com.halokaryamedia.lazybuilder.builder.axiom.AxiomStructureStampTool;
 import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.world.ClientWorld;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,6 +26,8 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
     private static final Logger LOGGER = LoggerFactory.getLogger("LazyBuilder Builder Utilities");
     private static BuilderRuntime runtime;
     private static AxiomRecoveryTool recoveryTool;
+    private static ClientWorld observedWorld;
+    private static int transitionRetryTicks;
 
     @Override
     public void onInitializeClient() {
@@ -42,14 +47,41 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         services.toolRegistry().register(recoveryTool);
         services.toolRegistry().register(new AxiomOperationCenterTool(services, runtime));
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> closeRuntime());
-        ClientPlayConnectionEvents.JOIN.register(
-                (handler, sender, client) -> client.execute(BuilderUtilitiesClient::scanRecoveryNotice));
+        ClientTickEvents.END_CLIENT_TICK.register(BuilderUtilitiesClient::clientTick);
         ClientPlayConnectionEvents.DISCONNECT.register(
                 (handler, client) -> resetWorldTimeline());
         LOGGER.info(
                 "Builder Utilities attached to {} with durable block spline, schematic spline, array, scatter, procedural texturing, structure stamping, schematic catalog/distribution, and restart recovery.",
                 compatibility.summary());
     }
+    /**
+     * The single Builder execution path: advance active operations once per client tick,
+     * independent of which Axiom tool is rendered. World changes first preserve durable
+     * work and isolate the old timeline, then admit the new ClientWorld.
+     */
+    private static void clientTick(MinecraftClient client) {
+        BuilderRuntime current = runtime;
+        if (current == null) return;
+        if (client.world != observedWorld) {
+            current.suspendWorldAdmission();
+            if (transitionRetryTicks > 0) {
+                transitionRetryTicks--;
+                return;
+            }
+            if (observedWorld != null && !resetWorldTimeline()) {
+                transitionRetryTicks = 100;
+                return;
+            }
+            observedWorld = client.world;
+            transitionRetryTicks = 0;
+            if (observedWorld != null) {
+                current.admitWorld(observedWorld);
+                scanRecoveryNotice();
+            }
+        }
+        if (client.world != null) current.pumpActiveOperations(client.world);
+    }
+
     private static void scanRecoveryNotice() {
         BuilderRuntime current = runtime;
         if (current == null) return;
@@ -97,9 +129,10 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         }
     }
 
-    private static void resetWorldTimeline() {
+    private static boolean resetWorldTimeline() {
         BuilderRuntime current = runtime;
-        if (current == null) return;
+        if (current == null) return true;
+        current.suspendWorldAdmission();
 
         try {
             current.preserveActiveOperations();
@@ -108,7 +141,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
                     "Failed to preserve one or more active Builder operations on disconnect. "
                             + "World timeline and proof were intentionally left unchanged.",
                     e);
-            return;
+            return false;
         }
 
         try {
@@ -119,7 +152,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
                     "Failed to release Builder recovery wrappers on disconnect. "
                             + "World timeline was intentionally left unchanged.",
                     e);
-            return;
+            return false;
         }
 
         try {
@@ -133,8 +166,10 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
 
         try {
             current.resetWorldTimeline();
+            return true;
         } catch (java.io.IOException e) {
-            LOGGER.error("Failed to reset Builder history after world disconnect", e);
+            LOGGER.error("Failed to reset Builder history after world exit", e);
+            return false;
         }
     }
 
@@ -142,7 +177,10 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         BuilderRuntime current = runtime;
         runtime = null;
         recoveryTool = null;
+        observedWorld = null;
+        transitionRetryTicks = 0;
         if (current == null) return;
+        current.suspendWorldAdmission();
         try {
             current.close();
         } catch (java.io.IOException e) {

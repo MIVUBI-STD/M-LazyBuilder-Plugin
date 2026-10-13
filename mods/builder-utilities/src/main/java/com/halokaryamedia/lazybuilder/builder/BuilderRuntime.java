@@ -11,6 +11,8 @@ import com.halokaryamedia.lazybuilder.builder.axiom.AxiomWorldScope;
 import com.halokaryamedia.lazybuilder.builder.operation.ExecutionBudget;
 import com.halokaryamedia.lazybuilder.builder.operation.RecoverableActiveOperation;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.world.ClientWorld;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -31,6 +33,7 @@ public final class BuilderRuntime implements AutoCloseable {
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
     private boolean closing;
     private boolean closed;
+    private ClientWorld admittedWorld;
 
     private BuilderRuntime(
             HistoryTimeline timeline,
@@ -74,8 +77,37 @@ public final class BuilderRuntime implements AutoCloseable {
 
     public synchronized HistoryTimeline timeline() { return timeline; }
 
+    /** Only the observed live ClientWorld may start or advance Builder work. */
+    public synchronized void admitWorld(ClientWorld world) {
+        if (closed || closing || !activeOperations.isEmpty()) {
+            throw new IllegalStateException("Cannot admit a world while Builder work is unresolved");
+        }
+        admittedWorld = java.util.Objects.requireNonNull(world, "world");
+    }
+
+    public synchronized void suspendWorldAdmission() {
+        admittedWorld = null;
+    }
+
+    /** Runs registered operations independently of the selected Axiom tool's render callback. */
+    public void pumpActiveOperations(ClientWorld world) {
+        java.util.List<RecoverableActiveOperation> snapshot;
+        synchronized (this) {
+            if (world == null || admittedWorld != world
+                    || MinecraftClient.getInstance().world != world) return;
+            snapshot = java.util.List.copyOf(activeOperations);
+        }
+        for (RecoverableActiveOperation operation : snapshot) {
+            if (MinecraftClient.getInstance().world != world) return;
+            operation.pump();
+        }
+    }
+
     public synchronized void registerActiveOperation(RecoverableActiveOperation operation) {
         if (closed || closing) throw new IllegalStateException("Builder runtime is closing or closed");
+        if (admittedWorld == null || MinecraftClient.getInstance().world != admittedWorld) {
+            throw new IllegalStateException("Builder world is not admitted or is changing");
+        }
         if (!activeOperations.add(java.util.Objects.requireNonNull(operation, "operation"))) {
             throw new IllegalStateException("Builder operation is already registered");
         }
@@ -113,6 +145,7 @@ public final class BuilderRuntime implements AutoCloseable {
     }
 
     public synchronized void resetWorldTimeline() throws IOException {
+        admittedWorld = null;
         HistoryTimeline previous = timeline;
         IOException failure = null;
         try {

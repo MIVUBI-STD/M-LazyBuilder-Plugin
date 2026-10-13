@@ -216,7 +216,6 @@ public final class AxiomOperationCenterTool implements CustomTool {
             Matrix4f projection
     ) {
         if (replay == null) return;
-        replay.pump();
         if (replay.finished()) {
             status = replay.status();
             replay = null;

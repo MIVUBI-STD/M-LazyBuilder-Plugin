@@ -6,4 +6,8 @@ import java.io.IOException;
 @FunctionalInterface
 public interface RecoverableActiveOperation {
     void preserveForWorldExit() throws IOException;
+
+    /** Advances one bounded client-tick slice while the owning world is active. */
+    default void pump() { }
+
 }

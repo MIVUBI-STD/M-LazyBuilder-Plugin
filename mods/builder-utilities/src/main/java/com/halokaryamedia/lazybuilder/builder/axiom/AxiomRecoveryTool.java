@@ -151,7 +151,6 @@ public final class AxiomRecoveryTool implements CustomTool {
 
     @Override
     public void render(Camera camera, float tickDelta, long time, MatrixStack poseStack, Matrix4f projection) {
-        mutation.pump();
         OperationState outcome = mutation.pollOutcome();
         if (outcome != null) {
             status = "Recovery operation finished: " + outcome;
