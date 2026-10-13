@@ -197,7 +197,18 @@ pruning
 format-id syntax
 ```
 
-Cross-edition conversion may not be perfectly lossless. Show concise contextual warnings only when relevant.
+Cross-edition conversion may not be perfectly lossless. Show concise contextual warnings only when relevant. Chunker's documented limitations include entity and player-inventory conversion; this is a warning about the conversion path, not a claim that every export loses these data. Verify the particular active converter/runtime capabilities before promising full fidelity.
+
+Source reference: [Minecraft Chunker overview](https://learn.microsoft.com/en-us/minecraft/creator/documents/chunkeroverview?view=minecraft-bedrock-stable).
+
+### Conversion input/output safety
+
+- Custom-dimension inspection accepts real directories and ZIP datapacks inside the supplied world; non-directory `datapacks` roots, symbolic-link roots, linked packs and linked nested datapack entries fail closed instead of consulting external filesystem content.
+- Datapack and converted Bedrock LevelDB file discovery use lazy path traversal rather than first collecting all paths in memory.
+- The converted output must contain nonempty `level.dat`; Bedrock targets also require a real `db` directory with at least one nonempty regular file. This is a **minimum structural check**, not a full LevelDB consistency check or proof that converted world behavior is correct.
+- Converted content remains inside the existing bounded world-operation and staging/publication owners. Do not add a second scanner, index, queue or conversion engine for these checks.
+
+The input-safety changes above are implemented in source with regression fixtures; full Maven and real Minecraft/Chunker acceptance for the exact latest `Local` SHA must be reported separately.
 
 ## Runtime model
 
