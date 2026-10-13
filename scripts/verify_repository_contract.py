@@ -221,7 +221,27 @@ def verify_workflow_security(workflow: Path, errors: list[str]) -> None:
             match = re.match(r"^  ([a-z_][a-z_0-9-]*):", line)
             if match:
                 events.append(match.group(1))
-        if events != ["workflow_dispatch"]:
+        # Exactly one focused workflow intentionally runs on path-filtered Local
+        # pushes. Keep its event and path surface literal and tightly bounded,
+        # rather than allowing arbitrary automatic CI as a side effect.
+        if relative.as_posix() == ".github/workflows/performance-manager-verify.yml":
+            expected_trigger = """  workflow_dispatch:
+  push:
+    branches: [Local]
+    paths:
+      - 'mods/performance-manager/**'
+      - 'tooling/windows-toolchain/**'
+      - 'toolchain.json'
+      - '.github/workflows/performance-manager-verify.yml'"""
+            trigger_lines = []
+            for line in block:
+                if line and not line[0].isspace() and not line.lstrip().startswith("#"):
+                    break
+                if line.strip():
+                    trigger_lines.append(line.rstrip())
+            if "\n".join(trigger_lines) != expected_trigger:
+                fail(errors, f"Performance Manager trigger/path allowlist drift: {relative}")
+        elif events != ["workflow_dispatch"]:
             fail(errors, f"workflow must be workflow_dispatch-only: {relative}: {events}")
 
 
@@ -250,10 +270,6 @@ def verify_workflow_security(workflow: Path, errors: list[str]) -> None:
     if checkout_count and text.count("persist-credentials: false") < checkout_count:
         fail(errors, f"every checkout must disable persisted credentials: {relative}")
 
-    if re.search(r"(?ms)^\s{2}push:\s*\n\s{4}branches:\s*\[Local\]", text):
-        fail(errors, f"ordinary Local push must not trigger durable CI workflow: {relative}")
-    if re.search(r"(?ms)^\s{2}push:\s*\n\s{4}branches:\s*\n\s{6}-\s*Local\s*$", text):
-        fail(errors, f"ordinary Local push must not trigger durable CI workflow: {relative}")
 
 
 def main() -> int:
@@ -712,8 +728,10 @@ def main() -> int:
     if "not Minecraft runtime proof" not in builder_benchmark_workflow:
         fail(errors, "Builder Benchmark workflow must preserve the synthetic-proof boundary")
 
-    if "manual-only" not in verification_doc.lower() or "workflow_dispatch" not in verification_doc:
-        fail(errors, "current verification authority must document evidence-only scoping and manual full Verify")
+    if ("workflow_dispatch" not in verification_doc
+            or "Performance Manager Verify" not in verification_doc
+            or "integrated" not in verification_doc.lower()):
+        fail(errors, "verification authority must distinguish manual integrated Verify from scoped automatic Performance proof")
 
     if "paths-ignore:" in verify_workflow:
         fail(errors, "manual Verify must not retain dead automatic-event path filters")
@@ -981,7 +999,7 @@ def main() -> int:
     print("Canonical skills:", ", ".join(sorted(EXPECTED_SKILLS)))
     print("Supporting evidence context: opt-in only")
     print("Targeted verify scopes: paper, fabric, launcher")
-    print("GitHub Actions: workflow_dispatch-only + full-SHA pins + least privilege")
+    print("GitHub Actions: manual integrated Verify + allowlisted Performance Local push + full-SHA pins")
     print("Agent routing/permission fixtures: static contract evaluation")
     print("Full Verify: manually dispatched, no automatic path scoping")
     print("Developer failures: operation + exit code + evidence + recovery")

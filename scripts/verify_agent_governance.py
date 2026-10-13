@@ -92,7 +92,7 @@ def verify_agent_governance(root: Path, errors: list[str]) -> None:
     if invariant.get("no_implicit_lane_switch") is not True:
         errors.append("implicit work-lane switching must be forbidden")
     if invariant.get("manual_ci_only") is not True:
-        errors.append("CI must remain manual-only")
+        errors.append("Agent-initiated CI dispatch must remain explicit and authorized")
     read_only_modes = invariant.get("read_only_modes")
     if not isinstance(read_only_modes, list) or not all(
         isinstance(mode, str) for mode in read_only_modes

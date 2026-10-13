@@ -118,7 +118,9 @@ Prior chat contents, chat titles, sidebar names and Project settings do not repl
 - Workflow token permissions stay explicit and least-privilege. Current verification/preview workflows require only `contents: read` unless a new capability proves otherwise.
 - Read-only checkouts use `persist-credentials: false`; workflow steps must not inherit repository write credentials unnecessarily.
 - Every job has an explicit `timeout-minutes` appropriate to its proof boundary; do not rely on GitHub's multi-hour default.
-- All verification workflows are manual-only (`workflow_dispatch`): no `push`, `pull_request`, `schedule`, `workflow_run`, release or tag triggers. The user chooses when to run a checkpoint.
+- All verification workflows are **manual-only by default** (`workflow_dispatch`). The canonical integrated `Verify` always requires explicit dispatch.
+- The single approved automatic exception is `Performance Manager Verify`: it also runs on path-filtered `push` to `Local` for `mods/performance-manager/**`, `tooling/windows-toolchain/**`, `toolchain.json`, and its own workflow YAML. That focused result proves only its module's build/tests, not repository or native runtime readiness.
+- No other `push`, `pull_request`, `schedule`, `workflow_run`, release, or tag verification triggers are approved by default. Any scope expansion requires an explicit policy review, not a broad wildcard.
 - Caches accelerate deterministic builds; they are never authority for source, artifacts, or verification state.
 - Adding OIDC, artifact attestations, signing, deployment credentials, or write permissions belongs to an explicit release/deployment requirement, not ordinary verification hardening.
 
@@ -137,7 +139,7 @@ server lifecycle       -> LIVE_SERVER smoke/runtime test
 Repository-wide final verification is intentionally outside the inner `Local` commit loop:
 
 ```text
-ordinary push to Local -> no automatic verification workflow
+ordinary push to Local -> only path-filtered Performance Manager Verify may run
 pull request / push to main -> no automatic verification workflow
 workflow_dispatch      -> integrated final Verify on explicit request
 ```
