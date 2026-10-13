@@ -122,6 +122,10 @@ Imported world runtime loaded/unloaded condition is not durable world state. Run
 
 Imported gameplay/settings are preserved where supported. Builder defaults are applied only by Create World or an explicit reset action.
 
+Import inspection validates the bounded ZIP namespace and selected world root before revealing the source edition. It does not extract the entire archive during inspection or retain a second list of every archive entry name merely to detect a selected root's `db/` data. The collision-validation namespace remains the existing bounded owner.
+
+Committed-import cleanup markers must be checked before admitting or discarding an upload, including after restart. An archive whose name differs **only by letter case** is the same candidate on Windows: compare against the existing case-folded artifact reservation identity while retaining the original recorded spelling for on-disk cleanup. If cleanup marker discovery fails, an explicit Discard must fail closed rather than delete possibly committed source data.
+
 ## Export behavior
 
 Normal Export should be one quick action using the current daily defaults:
@@ -159,6 +163,8 @@ finish
 Native Java 1.21.4 export bypasses conversion and packages directly as `.zip`.
 
 Different Java versions or Bedrock targets use the verified conversion runtime. Java output uses `.zip`; Bedrock output uses `.mcworld`. The user never chooses the extension separately.
+
+Before ZIP packaging, both the size estimate and write pass require ordinary regular source files. Symbolic links and non-regular filesystem entries are rejected; opening devices/pipes as export data could stall the worker. A rejected source must not publish a completed export artifact. Existing no-replace publication and transient workspace cleanup remain the authorities; no new export engine or scanning worker is introduced.
 
 ## Export Area
 
@@ -352,4 +358,4 @@ Only current and previous remain after successful stabilization.
 
 ## Proof boundary
 
-Source review may prove ownership, capability gating, DataVersion checks, bounded extraction, workspace cleanup, packaging rules, transfer contracts, and runtime isolation. Real conversion quality, throughput, Paper lifecycle behavior, native dialogs, `.mcworld` results, disconnect recovery, and large-file behavior require local/live validation.
+Source review may prove ownership, capability gating, DataVersion checks, bounded extraction, workspace cleanup, packaging rules, transfer contracts, and runtime isolation. The Import/Export safety changes above have source-level regression tests covering root-aware inspection, non-regular ZIP entry rejection, symlink rejection, case-only committed-marker aliases and unreadable marker handling. **Added tests are not a passing test run.** Real Windows filesystem behavior, full Maven/Paper verification, conversion quality, throughput, Paper lifecycle, native dialogs, `.mcworld` results, disconnect recovery, and large-file behavior require separate executable/local/live validation for the exact candidate revision.
