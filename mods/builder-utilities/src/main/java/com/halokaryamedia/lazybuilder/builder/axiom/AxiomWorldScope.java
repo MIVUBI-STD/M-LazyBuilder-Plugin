@@ -44,9 +44,10 @@ public final class AxiomWorldScope {
         } else {
             ServerInfo info = client.getCurrentServerEntry();
             String preferred = info == null ? null : info.address;
-            String fallback = client.getNetworkHandler() == null
+            var address = client.getNetworkHandler() == null
                     ? null
-                    : String.valueOf(client.getNetworkHandler().getConnection().getAddress());
+                    : client.getNetworkHandler().getConnection().getAddress();
+            String fallback = address == null ? null : address.toString();
             endpoint = remoteEndpoint(preferred, fallback);
         }
 
@@ -61,7 +62,7 @@ public final class AxiomWorldScope {
             throw new IllegalStateException(
                     "Remote server identity is unavailable; Builder durable operations are blocked");
         }
-        return "remote|" + address.toLowerCase(Locale.ROOT);
+        return "remote|" + address.trim().toLowerCase(Locale.ROOT);
     }
 
     private static String digest(String identity) {

@@ -12,6 +12,8 @@ class AxiomWorldScopeRemoteEndpointTest {
                 AxiomWorldScope.remoteEndpoint("EXAMPLE.ORG:25565", null));
         assertEquals("remote|127.0.0.1:25565",
                 AxiomWorldScope.remoteEndpoint("", "127.0.0.1:25565"));
+        assertEquals("remote|example.org",
+                AxiomWorldScope.remoteEndpoint("  EXAMPLE.ORG  ", null));
     }
 
     @Test
