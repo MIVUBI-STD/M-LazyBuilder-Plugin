@@ -152,7 +152,9 @@ final class FirstPartyShaderRuntimeTest {
         store.save(new ShaderRuntimePreferences(selectedId, true));
 
         FirstPartyShaderRuntime runtime = FirstPartyShaderRuntime.deferredForClient(shaderpacks, config);
-        assertEquals(selectedId, runtime.snapshot().selectedPackId());
+        // Public snapshot reports only catalog-resolved selections. Persisted
+        // intent must survive until discovery completes, without inventing a pack.
+        assertEquals("", runtime.snapshot().selectedPackId());
         assertTrue(runtime.snapshot().packIds().isEmpty());
         assertEquals(selectedId, store.load().selectedPackId());
 
