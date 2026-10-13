@@ -5,8 +5,11 @@ import net.fabricmc.loader.api.FabricLoader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.channels.FileChannel;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -60,7 +63,7 @@ public final class WorldNavigationPreferences {
     public synchronized void reload() {
         properties.clear();
         invalidateParsedCache();
-        if (!Files.isRegularFile(path)) return;
+        if (!Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) return;
         try (InputStream input = Files.newInputStream(path)) { properties.load(input); }
         catch (IOException ignored) { properties.clear(); }
     }
@@ -155,20 +158,36 @@ public final class WorldNavigationPreferences {
     }
 
     private void save() {
+        Path temporary = null;
         try {
-            Files.createDirectories(path.getParent());
-            Path temp = path.resolveSibling(path.getFileName() + ".tmp");
-            try (OutputStream output = Files.newOutputStream(temp)) {
+            Path parent = path.getParent();
+            Files.createDirectories(parent);
+            if (Files.exists(path, LinkOption.NOFOLLOW_LINKS)
+                    && !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+                throw new IOException("Refusing to replace an unsafe navigation preferences target");
+            }
+            // Never open a predictable .tmp file: it might be a symlink or
+            // another client's pending data.
+            temporary = Files.createTempFile(parent, path.getFileName() + ".", ".tmp");
+            try (OutputStream output = Files.newOutputStream(temporary, StandardOpenOption.WRITE)) {
                 properties.store(output, "LazyBuilder World Manager navigation preferences");
             }
+            try (FileChannel channel = FileChannel.open(temporary, StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
             try {
-                Files.move(temp, path, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                Files.move(temporary, path, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
                         java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             } catch (java.nio.file.AtomicMoveNotSupportedException ignored) {
-                Files.move(temp, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                Files.move(temporary, path, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException ignored) {
-            // Navigation preferences must never block normal World Manager usage.
+            // Navigation preferences are best-effort and must not block the UI.
+        } finally {
+            if (temporary != null) {
+                try { Files.deleteIfExists(temporary); }
+                catch (IOException ignored) { }
+            }
         }
     }
 }

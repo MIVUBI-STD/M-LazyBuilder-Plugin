@@ -3,6 +3,8 @@ package com.halokaryamedia.lazybuilder.client;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.UUID;
@@ -13,6 +15,48 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WorldNavigationPreferencesTest {
     @TempDir Path tempDir;
+
+    @Test
+    void predictableTemporarySymlinkCannotOverwriteAnUnrelatedFile() throws Exception {
+        Path path = tempDir.resolve("navigation.properties");
+        Path unrelated = tempDir.resolve("unrelated.properties");
+        Files.writeString(unrelated, "keep me");
+        Path predictable = tempDir.resolve("navigation.properties.tmp");
+        try {
+            Files.createSymbolicLink(predictable, unrelated);
+        } catch (UnsupportedOperationException | IOException unavailable) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "Symbolic links unavailable");
+        }
+
+        UUID world = UUID.randomUUID();
+        WorldNavigationPreferences preferences = new WorldNavigationPreferences(path, () -> "server-a");
+        preferences.togglePinned(world);
+
+        assertEquals("keep me", Files.readString(unrelated));
+        assertTrue(Files.isSymbolicLink(predictable));
+        assertTrue(new WorldNavigationPreferences(path, () -> "server-a").isPinned(world));
+    }
+
+    @Test
+    void unsafeNavigationTargetIsNeitherReadNorOverwritten() throws Exception {
+        Path path = tempDir.resolve("navigation.properties");
+        Path unrelated = tempDir.resolve("unrelated.properties");
+        Files.writeString(unrelated, "keep me");
+        try {
+            Files.createSymbolicLink(path, unrelated);
+        } catch (UnsupportedOperationException | IOException unavailable) {
+            org.junit.jupiter.api.Assumptions.assumeTrue(false, "Symbolic links unavailable");
+        }
+
+        UUID world = UUID.randomUUID();
+        WorldNavigationPreferences preferences = new WorldNavigationPreferences(path, () -> "server-a");
+        preferences.togglePinned(world);
+        preferences.reload();
+
+        assertEquals("keep me", Files.readString(unrelated));
+        assertTrue(Files.isSymbolicLink(path));
+        assertFalse(preferences.isPinned(world));
+    }
 
     @Test
     void returnedListsRemainMutableWithoutExposingCachedState() {
