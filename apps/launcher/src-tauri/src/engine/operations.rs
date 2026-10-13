@@ -232,10 +232,16 @@ impl OperationRegistry {
             entry.error = error;
             entry.can_cancel = false;
             entry.cancel_requested = false;
-            entry.progress = entry.progress.take().map(|mut progress| {
-                if let Some(total) = progress.total { progress.current = total; }
-                progress
-            });
+            // A terminal state is not necessarily successful. Keep the
+            // observed partial progress for failure/cancellation/recovery;
+            // only successful completion may report the full workload.
+            if state == OperationState::Succeeded {
+                if let Some(progress) = entry.progress.as_mut() {
+                    if let Some(total) = progress.total {
+                        progress.current = total;
+                    }
+                }
+            }
             entry.completed_at_unix_seconds = Some(now);
             Ok(())
         })?;
@@ -447,6 +453,43 @@ mod tests {
         assert!(!finished.can_cancel);
         assert!(finished.completed_at_unix_seconds.is_some());
         assert!(registry.succeed(&started.id, "again").is_err());
+    }
+
+    #[test]
+    fn non_successful_terminal_operations_keep_actual_partial_progress() {
+        for terminal in [
+            OperationState::Failed,
+            OperationState::Cancelled,
+            OperationState::RecoveryRequired,
+        ] {
+            let registry = OperationRegistry::default();
+            let started = registry.begin("backup-server", "workspace:test", true).unwrap();
+            registry.set_phase(
+                &started.id,
+                "copying",
+                "Copying",
+                "",
+                Some(OperationProgress { current: 13, total: Some(100), unit: "files".into() }),
+            ).unwrap();
+            let finished = registry.finish(&started.id, terminal.clone(), "Stopped", None).unwrap();
+            assert_eq!(finished.state, terminal);
+            assert_eq!(finished.progress.unwrap().current, 13);
+        }
+    }
+
+    #[test]
+    fn successful_terminal_operation_can_report_full_progress() {
+        let registry = OperationRegistry::default();
+        let started = registry.begin("backup-server", "workspace:test", false).unwrap();
+        registry.set_phase(
+            &started.id,
+            "copying",
+            "Copying",
+            "",
+            Some(OperationProgress { current: 13, total: Some(100), unit: "files".into() }),
+        ).unwrap();
+        let finished = registry.succeed(&started.id, "Completed").unwrap();
+        assert_eq!(finished.progress.unwrap().current, 100);
     }
 
     #[test]
