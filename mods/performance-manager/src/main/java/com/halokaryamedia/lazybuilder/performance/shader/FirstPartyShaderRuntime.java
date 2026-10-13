@@ -224,7 +224,7 @@ public final class FirstPartyShaderRuntime {
         }
         // Compile request is queued only after the scanned catalog has resolved
         // the persisted selection. Preparation still runs on its existing worker.
-        if (activatePending) compileSelected();
+        if (activatePending) activateConfiguredSelection();
     }
 
     public synchronized boolean select(String packId) {
@@ -501,17 +501,18 @@ public final class FirstPartyShaderRuntime {
         synchronized (this) {
             if ("stopped".equals(stage)) return;
             needsCatalog = !catalogLoaded;
-            if (needsCatalog) activateOnCatalogRefresh = true;
+            if (needsCatalog) {
+                activateOnCatalogRefresh = true;
+            } else if (persisted.enabled()
+                    && !persisted.selectedPackId().isBlank()
+                    && persisted.selectedPackId().equals(selectedPackId)) {
+                // Check persisted intent and reserve compilation under the same
+                // monitor as disable(). A late catalog completion must never
+                // reactivate a shader that the user just disabled.
+                compileSelected();
+            }
         }
-        if (needsCatalog) {
-            refreshAsync();
-            return;
-        }
-
-        ShaderRuntimePreferences preferences = persisted;
-        if (preferences.enabled() && !preferences.selectedPackId().isBlank()) {
-            compileSelected();
-        }
+        if (needsCatalog) refreshAsync();
     }
 
     public void recompileIfEnabled() {
