@@ -55,6 +55,17 @@ The canonical Client Setup config is stored under `%LOCALAPPDATA%\LazyBuilder\co
 
 `Sync Client` is transactional across the required LazyBuilder components: new JARs are staged and verified first, current LazyBuilder-owned JARs are backed up, and a failed publish restores the previous set. Third-party mod files are never part of the transaction. Sync is blocked while a running Java/Minecraft process is using the selected profile.
 
+## Plugin Manager — third-party Paper JAR safety
+
+Plugin Manager is an offline, file-based third-party Paper plugin manager, **not** a marketplace or a plugin-version resolver. The Rust `plugin_manager` owner scans `plugin.yml` / `paper-plugin.yml`, checks supported API and required installed dependencies, and stages file changes with rollback evidence. Plugins are changed only when the target server is in a safe stopped state, via the existing Tauri command boundary.
+
+- Install/Update validates the plugin descriptor again from the **staged JAR** before publication. If the selected source changes between initial inspection and staging, a mismatched descriptor is rejected without replacing an installed JAR. This is **not** publisher signature verification, malware scanning, or a promise that arbitrary third-party JARs are trusted.
+- The legacy `server/plugins-disabled` migration uses the existing workspace-owned directory validation and accepts only real regular JAR files. Linked/junction directories and linked source JARs must fail closed rather than move foreign files.
+- Duplicate resolution accepts only one unambiguous exact filename candidate. When enabled/disabled directories contain identical candidate filenames, the current filename-only UI cannot distinguish which one to retain, so resolution is blocked rather than guessing.
+- Existing rollback and `.incoming` recovery files must not be destroyed merely to make a retry proceed. Java/Paper plugin dependency and runtime loading behavior still require real target-server validation.
+
+The added Rust regression tests verify these source-level contracts where supported; Unix symlink tests do **not** establish Windows junction behavior. Cargo/Windows/installed-app acceptance for the exact release candidate remains governed by [Current Verification](../../docs/05-operations/current-verification.md).
+
 ## Server runtime safety
 
 Server library entries are durable even when their storage path is temporarily unavailable; opening the unavailable entry reports the path problem instead of deleting it from the library. A server may be stopped while still in `Starting` state. Paper startup stdout/stderr is captured in the workspace LazyBuilder logs until Paper reaches `Done`, after which the normal Paper `latest.log` is the primary UI log.

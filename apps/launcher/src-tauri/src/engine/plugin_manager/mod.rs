@@ -1090,6 +1090,60 @@ mod tests {
     }
 
     #[test]
+    fn valid_legacy_plugin_migration_reuses_owned_disabled_directory() {
+        let workspace = test_directory("legacy-plugin-migration");
+        let server = workspace.join("server");
+        fs::create_dir_all(server.join("plugins")).unwrap();
+        let legacy = server.join("plugins-disabled");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("legacy.jar"), b"existing legacy plugin").unwrap();
+
+        super::ensure_plugin_manager_layout(&workspace).unwrap();
+        assert!(!legacy.join("legacy.jar").exists());
+        assert_eq!(
+            fs::read(workspace.join("tools/lazybuilder/disabled-plugins/legacy.jar")).unwrap(),
+            b"existing legacy plugin"
+        );
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_directory_symlink_fails_before_moving_any_jar() {
+        use std::os::unix::fs::symlink;
+        let workspace = test_directory("legacy-linked-directory");
+        let server = workspace.join("server");
+        fs::create_dir_all(server.join("plugins")).unwrap();
+        let outside = workspace.join("external-source");
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("outside.jar"), b"preserve outside file").unwrap();
+        symlink(&outside, server.join("plugins-disabled")).unwrap();
+
+        assert!(super::ensure_plugin_manager_layout(&workspace).is_err());
+        assert_eq!(fs::read(outside.join("outside.jar")).unwrap(), b"preserve outside file");
+        assert!(!workspace.join("tools/lazybuilder/disabled-plugins/outside.jar").exists());
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_linked_jar_is_not_migrated() {
+        use std::os::unix::fs::symlink;
+        let workspace = test_directory("legacy-linked-file");
+        let legacy = workspace.join("server/plugins-disabled");
+        fs::create_dir_all(workspace.join("server/plugins")).unwrap();
+        fs::create_dir_all(&legacy).unwrap();
+        let outside = workspace.join("outside.jar");
+        fs::write(&outside, b"preserve original").unwrap();
+        symlink(&outside, legacy.join("fake.jar")).unwrap();
+
+        assert!(super::ensure_plugin_manager_layout(&workspace).is_err());
+        assert_eq!(fs::read(&outside).unwrap(), b"preserve original");
+        assert!(!workspace.join("tools/lazybuilder/disabled-plugins/fake.jar").exists());
+        let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
     fn direct_self_dependency_is_never_satisfied_by_an_installed_version() {
         let plugins = vec![scanned("alpha", true, &["alpha"])];
         let problem = dependency_problem_from_scan(&plugins, plugins[0].metadata.as_ref().unwrap());
