@@ -184,6 +184,50 @@ mod tests {
     }
 
     #[test]
+    fn child_launcher_instance_lock_probe() {
+        let Ok(expected) = std::env::var("LAZYBUILDER_TEST_INSTANCE_LEASE_STATE") else { return; };
+        let path = PathBuf::from(std::env::var("LAZYBUILDER_TEST_INSTANCE_LEASE_PATH").unwrap());
+        match expected.as_str() {
+            "blocked" => {
+                let error = match acquire_at(&path) {
+                    Ok(_) => panic!("second process obtained a held Launcher instance lease"),
+                    Err(error) => error,
+                };
+                assert!(error.contains("already running"), "{error}");
+            }
+            "available" => {
+                let (lease, status) = acquire_at(&path).unwrap();
+                assert!(!status.previous_session_unclean);
+                drop(lease);
+            }
+            _ => panic!("unknown child instance probe state"),
+        }
+    }
+
+    fn run_instance_child(path: &Path, state: &str) {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("child_launcher_instance_lock_probe")
+            .arg("--nocapture")
+            .env("LAZYBUILDER_TEST_INSTANCE_LEASE_PATH", path)
+            .env("LAZYBUILDER_TEST_INSTANCE_LEASE_STATE", state)
+            .output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "child probe failed: {stdout}\n{stderr}");
+        assert!(stdout.contains("1 passed"), "child lock probe was not executed: {stdout}\n{stderr}");
+    }
+
+    #[test]
+    fn launcher_instance_lock_is_exclusive_between_processes_and_reusable() {
+        let path = temp_path("cross-process");
+        let (lease, _) = acquire_at(&path).unwrap();
+        run_instance_child(&path, "blocked");
+        drop(lease);
+        run_instance_child(&path, "available");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn exclusive_instance_lock_is_reusable_after_clean_drop() {
         let path = temp_path("exclusive");
         let (lease, status) = acquire_at(&path).unwrap();

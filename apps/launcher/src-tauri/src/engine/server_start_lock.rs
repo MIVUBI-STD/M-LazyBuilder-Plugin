@@ -125,6 +125,52 @@ mod tests {
         )).join("server-start.lock")
     }
 
+    // These probes execute in a different OS process, not merely a second
+    // handle in the same Rust test process. The filter is unique and the
+    // parent also verifies that exactly one child test actually ran.
+    #[test]
+    fn child_server_lifecycle_lock_probe() {
+        let Ok(expected) = std::env::var("LAZYBUILDER_TEST_SERVER_LEASE_STATE") else { return; };
+        let path = PathBuf::from(std::env::var("LAZYBUILDER_TEST_SERVER_LEASE_PATH").unwrap());
+        match expected.as_str() {
+            "blocked" => {
+                let error = match ServerStartLease::acquire_at(&path) {
+                    Ok(_) => panic!("second process obtained a held lifecycle lock"),
+                    Err(error) => error,
+                };
+                assert!(error.contains(START_IN_PROGRESS_MESSAGE), "{error}");
+            }
+            "available" => {
+                let lease = ServerStartLease::acquire_at(&path).unwrap();
+                drop(lease);
+            }
+            _ => panic!("unknown child lock probe state"),
+        }
+    }
+
+    fn run_server_lifecycle_child(path: &Path, state: &str) {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("child_server_lifecycle_lock_probe")
+            .arg("--nocapture")
+            .env("LAZYBUILDER_TEST_SERVER_LEASE_PATH", path)
+            .env("LAZYBUILDER_TEST_SERVER_LEASE_STATE", state)
+            .output().unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(output.status.success(), "child probe failed: {stdout}\n{stderr}");
+        assert!(stdout.contains("1 passed"), "child lock probe was not executed: {stdout}\n{stderr}");
+    }
+
+    #[test]
+    fn lifecycle_lock_is_exclusive_between_processes_and_reusable_after_drop() {
+        let path = test_path("cross-process");
+        let lease = ServerStartLease::acquire_at(&path).unwrap();
+        run_server_lifecycle_child(&path, "blocked");
+        drop(lease);
+        run_server_lifecycle_child(&path, "available");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
     #[test]
     fn exclusive_lock_releases_on_drop_without_deleting_the_lock_file() {
         let path = test_path("exclusive");
