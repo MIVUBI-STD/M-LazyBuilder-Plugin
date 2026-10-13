@@ -1284,7 +1284,7 @@ mod tests {
         archive.finish().unwrap();
         let problem = ensure_no_enabled_dependents(&directory, "providerplugin").unwrap_err();
         assert!(problem.contains("ConsumerPlugin"));
-        assert!(fs::is_dir(&plugin_dir));
+        assert!(plugin_dir.is_dir());
         assert!(provider_jar.exists() && consumer_jar.exists());
         let _ = fs::remove_dir_all(directory);
     }
