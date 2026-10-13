@@ -5,13 +5,44 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.FileAlreadyExistsException;
 import java.util.Optional;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GitHubChunkerReleaseSourceTest {
+    @TempDir Path tempDir;
+
+    @Test
+    void downloadPublicationNeverClobbersAnExistingFile() throws Exception {
+        Path incoming = tempDir.resolve("download.tmp");
+        Path existing = tempDir.resolve("converter.jar");
+        Files.writeString(incoming, "new bytes");
+        Files.writeString(existing, "preserve existing");
+
+        assertThrows(FileAlreadyExistsException.class,
+                () -> GitHubChunkerReleaseSource.moveIntoPlace(incoming, existing));
+        assertEquals("preserve existing", Files.readString(existing));
+        assertEquals("new bytes", Files.readString(incoming));
+    }
+
+    @Test
+    void downloadPublicationUsesItsNewPathOnly() throws Exception {
+        Path incoming = tempDir.resolve("download.tmp");
+        Path destination = tempDir.resolve("converter-unique.jar");
+        Files.writeString(incoming, "completed bytes");
+
+        GitHubChunkerReleaseSource.moveIntoPlace(incoming, destination);
+
+        assertEquals("completed bytes", Files.readString(destination));
+        assertTrue(Files.notExists(incoming));
+    }
+
     @Test
     void selectsExactCliJarAndReleaseDigest() throws Exception {
         String json = """

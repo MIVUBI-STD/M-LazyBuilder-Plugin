@@ -14,10 +14,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.Locale;
 import java.util.Objects;
@@ -91,7 +89,10 @@ public final class GitHubChunkerReleaseSource
         Objects.requireNonNull(release, "release");
         Path root = Objects.requireNonNull(destinationDirectory, "destinationDirectory").toAbsolutePath().normalize();
         Files.createDirectories(root);
-        String finalName = "converter-" + safeVersion(release.version()) + ".jar";
+        // Every transfer owns a fresh final path. A failed or interrupted
+        // earlier download must never be replaced by a later attempt.
+        String finalName = "converter-" + safeVersion(release.version())
+                + "-" + UUID.randomUUID() + ".jar";
         Path destination = root.resolve(finalName).normalize();
         if (!root.equals(destination.getParent())) throw new IOException("Runtime download path escaped destination root");
         Path temporary = root.resolve("download-" + UUID.randomUUID() + ".tmp");
@@ -223,11 +224,11 @@ public final class GitHubChunkerReleaseSource
         return version;
     }
 
-    private static void moveIntoPlace(Path source, Path target) throws IOException {
-        try {
-            Files.move(source, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (AtomicMoveNotSupportedException ignored) {
-            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
-        }
+    static void moveIntoPlace(Path source, Path target) throws IOException {
+        // A same-directory publication does not need REPLACE_EXISTING or
+        // ATOMIC_MOVE. The latter may replace a target on some providers even
+        // without REPLACE_EXISTING. Readers use only the returned path after
+        // the complete download is published.
+        Files.move(source, target);
     }
 }
