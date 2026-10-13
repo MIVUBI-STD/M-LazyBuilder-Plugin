@@ -144,6 +144,12 @@ mod tests {
                 let lease = ServerStartLease::acquire_at(&path).unwrap();
                 drop(lease);
             }
+            "exit_without_drop" => {
+                let _lease = ServerStartLease::acquire_at(&path).unwrap();
+                // std::process::exit skips Rust Drop; only the OS closes the
+                // locked file descriptor. This also works on Windows CI.
+                std::process::exit(0);
+            }
             _ => panic!("unknown child lock probe state"),
         }
     }
@@ -168,6 +174,22 @@ mod tests {
         run_server_lifecycle_child(&path, "blocked");
         drop(lease);
         run_server_lifecycle_child(&path, "available");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn lifecycle_lock_releases_after_child_exits_without_rust_drop() {
+        let path = test_path("ungraceful-process-exit");
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("child_server_lifecycle_lock_probe")
+            .arg("--nocapture")
+            .env("LAZYBUILDER_TEST_SERVER_LEASE_PATH", &path)
+            .env("LAZYBUILDER_TEST_SERVER_LEASE_STATE", "exit_without_drop")
+            .output().unwrap();
+        assert!(output.status.success(), "child exit test failed: {:?}", output);
+        assert!(path.exists(), "child did not create the lock file");
+        let next = ServerStartLease::acquire_at(&path).unwrap();
+        drop(next);
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 

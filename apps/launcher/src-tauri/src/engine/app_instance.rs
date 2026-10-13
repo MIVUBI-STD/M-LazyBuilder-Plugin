@@ -200,6 +200,11 @@ mod tests {
                 assert!(!status.previous_session_unclean);
                 drop(lease);
             }
+            "exit_without_drop" => {
+                let (_lease, _) = acquire_at(&path).unwrap();
+                // Simulate unclean process exit without running the lease Drop.
+                std::process::exit(0);
+            }
             _ => panic!("unknown child instance probe state"),
         }
     }
@@ -224,6 +229,24 @@ mod tests {
         run_instance_child(&path, "blocked");
         drop(lease);
         run_instance_child(&path, "available");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn leftover_instance_marker_from_child_exit_requires_recovery() {
+        let path = temp_path("ungraceful-process-exit");
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg("child_launcher_instance_lock_probe")
+            .arg("--nocapture")
+            .env("LAZYBUILDER_TEST_INSTANCE_LEASE_PATH", &path)
+            .env("LAZYBUILDER_TEST_INSTANCE_LEASE_STATE", "exit_without_drop")
+            .output().unwrap();
+        assert!(output.status.success(), "child exit test failed: {:?}", output);
+        assert!(path.exists(), "child did not create the instance marker");
+        assert!(fs::metadata(&path).unwrap().len() > 0, "unclean marker was lost");
+        let (lease, startup) = acquire_at(&path).unwrap();
+        assert!(startup.previous_session_unclean);
+        drop(lease);
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
