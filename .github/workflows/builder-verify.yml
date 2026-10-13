@@ -23,9 +23,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
-      - name: Compile and test shared Builder protocol plus Paper Utilities
+      - name: Compile, test and package shared protocol plus Paper Utilities
         shell: pwsh
-        run: .\mvnw.cmd -B -pl plugins/utilities-manager -am test
+        run: .\mvnw.cmd -B -pl plugins/utilities-manager -am package
       - name: Build and test Builder Utilities
         shell: pwsh
         run: .\gradlew.bat -p mods/builder-utilities --no-daemon build

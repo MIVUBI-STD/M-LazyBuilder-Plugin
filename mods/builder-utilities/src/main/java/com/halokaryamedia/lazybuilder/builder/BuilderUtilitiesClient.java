@@ -69,7 +69,21 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
                 scope = com.halokaryamedia.lazybuilder.builder.axiom.AxiomWorldScope
                         .currentScopeId(client.world);
             } catch (IllegalStateException unavailable) {
+                // A scope lost on an otherwise live connection must not strand
+                // an in-flight operation. Detach its durable journal even if
+                // the new Paper identity never arrives.
                 current.suspendWorldAdmission();
+                if (observedWorld != null) {
+                    if (transitionRetryTicks > 0) {
+                        transitionRetryTicks--;
+                    } else if (resetWorldTimeline()) {
+                        observedWorld = null;
+                        observedScope = null;
+                        transitionRetryTicks = 0;
+                    } else {
+                        transitionRetryTicks = 100;
+                    }
+                }
                 return;
             }
         }
@@ -150,7 +164,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
             current.preserveActiveOperations();
         } catch (java.io.IOException e) {
             LOGGER.error(
-                    "Failed to preserve one or more active Builder operations on disconnect. "
+                    "Failed to preserve one or more active Builder operations on world exit. "
                             + "World timeline and proof were intentionally left unchanged.",
                     e);
             return false;
@@ -161,7 +175,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
             if (recovery != null) recovery.releaseForWorldExit();
         } catch (java.io.IOException e) {
             LOGGER.error(
-                    "Failed to release Builder recovery wrappers on disconnect. "
+                    "Failed to release Builder recovery wrappers on world exit. "
                             + "World timeline was intentionally left unchanged.",
                     e);
             return false;
@@ -171,7 +185,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
             current.saveRuntimeProof("world-exit");
         } catch (java.io.IOException e) {
             LOGGER.error(
-                    "Failed to persist Builder runtime proof on world disconnect. "
+                    "Failed to persist Builder runtime proof on world exit. "
                             + "World isolation will continue without publishing this proof.",
                     e);
         }
