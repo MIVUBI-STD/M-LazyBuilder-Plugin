@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.FileAlreadyExistsException;
@@ -41,6 +42,19 @@ class GitHubChunkerReleaseSourceTest {
 
         assertEquals("completed bytes", Files.readString(destination));
         assertTrue(Files.notExists(incoming));
+    }
+
+    @Test
+    void conversionArtifactUrlsMustUseHttpsWithoutEmbeddedCredentials() throws Exception {
+        assertThrows(IOException.class, () -> GitHubChunkerReleaseSource.requireSecureArtifactUri(
+                URI.create("http://example.invalid/chunker.jar")));
+        assertThrows(IOException.class, () -> GitHubChunkerReleaseSource.requireSecureArtifactUri(
+                URI.create("file:///tmp/chunker.jar")));
+        assertThrows(IOException.class, () -> GitHubChunkerReleaseSource.requireSecureArtifactUri(
+                URI.create("https://user:secret@example.invalid/chunker.jar")));
+        assertEquals("https://example.invalid/chunker.jar",
+                GitHubChunkerReleaseSource.requireSecureArtifactUri(
+                        URI.create("https://example.invalid/chunker.jar")).toString());
     }
 
     @Test

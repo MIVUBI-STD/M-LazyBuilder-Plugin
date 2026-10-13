@@ -41,7 +41,7 @@ public final class GitHubChunkerReleaseSource
 
     public GitHubChunkerReleaseSource() {
         this(HttpClient.newBuilder()
-                .followRedirects(HttpClient.Redirect.ALWAYS)
+                .followRedirects(HttpClient.Redirect.NORMAL)
                 .connectTimeout(Duration.ofSeconds(15))
                 .build(), DEFAULT_LATEST_RELEASE);
     }
@@ -87,6 +87,7 @@ public final class GitHubChunkerReleaseSource
     @Override
     public Path download(ConversionRelease release, Path destinationDirectory) throws IOException {
         Objects.requireNonNull(release, "release");
+        URI artifactUri = requireSecureArtifactUri(release.artifactUri());
         Path root = Objects.requireNonNull(destinationDirectory, "destinationDirectory").toAbsolutePath().normalize();
         Files.createDirectories(root);
         // Every transfer owns a fresh final path. A failed or interrupted
@@ -97,7 +98,7 @@ public final class GitHubChunkerReleaseSource
         if (!root.equals(destination.getParent())) throw new IOException("Runtime download path escaped destination root");
         Path temporary = root.resolve("download-" + UUID.randomUUID() + ".tmp");
 
-        HttpRequest request = HttpRequest.newBuilder(release.artifactUri())
+        HttpRequest request = HttpRequest.newBuilder(artifactUri)
                 .timeout(DOWNLOAD_TIMEOUT)
                 .header("Accept", "application/octet-stream")
                 .header("User-Agent", "LazyBuilder-WorldManager")
@@ -188,13 +189,22 @@ public final class GitHubChunkerReleaseSource
             }
             URI uri;
             try {
-                uri = URI.create(requiredString(asset, "browser_download_url"));
+                uri = requireSecureArtifactUri(URI.create(requiredString(asset, "browser_download_url")));
             } catch (IllegalArgumentException invalidUri) {
                 throw new IOException("Stable CLI asset has an invalid download URL", invalidUri);
             }
             return Optional.of(new ConversionRelease(version, uri, digest.substring("sha256:".length())));
         }
         throw new IOException("Stable Chunker release does not contain expected CLI artifact " + expectedAsset);
+    }
+
+    static URI requireSecureArtifactUri(URI uri) throws IOException {
+        if (uri == null || !"https".equalsIgnoreCase(uri.getScheme())
+                || uri.getHost() == null || uri.getHost().isBlank()
+                || uri.getUserInfo() != null || uri.getFragment() != null) {
+            throw new IOException("Conversion runtime artifact URL must be an ordinary HTTPS URL");
+        }
+        return uri;
     }
 
     private static boolean booleanValue(JsonObject object, String key) {
