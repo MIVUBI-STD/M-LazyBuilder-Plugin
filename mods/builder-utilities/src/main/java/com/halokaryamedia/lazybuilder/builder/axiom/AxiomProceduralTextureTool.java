@@ -72,6 +72,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
     private BlockPos first;
     private BlockPos second;
     private List<PlacementPoint> previewPoints = List.of();
+    private boolean previewReady;
     private AxiomPointPreviewRegion preview;
     private String idleStatus = "Right-click two block faces to define a texture box";
 
@@ -93,6 +94,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
         if (first == null || second != null) {
             first = point;
             second = null;
+            previewReady = false;
             previewPoints = List.of();
             if (preview != null) preview.clear();
             idleStatus = "First corner set; choose second corner";
@@ -108,6 +110,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
         if (mutation.isActive()) return false;
         if (second != null) {
             second = null;
+            previewReady = false;
             previewPoints = List.of();
             if (preview != null) preview.clear();
             idleStatus = "Second corner cleared";
@@ -123,7 +126,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
 
     @Override
     public boolean callConfirm() {
-        if (mutation.isActive() || first == null || second == null || previewPoints.isEmpty()) return false;
+        if (mutation.isActive() || first == null || second == null || !previewReady) return false;
         try {
             startMutation();
             return true;
@@ -211,6 +214,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
     }
 
     private void rebuildPreview() {
+        previewReady = false;
         try {
             BlockBounds bounds = bounds();
             ClientWorld world = Objects.requireNonNull(
@@ -230,10 +234,17 @@ public final class AxiomProceduralTextureTool implements CustomTool {
                     targetMask()
             );
             ensurePreview().update(previewPoints);
-            idleStatus = ProceduralTexturePreview.isDecimated(bounds)
-                    ? "Preview sampled for large region; Confirm applies the full deterministic region"
-                    : "Preview ready";
+            previewReady = previewPermitsApply(bounds, previewPoints);
+            boolean sampled = ProceduralTexturePreview.isDecimated(bounds);
+            idleStatus = previewPoints.isEmpty()
+                    ? (sampled
+                            ? "Sampled preview shows no changes; Confirm evaluates the full region"
+                            : "No changes needed in selected region")
+                    : sampled
+                            ? "Preview sampled for large region; Confirm applies the full deterministic region"
+                            : "Preview ready";
         } catch (RuntimeException e) {
+            previewReady = false;
             previewPoints = List.of();
             if (preview != null) preview.clear();
             idleStatus = "Preview failed: " + safeMessage(e);
@@ -364,6 +375,10 @@ public final class AxiomProceduralTextureTool implements CustomTool {
         );
     }
 
+    static boolean previewPermitsApply(BlockBounds bounds, List<PlacementPoint> points) {
+        return !points.isEmpty() || ProceduralTexturePreview.isDecimated(bounds);
+    }
+
     private AxiomPointPreviewRegion ensurePreview() {
         if (preview == null) {
             preview = new AxiomPointPreviewRegion(services.regionProvider().createBoolean());
@@ -374,6 +389,7 @@ public final class AxiomProceduralTextureTool implements CustomTool {
     private void clearGeometry() {
         first = null;
         second = null;
+        previewReady = false;
         previewPoints = List.of();
         if (preview != null) preview.clear();
     }

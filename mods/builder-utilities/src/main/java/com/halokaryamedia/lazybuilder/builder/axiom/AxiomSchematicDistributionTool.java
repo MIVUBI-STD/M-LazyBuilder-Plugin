@@ -513,10 +513,17 @@ public final class AxiomSchematicDistributionTool implements CustomTool {
             throw new IllegalStateException(
                     "catalog palette has no schematics compatible with current authorities");
         }
-        List<WeightedPlacementSource.Entry> weighted = supportedCatalog.keySet().stream()
+        return new WeightedPlacementSource(
+                sortedPaletteEntries(supportedCatalog.keySet()),
+                0x50414c455454454cL);
+    }
+
+    static List<WeightedPlacementSource.Entry> sortedPaletteEntries(
+            java.util.Collection<String> sourceIds
+    ) {
+        return sourceIds.stream().sorted()
                 .map(id -> new WeightedPlacementSource.Entry(id, 1.0))
                 .toList();
-        return new WeightedPlacementSource(weighted, 0x50414c455454454cL);
     }
 
     private SpongeSchematicImport applyImport(SpongeSchematicImport source) {
