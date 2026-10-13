@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.builder.axiom;
 import com.halokaryamedia.lazybuilder.builder.BuilderRuntime;
 import com.halokaryamedia.lazybuilder.builder.history.HistoryTimelineLease;
 import com.halokaryamedia.lazybuilder.builder.history.ReplayDirection;
+import com.halokaryamedia.lazybuilder.builder.history.ScopedOperationIds;
 import com.halokaryamedia.lazybuilder.builder.operation.RecoverableActiveOperation;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchSlice;
 import com.halokaryamedia.lazybuilder.builder.mutation.BudgetedDispatchState;
@@ -104,6 +105,9 @@ public final class AxiomMixedHistoryReplayController
             BuilderRuntime runtime,
             ClientWorld world
     ) throws IOException {
+        String operationId = runtime.timeline().nextUndoOperationId()
+                .orElseThrow(() -> new IllegalStateException("Nothing to undo"));
+        requireReplayScope(operationId, AxiomWorldScope.currentScopeId(world));
         HistoryTimelineLease lease = runtime.timeline().beginUndo()
                 .orElseThrow(() -> new IllegalStateException("Nothing to undo"));
         AxiomMixedHistoryReplayController controller = null;
@@ -124,6 +128,9 @@ public final class AxiomMixedHistoryReplayController
             BuilderRuntime runtime,
             ClientWorld world
     ) throws IOException {
+        String operationId = runtime.timeline().nextRedoOperationId()
+                .orElseThrow(() -> new IllegalStateException("Nothing to redo"));
+        requireReplayScope(operationId, AxiomWorldScope.currentScopeId(world));
         HistoryTimelineLease lease = runtime.timeline().beginRedo()
                 .orElseThrow(() -> new IllegalStateException("Nothing to redo"));
         AxiomMixedHistoryReplayController controller = null;
@@ -136,6 +143,14 @@ public final class AxiomMixedHistoryReplayController
             if (controller != null) controller.closeTransports();
             lease.abort();
             throw failure;
+        }
+    }
+
+    static void requireReplayScope(String operationId, String activeScope) {
+        if (!ScopedOperationIds.belongsTo(operationId, activeScope)) {
+            throw new IllegalStateException(
+                    "Builder history does not belong to this world; replay refused. "
+                            + "Return to the original world or inspect Builder Recovery.");
         }
     }
 
