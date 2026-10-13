@@ -45,10 +45,10 @@ pub fn coordinate(operation_recovery: Result<OperationRecoveryReport, String>, p
 
     if previous_session_unclean {
         degraded = true;
-        diagnostics::info("Previous LazyBuilder session ended without releasing its instance marker; recovery checks will run before normal use.");
-        steps.push(warning_step("launcher-session", "Previous Launcher session ended unexpectedly", "LazyBuilder recovered a stale instance marker. Filesystem, operation, creation, adoption, duplicate, restore, backup, and Paper process reconciliation will run before normal use."));
+        diagnostics::info("An unclean previous Launcher session was detected from the retained instance marker; startup recovery checks will run.");
+        steps.push(warning_step("launcher-session", "Previous Launcher session ended unexpectedly", "The retained instance marker indicates an unclean exit. Filesystem, operation, creation, adoption, duplicate, restore, backup, and Paper process reconciliation will run before normal use."));
     } else {
-        steps.push(ready_step("launcher-session", "Launcher session state clean", "No stale Launcher instance marker was found."));
+        steps.push(ready_step("launcher-session", "Launcher session state clean", "No unclean previous Launcher session was detected."));
     }
 
     match operation_recovery {

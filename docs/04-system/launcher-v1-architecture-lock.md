@@ -29,6 +29,24 @@ Rules:
 - `runtimeApi.ts` is composition-only. Command ownership belongs to bounded APIs such as `appApi`, `workspaceApi`, `serverApi`, `pluginApi`, `clientApi`, and `worldApi`.
 - Svelte must not become a second source of truth for runtime or filesystem state.
 
+## Runtime lock and crash-recovery contract
+
+The Launcher single-instance lease and the shared server-lifecycle/active-selection
+lease use Rust standard-library OS-exclusive file locks on the existing Launcher
+app-data paths. The lock files remain at stable paths; deleting a locked pathname
+would let another process lock a different file under the same name. Lock handles
+are owned by their current operations and released by the OS when closed or after
+process termination. No polling worker, replacement manager, or new crate is needed.
+
+The single-instance file retains a small versioned marker while open. A normal
+drop clears it; a crash leaves it as an unclean-session signal for the existing
+startup reconciler. Supported old PID-only markers are read for migration, and
+active old owners are still rejected. Incomplete, unsafe, or future markers are
+preserved rather than guessed stale. On server-lifecycle locks, the old PID marker
+is cleared after a safe acquisition and the OS lock becomes authoritative.
+Both locks require exact-head Rust tests and Windows concurrent-process/crash
+acceptance before installed runtime claims are considered verified.
+
 ## Ownership
 
 Launcher owns:

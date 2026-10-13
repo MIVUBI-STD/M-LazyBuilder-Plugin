@@ -1,7 +1,7 @@
 use crate::engine::persistence;
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions, TryLockError};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
 
@@ -218,6 +218,23 @@ mod tests {
         fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
         assert!(acquire_at(&path).is_err());
         assert_eq!(fs::read_to_string(&path).unwrap(), serde_json::to_string(&legacy).unwrap());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn newer_unknown_instance_marker_is_preserved_for_recovery() {
+        let path = temp_path("newer-schema");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let mut marker = current_launcher_marker().unwrap();
+        marker.lease_version = OS_LOCK_LEASE_VERSION + 1;
+        let original = serde_json::to_string(&marker).unwrap();
+        fs::write(&path, &original).unwrap();
+        let error = match acquire_at(&path) {
+            Ok(_) => panic!("unknown future marker must fail closed"),
+            Err(error) => error,
+        };
+        assert!(error.contains("newer unsupported"));
+        assert_eq!(fs::read_to_string(&path).unwrap(), original);
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
