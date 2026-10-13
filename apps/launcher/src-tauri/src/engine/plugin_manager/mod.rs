@@ -221,7 +221,13 @@ impl PluginManagerState {
                     "Installed plugin metadata became unavailable before enable: {}",
                     existing.path.display()
                 ))?;
-            if let Some(problem) = dependency_problem(&workspace, metadata)? {
+            // Recheck provider aliases on enable as well: an externally placed
+            // disabled JAR could conflict with a newer installed plugin.
+            let scanned = scan_all(&workspace)?;
+            if let Some(problem) = identity_conflict_from_scan(&scanned, metadata) {
+                return Err(problem);
+            }
+            if let Some(problem) = dependency_problem_from_scan(&scanned, metadata) {
                 return Err(problem);
             }
         } else {
@@ -1315,6 +1321,16 @@ mod tests {
         let all = vec![consumer, provider];
         assert!(dependency_problem_from_scan(&all, all[0].metadata.as_ref().unwrap())
             .unwrap().contains("disabled"));
+    }
+
+    #[test]
+    fn enabling_a_provider_cannot_shadow_an_existing_plugin_identity() {
+        let mut candidate = scanned("disabled-provider", false, &[]);
+        candidate.metadata.as_mut().unwrap().provides.push("compat-api".into());
+        let installed = scanned("compat-api", true, &[]);
+        let all = vec![candidate, installed];
+        let conflict = identity_conflict_from_scan(&all, all[0].metadata.as_ref().unwrap());
+        assert!(conflict.unwrap().contains("compat-api"));
     }
 
     #[test]
