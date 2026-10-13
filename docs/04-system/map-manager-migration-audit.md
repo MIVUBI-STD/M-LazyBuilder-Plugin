@@ -95,16 +95,18 @@ A new abstraction requires a demonstrated second consumer or a clearly independe
 
 ## Quality gates
 
-Every structural Map Manager change on `Local` must be proven on the exact resulting HEAD.
+A scoped source change may be completed with explicitly bounded source-level evidence; that status does **not** establish an integrated or native acceptance pass. For a release/installer candidate, all required executable proof must target the same exact `Local` revision.
 
-Required automated gates:
+Current workflow triggers (checked against `.github/workflows/*.yml` on 2026-10-13):
 
-- `Verify` on direct `Local` pushes;
-- Fabric compile/test/package verification;
-- Paper compile/test and managed-world runtime proofs where shared/server code is affected;
-- `Minecraft UI Preview` on direct `Local` pushes for Map Manager UI/runtime changes.
+- Integrated `Verify` is `workflow_dispatch` only; a normal push to `Local` does **not** run it automatically.
+- `Minecraft UI Preview` is `workflow_dispatch` only; Map Manager UI/runtime changes do **not** automatically trigger a visual run on push.
+- Fabric compile/test/package verification is required for a release candidate.
+- Paper compile/test and managed-world runtime proof are required where the shared protocol or server behavior changes.
 
-Visual proof must remain a real Minecraft 1.21.4 client run, not only screenshot-state injection.
+A visual run is evidence only for the scenarios and SHA it actually executes. Native Minecraft 1.21.4 UI interaction and installed-environment acceptance remain separate where required; injected screen states alone cannot establish full product usability.
+
+The canonical active rules, dispatch prerequisites and release gates remain in [Current Verification](../05-operations/current-verification.md).
 
 ## Remaining audit targets
 
@@ -121,4 +123,4 @@ The following remain valid improvement targets:
 
 `Local` is the integration source of truth.
 
-A Map Manager structural change is not considered complete until the exact `Local` HEAD has green automated proof. Historical green runs are supporting evidence only.
+Distinguish a committed source-level fix from a verified release candidate. Only the latter requires the matching integrated `Verify` and applicable visual/native proof gates; old successful runs cannot certify a newer commit. No automatic workflow dispatch or promotion to `main` is implied.
