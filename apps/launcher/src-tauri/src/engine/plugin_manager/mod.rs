@@ -52,6 +52,7 @@ struct PluginMetadata {
     version: String,
     api_version: String,
     dependencies: Vec<String>,
+    provides: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +63,8 @@ struct PluginYaml {
     api_version: Option<serde_yaml::Value>,
     #[serde(default)]
     depend: Vec<String>,
+    #[serde(default)]
+    provides: Vec<String>,
     #[serde(default)]
     dependencies: Option<serde_yaml::Value>,
 }
@@ -101,6 +104,9 @@ impl PluginManagerState {
                 ),
             ));
         }
+        if let Some(problem) = identity_conflict_from_scan(&scan_all(&workspace)?, &incoming) {
+            return Ok(failed_result(incoming.id, problem));
+        }
         if let Some(problem) = dependency_problem(&workspace, &incoming)? {
             return Ok(failed_result(incoming.id, problem));
         }
@@ -135,11 +141,20 @@ impl PluginManagerState {
         if existing.len() > 1 {
             return Ok(failed_result(canonical_id, "Duplicate plugin versions must be resolved before updating."));
         }
-        if let Some(problem) = dependency_problem(&workspace, &incoming)? {
+        let scanned = scan_all(&workspace)?;
+        if let Some(problem) = identity_conflict_from_scan(&scanned, &incoming) {
+            return Ok(failed_result(canonical_id, problem));
+        }
+        if let Some(problem) = dependency_problem_from_scan(&scanned, &incoming) {
             return Ok(failed_result(canonical_id, problem));
         }
 
         let current = &existing[0];
+        if let Some(old) = current.metadata.as_ref() {
+            if let Some(problem) = update_provider_breakage_from_scan(&scanned, old, &incoming) {
+                return Ok(failed_result(canonical_id, problem));
+            }
+        }
         let current_version = current.metadata.as_ref()
             .ok_or_else(|| format!(
                 "Installed plugin metadata became unavailable during update: {}",
@@ -417,7 +432,8 @@ fn list_plugins_inner(workspace: &Path) -> Result<Vec<PluginSummary>, String> {
             problem = Some(format!("Duplicate plugin JARs detected: {}", files.join(", ")));
             candidate_files = Some(files);
         } else if primary.enabled {
-            if let Some(reason) = dependency_problem_from_scan(&scanned, metadata) {
+            if let Some(reason) = identity_conflict_from_scan(&scanned, metadata)
+                .or_else(|| dependency_problem_from_scan(&scanned, metadata)) {
                 state = "Problem".into();
                 problem = Some(reason);
             }
@@ -548,7 +564,13 @@ fn read_metadata_uncached(path: &Path) -> Result<PluginMetadata, String> {
     dependencies.sort();
     dependencies.dedup();
 
-    Ok(PluginMetadata { id, name: parsed.name, version, api_version, dependencies })
+    let mut provides = parsed.provides.into_iter()
+        .filter(|value| !value.trim().is_empty())
+        .map(|value| normalize_id(&value)).collect::<Vec<_>>();
+    provides.sort();
+    provides.dedup();
+
+    Ok(PluginMetadata { id, name: parsed.name, version, api_version, dependencies, provides })
 }
 
 fn parse_paper_dependencies(value: Option<&serde_yaml::Value>) -> Vec<String> {
@@ -642,55 +664,131 @@ fn dependency_problem(workspace: &Path, metadata: &PluginMetadata) -> Result<Opt
     Ok(dependency_problem_from_scan(&scanned, metadata))
 }
 
-/// Inspect the required dependency closure using the same authoritative scan for
-/// presentation and mutation admission. This does not resolve plugin versions or
-/// invent load ordering for Paper's BEFORE/AFTER/OMIT dependency rules.
+/// Match the plugin's own identity or any Bukkit `provides` alias.
+/// Paper remains the runtime authority for dynamic/provider load behavior.
+fn claims_identity(metadata: &PluginMetadata, name: &str) -> bool {
+    metadata.id == name || metadata.provides.iter().any(|provided| provided == name)
+}
+
+fn identity_conflict_from_scan(scanned: &[ScannedPlugin], incoming: &PluginMetadata) -> Option<String> {
+    if incoming.provides.iter().any(|provided| {
+        matches!(provided.as_str(), "world-manager" | "utilities-manager")
+    }) {
+        return Some("Third-party plugins cannot provide reserved LazyBuilder core identities.".into());
+    }
+    let identities = std::iter::once(&incoming.id).chain(incoming.provides.iter());
+    for name in identities {
+        if let Some(other) = scanned.iter().filter_map(|item| item.metadata.as_ref())
+            .find(|installed| installed.id != incoming.id && claims_identity(installed, name)) {
+            return Some(format!(
+                "Plugin identity/alias {name} conflicts with installed plugin {}.",
+                other.name
+            ));
+        }
+    }
+    // A newly provided alias may also shadow the existing primary name of an
+    // installed plugin, even when that plugin declares no aliases.
+    None
+}
+
+/// Resolve required dependencies through canonical names AND explicitly
+/// advertised aliases. A staged update replaces the existing version of its
+/// own ID in this inspection, instead of creating a false duplicate provider.
+/// Required availability is not a claim about Paper BEFORE/AFTER/OMIT ordering.
 fn dependency_problem_from_scan(scanned: &[ScannedPlugin], metadata: &PluginMetadata) -> Option<String> {
-    if metadata.dependencies.iter().any(|dependency| dependency == &metadata.id) {
+    if metadata.dependencies.iter().any(|name| name == &metadata.id) {
         return Some(format!("Plugin {} declares itself as a required dependency.", metadata.name));
     }
-
-    let mut visited = HashSet::from([metadata.id.clone()]);
-    let mut pending = metadata.dependencies.iter().rev()
-        .map(|dependency| (metadata.name.clone(), dependency.clone()))
-        .collect::<Vec<_>>();
-
-    while let Some((parent, dependency)) = pending.pop() {
-        if !visited.insert(dependency.clone()) {
-            // A dependency already visited requires no second disk/metadata scan.
-            // Cyclic Paper load ordering needs separate, version-specific evidence.
+    let mut visited = HashSet::new();
+    let mut active = HashSet::from([metadata.id.clone()]);
+    let mut stack = vec![(metadata.clone(), 0usize)];
+    while let Some((current, index)) = stack.last_mut() {
+        if *index >= current.dependencies.len() {
+            active.remove(&current.id);
+            visited.insert(current.id.clone());
+            stack.pop();
             continue;
         }
-        let mut candidates = scanned.iter().filter(|plugin| {
-            plugin.metadata.as_ref().is_some_and(|value| value.id == dependency)
-        });
-        let Some(installed) = candidates.next() else {
-            return Some(format!("Missing required dependency {dependency} (required by {parent})."));
+        let dependency = current.dependencies[*index].clone();
+        *index += 1;
+        let is_root = claims_identity(metadata, &dependency);
+        let candidates = scanned.iter().filter(|item| {
+            item.metadata.as_ref().is_some_and(|provided| {
+                provided.id != metadata.id && claims_identity(provided, &dependency)
+            })
+        }).collect::<Vec<_>>();
+        let provider_count = candidates.len() + usize::from(is_root);
+        if provider_count == 0 {
+            return Some(format!(
+                "Missing required dependency {dependency} (required by {}).", current.name
+            ));
+        }
+        if provider_count > 1 {
+            return Some(format!(
+                "Required dependency {dependency} has multiple providers/duplicate JARs (required by {}).",
+                current.name
+            ));
+        }
+        let (provider, enabled) = if is_root {
+            (metadata, true)
+        } else {
+            (candidates[0].metadata.as_ref().expect("filtered metadata"), candidates[0].enabled)
         };
-        if candidates.next().is_some() {
-            return Some(format!("Required dependency {dependency} has duplicate JARs (required by {parent})."));
+        if !enabled {
+            return Some(format!(
+                "Required dependency {dependency} is disabled (required by {}).", current.name
+            ));
         }
-        if !installed.enabled {
-            return Some(format!("Required dependency {dependency} is disabled (required by {parent})."));
+        if active.contains(&provider.id) {
+            return Some(format!(
+                "Cyclic required plugin dependency detected: {} -> {}.", current.name, provider.name
+            ));
         }
-        if let Some(required) = installed.metadata.as_ref() {
-            pending.extend(required.dependencies.iter().rev()
-                .map(|nested| (required.name.clone(), nested.clone())));
+        if !visited.contains(&provider.id) {
+            active.insert(provider.id.clone());
+            stack.push((provider.clone(), 0));
         }
     }
     None
 }
 
-fn ensure_no_enabled_dependents(workspace: &Path, canonical_id: &str) -> Result<(), String> {
-    let mut dependents = scan_all(workspace)?.into_iter()
+fn enabled_dependents_from_scan(scanned: &[ScannedPlugin], identities: &HashSet<String>, except: &str) -> Vec<String> {
+    let mut dependents = scanned.iter()
         .filter(|item| item.enabled)
-        .filter_map(|item| item.metadata)
-        .filter(|metadata| metadata.id != canonical_id)
-        .filter(|metadata| metadata.dependencies.iter().any(|dependency| dependency.eq_ignore_ascii_case(canonical_id)))
-        .map(|metadata| metadata.name)
+        .filter_map(|item| item.metadata.as_ref())
+        .filter(|metadata| metadata.id != except)
+        .filter(|metadata| metadata.dependencies.iter().any(|required| identities.contains(required)))
+        .map(|metadata| metadata.name.clone())
         .collect::<Vec<_>>();
-    dependents.sort_by_key(|value| value.to_lowercase());
+    dependents.sort_by_key(|name| name.to_lowercase());
     dependents.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    dependents
+}
+
+fn update_provider_breakage_from_scan(
+    scanned: &[ScannedPlugin], previous: &PluginMetadata, replacement: &PluginMetadata,
+) -> Option<String> {
+    let removed = previous.provides.iter()
+        .filter(|provided| !replacement.provides.contains(provided))
+        .cloned().collect::<HashSet<_>>();
+    if removed.is_empty() { return None; }
+    let dependents = enabled_dependents_from_scan(scanned, &removed, &previous.id);
+    if dependents.is_empty() { return None; }
+    Some(format!(
+        "Plugin update removes required provider aliases used by: {}.",
+        dependents.join(", ")
+    ))
+}
+
+fn ensure_no_enabled_dependents(workspace: &Path, canonical_id: &str) -> Result<(), String> {
+    let scanned = scan_all(workspace)?;
+    let mut identities = HashSet::from([canonical_id.to_string()]);
+    for metadata in scanned.iter().filter_map(|item| item.metadata.as_ref()) {
+        if metadata.id == canonical_id {
+            identities.extend(metadata.provides.iter().cloned());
+        }
+    }
+    let dependents = enabled_dependents_from_scan(&scanned, &identities, canonical_id);
     if dependents.is_empty() { return Ok(()); }
     Err(format!(
         "Cannot disable or remove this plugin while required by enabled plugin{}: {}.",
@@ -1000,11 +1098,13 @@ fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstall
 #[cfg(test)]
 mod tests {
     use super::{
-        copy_atomic, dependency_problem_from_scan, parse_paper_dependencies, read_metadata,
+        copy_atomic, dependency_problem_from_scan, enabled_dependents_from_scan,
+        identity_conflict_from_scan, parse_paper_dependencies, read_metadata,
         publish_recovery_backup, restore_from_backup, replace_file, stage_copy,
-        unique_duplicate_selection, PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
+        unique_duplicate_selection, update_provider_breakage_from_scan,
+        PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
     };
-    use std::{fs, io::Write, path::PathBuf};
+    use std::{collections::HashSet, fs, io::Write, path::PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(1);
@@ -1019,6 +1119,7 @@ mod tests {
                 version: "1.0".into(),
                 api_version: "1.21".into(),
                 dependencies: required.iter().map(|value| value.to_string()).collect(),
+                provides: Vec::new(),
             }),
             enabled,
             error: None,
@@ -1141,6 +1242,91 @@ mod tests {
         assert_eq!(fs::read(&outside).unwrap(), b"preserve original");
         assert!(!workspace.join("tools/lazybuilder/disabled-plugins/fake.jar").exists());
         let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn provided_alias_satisfies_required_dependency_closure() {
+        let root = scanned("consumer", true, &["compat-api"]);
+        let mut provider = scanned("plugin-provider", true, &[]);
+        provider.metadata.as_mut().unwrap().provides.push("compat-api".into());
+        let all = vec![root, provider];
+        assert!(dependency_problem_from_scan(&all, all[0].metadata.as_ref().unwrap()).is_none());
+    }
+
+    #[test]
+    fn disabled_alias_provider_is_rejected() {
+        let consumer = scanned("consumer", true, &["compat-api"]);
+        let mut provider = scanned("plugin-provider", false, &[]);
+        provider.metadata.as_mut().unwrap().provides.push("compat-api".into());
+        let all = vec![consumer, provider];
+        assert!(dependency_problem_from_scan(&all, all[0].metadata.as_ref().unwrap())
+            .unwrap().contains("disabled"));
+    }
+
+    #[test]
+    fn duplicate_alias_providers_are_not_chosen_arbitrarily() {
+        let consumer = scanned("consumer", true, &["compat-api"]);
+        let mut first = scanned("first", true, &[]);
+        let mut second = scanned("second", true, &[]);
+        first.metadata.as_mut().unwrap().provides.push("compat-api".into());
+        second.metadata.as_mut().unwrap().provides.push("compat-api".into());
+        let all = vec![consumer, first, second];
+        assert!(dependency_problem_from_scan(&all, all[0].metadata.as_ref().unwrap())
+            .unwrap().contains("multiple providers"));
+        assert!(identity_conflict_from_scan(&all, all[1].metadata.as_ref().unwrap()).is_some());
+    }
+
+    #[test]
+    fn provider_alias_dependents_block_disable_or_remove() {
+        let mut provider = scanned("provider", true, &[]);
+        provider.metadata.as_mut().unwrap().provides.push("compat-api".into());
+        let consumer = scanned("consumer", true, &["compat-api"]);
+        let affected = enabled_dependents_from_scan(
+            &[provider, consumer],
+            &HashSet::from(["provider".into(), "compat-api".into()]),
+            "provider",
+        );
+        assert_eq!(affected, vec!["consumer"]);
+    }
+
+    #[test]
+    fn update_may_not_silently_remove_alias_needed_by_enabled_plugin() {
+        let mut old = scanned("provider", true, &[]);
+        old.metadata.as_mut().unwrap().provides.push("compat-api".into());
+        let consumer = scanned("consumer", true, &["compat-api"]);
+        let incoming = scanned("provider", true, &[]);
+        let all = vec![old.clone(), consumer];
+        assert!(update_provider_breakage_from_scan(
+            &all, old.metadata.as_ref().unwrap(), incoming.metadata.as_ref().unwrap()
+        ).unwrap().contains("consumer"));
+    }
+
+    #[test]
+    fn cyclic_required_dependency_is_reported_instead_of_silently_skipped() {
+        let root = scanned("alpha", true, &["beta"]);
+        let second = scanned("beta", true, &["gamma"]);
+        let third = scanned("gamma", true, &["alpha"]);
+        let all = vec![root, second, third];
+        assert!(dependency_problem_from_scan(&all, all[0].metadata.as_ref().unwrap())
+            .unwrap().contains("Cyclic required"));
+    }
+
+    #[test]
+    fn staged_update_replaces_old_version_in_dependency_resolution() {
+        let old = scanned("plugin-a", true, &["missing-old-dependency"]);
+        let incoming = scanned("plugin-a", true, &["plugin-b"]);
+        let other = scanned("plugin-b", true, &[]);
+        assert!(dependency_problem_from_scan(
+            &[old, other], incoming.metadata.as_ref().unwrap()
+        ).is_none());
+    }
+
+    #[test]
+    fn reserved_core_alias_is_rejected() {
+        let mut incoming = scanned("third-party", true, &[]);
+        incoming.metadata.as_mut().unwrap().provides.push("world-manager".into());
+        assert!(identity_conflict_from_scan(&[], incoming.metadata.as_ref().unwrap())
+            .unwrap().contains("reserved"));
     }
 
     #[test]
