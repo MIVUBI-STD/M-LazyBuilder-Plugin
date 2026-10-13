@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 const MAX_OPERATION_HISTORY: usize = 100;
+const MAX_OPERATION_WARNINGS: usize = 16;
+const MAX_OPERATION_WARNING_CHARS: usize = 384;
 const MAX_OPERATION_JOURNAL_BYTES: u64 = 4 * 1024 * 1024;
 const OPERATION_JOURNAL_SCHEMA_VERSION: u32 = 1;
 const WORKSPACE_LIBRARY_RESOURCE: &str = "workspace-library";
@@ -197,8 +199,18 @@ impl OperationRegistry {
         self.mutate(id, |entry| {
             ensure_active(entry)?;
             let warning = warning.trim();
-            if !warning.is_empty() && !entry.warnings.iter().any(|existing| existing == warning) {
-                entry.warnings.push(warning.to_string());
+            if !warning.is_empty() {
+                let mut chars = warning.chars();
+                let mut bounded: String = chars.by_ref().take(MAX_OPERATION_WARNING_CHARS).collect();
+                if chars.next().is_some() {
+                    bounded.push('…');
+                }
+                if !entry.warnings.iter().any(|existing| existing == &bounded) {
+                    if entry.warnings.len() >= MAX_OPERATION_WARNINGS {
+                        entry.warnings.remove(0);
+                    }
+                    entry.warnings.push(bounded);
+                }
             }
             Ok(())
         })
@@ -491,6 +503,30 @@ mod tests {
         ).unwrap();
         let finished = registry.succeed(&started.id, "Completed").unwrap();
         assert_eq!(finished.progress.unwrap().current, 100);
+    }
+
+    #[test]
+    fn operation_warning_history_is_bounded_and_keeps_the_newest_entries() {
+        let registry = OperationRegistry::default();
+        let started = registry.begin("backup-server", "workspace:test", true).unwrap();
+        for index in 0..(MAX_OPERATION_WARNINGS + 4) {
+            registry.add_warning(&started.id, &format!("warning-{index}")).unwrap();
+        }
+        let after = registry.get(&started.id).unwrap();
+        assert_eq!(after.warnings.len(), MAX_OPERATION_WARNINGS);
+        assert_eq!(after.warnings.first().unwrap(), "warning-4");
+        assert_eq!(after.warnings.last().unwrap(), &format!("warning-{}", MAX_OPERATION_WARNINGS + 3));
+
+        registry.add_warning(&started.id, &"🛠".repeat(MAX_OPERATION_WARNING_CHARS + 100)).unwrap();
+        let after_long = registry.get(&started.id).unwrap();
+        assert_eq!(after_long.warnings.len(), MAX_OPERATION_WARNINGS);
+        assert_eq!(
+            after_long.warnings.last().unwrap().chars().count(),
+            MAX_OPERATION_WARNING_CHARS + 1,
+        );
+        assert!(after_long.warnings.last().unwrap().ends_with('…'));
+        registry.add_warning(&started.id, &"🛠".repeat(MAX_OPERATION_WARNING_CHARS + 100)).unwrap();
+        assert_eq!(registry.get(&started.id).unwrap().warnings.len(), MAX_OPERATION_WARNINGS);
     }
 
     #[test]
