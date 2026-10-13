@@ -210,6 +210,33 @@ class TransferSessionServiceTest {
     }
 
     @Test
+    void failedAcceptedImportMustReuseItsOriginalRequestIdentity() throws Exception {
+        Path imports = tempDir.resolve("imports-retry-id");
+        TransferSessionService service = new TransferSessionService(
+                imports, tempDir.resolve("exports-retry-id"), tempDir.resolve("transfer-retry-id"),
+                new TransferPolicy(4, 1024, 1, 1));
+        UUID owner = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        byte[] bytes = {1, 2, 3, 4};
+        TransferDescriptor upload = service.beginUpload(owner, "admitted-retry.zip", bytes.length, sha256(bytes));
+        service.acceptUploadChunk(owner, upload.sessionId(), 0, bytes);
+        service.finishUpload(owner, upload.sessionId());
+
+        assertTrue(service.claimCompletedUploadForImport(
+                owner, "admitted-retry.zip", requestId, "World", "World Name"));
+        assertTrue(service.returnCompletedUploadToOwner(owner, "admitted-retry.zip"));
+        assertThrows(IllegalStateException.class, () ->
+                service.claimCompletedUploadForImport(
+                        owner, "admitted-retry.zip", UUID.randomUUID(), "World", "World Name"));
+        assertThrows(IllegalStateException.class, () ->
+                service.claimCompletedUploadForImport(
+                        owner, "admitted-retry.zip", requestId, "Other", "World Name"));
+        assertTrue(service.claimCompletedUploadForImport(
+                owner, "admitted-retry.zip", requestId, "World", "World Name"));
+        assertEquals(sha256(bytes), service.verifyClaimedImport(owner, "admitted-retry.zip", requestId));
+    }
+
+    @Test
     void rejectedTaskAdmissionCanReleaseDurableOwnershipBeforeRetry() throws Exception {
         Path imports = tempDir.resolve("imports");
         Path exports = tempDir.resolve("exports");

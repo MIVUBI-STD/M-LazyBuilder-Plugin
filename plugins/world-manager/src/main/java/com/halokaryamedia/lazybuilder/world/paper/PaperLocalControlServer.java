@@ -16,6 +16,7 @@ import com.halokaryamedia.lazybuilder.world.registry.WorldKind;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRecord;
 import com.halokaryamedia.lazybuilder.world.registry.WorldRegistry;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRegistry;
+import com.halokaryamedia.lazybuilder.world.task.WorldTaskState;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskRunner;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskSnapshot;
 import com.halokaryamedia.lazybuilder.world.task.WorldTaskType;
@@ -434,8 +435,14 @@ public final class PaperLocalControlServer {
             }
             WorldTaskSnapshot replay = tasks.find(previous.taskId()).orElseThrow(() ->
                     new IllegalStateException("Import task history expired; reconcile before another submission"));
-            sendJson(exchange, 202, taskResponse(replay));
-            return;
+            if (mayRetryFailedImport(replay)) {
+                // Durable World Registry was checked above. Only a terminal
+                // failure can reuse this exact request ID and upload identity.
+                importAdmissions.remove(requestId, previous);
+            } else {
+                sendJson(exchange, 202, taskResponse(replay));
+                return;
+            }
         }
         ensureImportAdmissionCapacity();
         if (!importUploads.claimForImport(artifactName, requestId, destinationFolder, displayName)) {
@@ -506,8 +513,14 @@ public final class PaperLocalControlServer {
                     previous.artifactName(), previous.destinationFolder(), previous.displayName());
             WorldTaskSnapshot replay = tasks.find(previous.taskId()).orElseThrow(() ->
                     new IllegalStateException("Restore task history expired; reconcile before another submission"));
-            sendJson(exchange, 202, taskResponse(replay));
-            return;
+            if (mayRetryFailedImport(replay)) {
+                // Durable World Registry was checked above. Only a terminal
+                // failure can reuse this exact request ID and backup identity.
+                importAdmissions.remove(requestId, previous);
+            } else {
+                sendJson(exchange, 202, taskResponse(replay));
+                return;
+            }
         }
 
         ensureImportAdmissionCapacity();
@@ -522,6 +535,10 @@ public final class PaperLocalControlServer {
         importAdmissions.put(requestId, new ImportAdmission(
                 provenanceName, destinationFolder, displayName, queued.taskId()));
         sendJson(exchange, 202, taskResponse(queued));
+    }
+
+    static boolean mayRetryFailedImport(WorldTaskSnapshot previous) {
+        return Objects.requireNonNull(previous, "previous").state() == WorldTaskState.FAILED;
     }
 
     private static void requireMatchingImport(

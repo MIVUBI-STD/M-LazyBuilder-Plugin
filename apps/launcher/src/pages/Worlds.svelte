@@ -40,6 +40,7 @@
   // attempt a conflicting second upload of the same server-owned archive.
   let pendingImportArtifact: { sourcePath: string; artifactName: string } | null = null;
   let pendingImportRequestId: string | null = null;
+  let pendingImportDisplayName: string | null = null;
   let settings: WorldSettingsSnapshot | null = null;
   let settingsBusy = false;
   let duplicateSource: ManagedWorldSummary | null = null;
@@ -195,6 +196,7 @@
       importName = '';
       pendingImportArtifact = null;
       pendingImportRequestId = null;
+      pendingImportDisplayName = null;
       pendingImportDestinationFolder = null;
     }
     backupRestoreMode = false;
@@ -210,6 +212,7 @@
       if (selected !== importPath) {
         pendingImportArtifact = null;
         pendingImportRequestId = null;
+        pendingImportDisplayName = null;
         pendingImportDestinationFolder = null;
       }
       const name = selected.split(/[\\/]/).pop() || 'World Backup';
@@ -232,6 +235,7 @@
       if (selected !== importPath) {
         pendingImportArtifact = null;
         pendingImportRequestId = null;
+        pendingImportDisplayName = null;
         pendingImportDestinationFolder = null;
       }
       importPath = selected;
@@ -246,6 +250,12 @@
   async function runImport() {
     const displayName = importName.trim();
     if (!serverOnline || importBusy || operationBusyWorldId || !importPath || !displayName) return;
+    if (pendingImportRequestId && pendingImportDisplayName && pendingImportDisplayName !== displayName) {
+      error = presentRuntimeError(
+        new Error(`Retry this import using its original world name: ${pendingImportDisplayName}.`),
+        'World name cannot change during a retry.');
+      return;
+    }
     importBusy = true;
     // Reserve the visible operation slot during backup checksum/preflight too,
     // before Paper has returned a task ID.
@@ -266,6 +276,7 @@
       if (!backupRestoreMode) pendingImportArtifact = { sourcePath: importPath, artifactName };
       const requestId = pendingImportRequestId ?? crypto.randomUUID();
       pendingImportRequestId = requestId;
+      pendingImportDisplayName ??= displayName;
       const destinationFolder = pendingImportDestinationFolder ?? (backupRestoreMode
         ? `${folderName(displayName, 'restored-world')}-${crypto.randomUUID().slice(0, 8)}`
         : folderName(displayName, 'imported-world'));
@@ -287,6 +298,7 @@
         : `World imported: ${displayName}.`);
       pendingImportArtifact = null;
       pendingImportRequestId = null;
+      pendingImportDisplayName = null;
       pendingImportDestinationFolder = null;
       backupRestoreMode = false;
       importPath = '';
@@ -294,8 +306,7 @@
     } catch (value) {
       if (pageActive) {
         if (operationTask?.state === 'FAILED') {
-          // Same request ID would replay a terminal failure; allow explicit retry.
-          pendingImportRequestId = null;
+          // Preserve the original durable request ID for safe retry/reconciliation.
           importOpen = true;
         }
         error = presentRuntimeError(value, 'World import or restore did not finish. Review the error before trying again.');

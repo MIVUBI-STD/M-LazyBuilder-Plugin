@@ -310,6 +310,12 @@ For Export, the existing post-commit source-runtime restoration warning now uses
 
 A pre-commit failure must still return `FAILED` with useful error detail; interrupt/cancel or server crash is **not** considered a proven successful operation without durable evidence. Exact-head JUnit and live Paper/Windows failure-injection acceptance are still required to validate interruption, process shutdown and recovery behavior.
 
+### Failed Import / Restore retry identity
+
+A Desktop import request ID is durable transaction identity, not an attempt counter. Launcher preserves the original request ID, displayed world name and selected upload/backup for retry. Paper always checks the World Registry for a committed request before consulting its in-memory admission history. A committed request returns the original world, not a second publication. Only a previous task definitely in terminal `FAILED` state with **no registry commit** may be re-admitted using that same request ID. `QUEUED`, `RUNNING`, `SUCCEEDED`, or expired/unknown task history does not authorize a new task.
+
+The transfer owner retains the admitted request ID, checksum and destination after returning a failed upload for retry; a new ID or modified destination cannot claim it. The Launcher therefore also requires the originally submitted display name for the retry. A fresh independent import requires a separate explicitly handled upload identity; there is no background auto-retry or second registry.
+
 ## Storage and failure handling
 
 Import extraction remains bounded by configured file count and uncompressed size. Conversion and export workspaces are request-owned and cleaned on success and failure.
