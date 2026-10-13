@@ -271,6 +271,9 @@ public final class WorldHeavyOperationOrchestrator {
     static String importCompletionMessage(
             boolean restoredBackup, boolean publicationPending, boolean archivePending
     ) {
+        if (publicationPending && archivePending) {
+            return "Warning: World committed, but publication and import archive cleanup are pending; review server recovery and logs before importing again.";
+        }
         if (publicationPending) {
             return "Warning: World committed, but publication cleanup is pending; review server recovery before another operation.";
         }

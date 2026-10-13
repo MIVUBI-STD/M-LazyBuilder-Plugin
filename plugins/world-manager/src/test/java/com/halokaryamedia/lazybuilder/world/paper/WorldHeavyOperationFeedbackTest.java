@@ -22,12 +22,12 @@ class WorldHeavyOperationFeedbackTest {
     }
 
     @Test
-    void failedPublicationMarkerCleanupTakesPrecedenceForBothSources() {
+    void concurrentPublicationAndArchiveCleanupFailuresAreBothReported() {
         String importMessage = WorldHeavyOperationOrchestrator.importCompletionMessage(false, true, true);
         String restoreMessage = WorldHeavyOperationOrchestrator.importCompletionMessage(true, true, false);
         assertTrue(importMessage.startsWith("Warning: "));
         assertTrue(restoreMessage.startsWith("Warning: "));
-        assertTrue(importMessage.contains("publication cleanup is pending"));
+        assertTrue(importMessage.contains("publication and import archive cleanup are pending"));
         assertTrue(restoreMessage.contains("publication cleanup is pending"));
     }
 }

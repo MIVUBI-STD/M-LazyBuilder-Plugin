@@ -302,6 +302,14 @@ Expose `Cancel` only where backend cancellation is explicitly safe. Otherwise al
 
 Disconnect/reconnect or failed transfer must not leave permanent world-operation ownership or a stuck busy state.
 
+### Completed operation feedback and recovery warnings
+
+World publication and task finalization are different boundaries. For Import and backup-origin Restore, a durable `WorldRegistryTransactions` commit remains successful even if the already-committed publication marker or upload-archive cleanup must be retried. The final task message starts with `Warning: ` when cleanup is still unresolved **after** the existing final retry; the Launcher shows that message alongside the ordinary successful Import/Restore confirmation instead of silently discarding it. If both cleanups are pending, say so explicitly. No additional task state or persistent warning registry is introduced.
+
+For Export, the existing post-commit source-runtime restoration warning now uses the same `Warning: ` presentation convention. Successful task snapshots retain the final warning message when progress advances from 99% to `SUCCEEDED` at 100%; users must not be told the export artifact vanished simply because source restoration needs attention. The Launcher also preserves the warning when it finishes polling a previously running task.
+
+A pre-commit failure must still return `FAILED` with useful error detail; interrupt/cancel or server crash is **not** considered a proven successful operation without durable evidence. Exact-head JUnit and live Paper/Windows failure-injection acceptance are still required to validate interruption, process shutdown and recovery behavior.
+
 ## Storage and failure handling
 
 Import extraction remains bounded by configured file count and uncompressed size. Conversion and export workspaces are request-owned and cleaned on success and failure.

@@ -52,6 +52,24 @@ class WorldTaskRunnerTest {
     }
 
     @Test
+    void completedImportWithCleanupWarningRemainsSucceededAndKeepsWarning() throws Exception {
+        WorldTaskRegistry registry = new WorldTaskRegistry();
+        try (WorldTaskRunner runner = new WorldTaskRunner(registry, 1, Duration.ofSeconds(1))) {
+            String warning = "Warning: World committed, but import archive cleanup is pending.";
+            WorldTaskSnapshot queued = runner.submit(WorldTaskType.IMPORT, null, "Import queued.", progress -> {
+                progress.update(99, warning);
+                return "committed-world-id";
+            });
+            WorldTaskSnapshot finished = waitForTerminal(registry, queued);
+            assertEquals(WorldTaskState.SUCCEEDED, finished.state());
+            assertEquals(100, finished.progressPercent());
+            assertEquals("committed-world-id", finished.result());
+            assertEquals(warning, finished.message());
+            assertTrue(finished.error().isEmpty());
+        }
+    }
+
+    @Test
     void failureIsCapturedInRegistry() throws Exception {
         WorldTaskRegistry registry = new WorldTaskRegistry();
         try (WorldTaskRunner runner = new WorldTaskRunner(registry, 1, Duration.ofSeconds(1))) {
