@@ -148,9 +148,9 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 - Chat Search: enabled by default and adds a compact `Ctrl+F` overlay to the existing vanilla chat screen. Search is session-only, indexes at most the existing bounded chat history, shows the selected match as a small preview, uses `Enter` / `Shift+Enter` for navigation, and does not persist chat to disk;
 - Chat Timestamps: enabled by default and prefixes visible chat lines with a low-contrast local `HH:mm` timestamp while preserving the original text component styling/click behavior;
 - Compact Duplicate Messages: consecutive recognized gameplay/warning lines such as repeated join/leave, game-mode feedback, advancement/challenge feedback, and compact warnings are replaced in place with a single `×N` line within an eight-second window. Player chat and unknown system text are never collapsed. Rewriting is suspended while the user is scrolled up in chat;
-- Signing Indicator Suppression: enabled by default and removes only the visible signing indicator while leaving chat signatures, packets, reporting data, and protocol behavior untouched;
-- Report Button Suppression: enabled by default and hides the report button in the vanilla Social Interactions player list without mutating reportability data, message signatures, packets, or report protocol state;
-- Narrator Suppression: enabled by default and disables narrator mode and narrator hotkey through Minecraft options while retaining Minecraft accessibility infrastructure;
+- Signing Indicator Suppression: opt-in (disabled for new profiles) and removes only the visible signing indicator while leaving chat signatures, packets, reporting data, and protocol behavior untouched;
+- Report Button Suppression: opt-in (disabled for new profiles) and hides the report button in the vanilla Social Interactions player list without mutating reportability data, message signatures, packets, or report protocol state;
+- Narrator Suppression: opt-in (disabled for new profiles) and disables narrator mode and narrator hotkey through Minecraft options while retaining Minecraft accessibility infrastructure;
 - Reconnect Button: enabled by default and adds one action to the existing vanilla disconnect layout when a previous multiplayer target is known;
 - Copy Connection Details: contextual action on the disconnect screen for copying the known server target and disconnect reason;
 - Borderless Window: opt-in and applied once at client startup, using the monitor that contains most of the Minecraft window; exclusive fullscreen is left alone; changing this preference takes effect on the next client start rather than through a background window watcher;
@@ -162,6 +162,8 @@ Current client-side behavior remains deliberately small and vanilla-shaped:
 - Capture Scope: current realtime recording is deliberately video-only. Game-only mixed audio is not claimed because Minecraft/OpenAL does not expose a verified cross-platform output-capture path here; desktop/system loopback is not mislabeled as game audio. Microphone capture, replay timelines, arbitrary replay cameras, and always-on replay buffers are also outside the current subsystem;
 - Instant Creative Search: enabled by default; while the vanilla Creative inventory is open, typing a valid character switches to the vanilla Search Items tab, focuses its existing search field, and lets vanilla process the original character and subsequent query. Ctrl/Alt/Super-modified input and another focused UI element are left untouched;
 - Compact Debug: enabled by default and replaces the vanilla F3 information wall with a small Minecraft-native builder HUD. Coordinate is the first top-left block with explicit `X`, `Y`, and `Z`; client FPS/CPU/GPU/RAM and world Facing/Biome/Time remain on the left; server world/telemetry presentation stays on the right. Unsupported metrics are shown as unavailable rather than estimated.
+
+The three opt-in presentation/accessibility defaults above match `UtilityPreferences.defaults()`: `hideChatSigningIndicators=false`, `hideChatReportButton=false` and `suppressNarrator=false`. Explicit preferences already saved by existing users remain respected; updating documentation does not migrate or reset user settings.
 
 Reconnect state is session-only. Utility Manager does not persist the last server address to disk.
 
