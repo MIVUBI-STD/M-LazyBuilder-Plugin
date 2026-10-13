@@ -88,11 +88,20 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             BuilderExtensionWireProtocol.WorldIdentity requested,
             String operationId
     ) {
-        if (requested.matches(player.getWorld().getUID().toString(),
-                player.getWorld().getKey().toString())) return true;
+        World current = player.getWorld();
+        if (worldMatches(requested, current.getUID(), current.getKey().toString())) return true;
         send(player, new BuilderExtensionWireProtocol.Error(
                 operationId, "Builder world changed; operation rejected before mutation"));
         return false;
+    }
+
+    /** The same Paper-authoritative guard used by every mutation batch. */
+    static boolean worldMatches(
+            BuilderExtensionWireProtocol.WorldIdentity requested,
+            UUID actualUid,
+            String actualWorldKey
+    ) {
+        return requested.matches(actualUid.toString(), actualWorldKey);
     }
 
     @EventHandler

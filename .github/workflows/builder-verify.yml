@@ -13,7 +13,7 @@ concurrency:
 jobs:
   builder:
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
@@ -23,6 +23,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: gradle
+      - name: Compile and test shared Builder protocol plus Paper Utilities
+        shell: pwsh
+        run: .\mvnw.cmd -B -pl plugins/utilities-manager -am test
       - name: Build and test Builder Utilities
         shell: pwsh
         run: .\gradlew.bat -p mods/builder-utilities --no-daemon build

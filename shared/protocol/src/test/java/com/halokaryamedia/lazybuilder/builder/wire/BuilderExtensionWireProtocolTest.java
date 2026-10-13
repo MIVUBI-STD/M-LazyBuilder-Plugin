@@ -29,6 +29,25 @@ class BuilderExtensionWireProtocolTest {
     }
 
     @Test
+    void rejectsLegacyV1WireBeforeProcessingRequestsOrResponses() throws Exception {
+        var identity = new BuilderExtensionWireProtocol.WorldIdentity(
+                "11111111-1111-4111-8111-111111111111", "minecraft:world");
+        byte[] request = BuilderExtensionWireProtocol.encodeRequest(
+                new BuilderExtensionWireProtocol.CapabilitiesRequest("v2"));
+        request[0] = 1;
+        assertThrows(java.io.IOException.class,
+                () -> BuilderExtensionWireProtocol.decodeRequest(request));
+
+        byte[] response = BuilderExtensionWireProtocol.encodeResponse(
+                new BuilderExtensionWireProtocol.Capabilities(
+                        "v2", BuilderExtensionWireProtocol.CAPABILITY_BIOME,
+                        64, identity));
+        response[0] = 1;
+        assertThrows(java.io.IOException.class,
+                () -> BuilderExtensionWireProtocol.decodeResponse(response));
+    }
+
+    @Test
     void rejectsWrongWorldAndRoundTripsWorldChangeEvents() throws Exception {
         var first = new BuilderExtensionWireProtocol.WorldIdentity("11111111-1111-4111-8111-111111111111", "minecraft:world");
         var other = new BuilderExtensionWireProtocol.WorldIdentity(

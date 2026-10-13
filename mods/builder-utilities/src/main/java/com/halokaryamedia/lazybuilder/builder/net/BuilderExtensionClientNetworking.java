@@ -26,6 +26,7 @@ public final class BuilderExtensionClientNetworking {
     private static final AtomicReference<BuilderExtensionWireProtocol.WorldIdentity> WORLD_IDENTITY =
             new AtomicReference<>();
     private static volatile String pendingCapabilityRequest;
+    private static BuilderExtensionWireProtocol.WorldIdentity worldChangedDuringNegotiation;
     private static boolean registered;
 
     private BuilderExtensionClientNetworking() {}
@@ -243,7 +244,9 @@ public final class BuilderExtensionClientNetworking {
                     return;
                 }
                 pendingCapabilityRequest = null;
-                WORLD_IDENTITY.set(capabilities.worldIdentity());
+                WORLD_IDENTITY.set(effectiveHandshakeWorld(
+                        capabilities.worldIdentity(), worldChangedDuringNegotiation));
+                worldChangedDuringNegotiation = null;
                 CAPABILITIES.set(new BuilderExtensionCapabilities(
                         true,
                         capabilities.capabilityMask(),
@@ -256,7 +259,14 @@ public final class BuilderExtensionClientNetworking {
             }
 
             if (response instanceof BuilderExtensionWireProtocol.WorldIdentity updatedWorld) {
-                if (!CAPABILITIES.get().negotiated()) return;
+                if (!CAPABILITIES.get().negotiated()) {
+                    // A later Paper world-change notice can overtake the handshake
+                    // response. Retain it until that response has been accepted.
+                    if (pendingCapabilityRequest != null) {
+                        worldChangedDuringNegotiation = updatedWorld;
+                    }
+                    return;
+                }
                 var previous = WORLD_IDENTITY.getAndSet(updatedWorld);
                 if (!Objects.equals(previous, updatedWorld)) {
                     failPending("Builder world identity changed");
@@ -281,6 +291,7 @@ public final class BuilderExtensionClientNetworking {
         } catch (IOException | RuntimeException failure) {
             String detail = "server extension response rejected: " + concise(failure);
             pendingCapabilityRequest = null;
+            worldChangedDuringNegotiation = null;
             CAPABILITIES.set(
                     BuilderExtensionCapabilities.unavailable(detail));
             WORLD_IDENTITY.set(null);
@@ -297,8 +308,17 @@ public final class BuilderExtensionClientNetworking {
         }
     }
 
+    static BuilderExtensionWireProtocol.WorldIdentity effectiveHandshakeWorld(
+            BuilderExtensionWireProtocol.WorldIdentity handshakeWorld,
+            BuilderExtensionWireProtocol.WorldIdentity laterWorldChange
+    ) {
+        return laterWorldChange != null ? laterWorldChange
+                : Objects.requireNonNull(handshakeWorld, "handshakeWorld");
+    }
+
     private static void reset(String status) {
         pendingCapabilityRequest = null;
+        worldChangedDuringNegotiation = null;
         WORLD_IDENTITY.set(null);
         CAPABILITIES.set(BuilderExtensionCapabilities.unavailable(status));
         failPending("Builder extension transport reset: " + status);

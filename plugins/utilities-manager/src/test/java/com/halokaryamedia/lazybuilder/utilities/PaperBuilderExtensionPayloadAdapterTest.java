@@ -3,6 +3,8 @@ package com.halokaryamedia.lazybuilder.utilities;
 import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
 import org.junit.jupiter.api.Test;
 
+import java.util.UUID;
+
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -15,6 +17,15 @@ class PaperBuilderExtensionPayloadAdapterTest {
                 "11111111-1111-4111-8111-111111111111", "minecraft:overworld");
         assertTrue(identity.matches("11111111-1111-4111-8111-111111111111", "minecraft:overworld"));
         assertFalse(identity.matches("22222222-2222-4222-8222-222222222222", "minecraft:overworld"));
+        assertTrue(PaperBuilderExtensionPayloadAdapter.worldMatches(
+                identity, UUID.fromString("11111111-1111-4111-8111-111111111111"),
+                "minecraft:overworld"));
+        assertFalse(PaperBuilderExtensionPayloadAdapter.worldMatches(
+                identity, UUID.fromString("22222222-2222-4222-8222-222222222222"),
+                "minecraft:overworld"));
+        assertFalse(PaperBuilderExtensionPayloadAdapter.worldMatches(
+                identity, UUID.fromString("11111111-1111-4111-8111-111111111111"),
+                "minecraft:other_world"));
     }
 
     @Test
