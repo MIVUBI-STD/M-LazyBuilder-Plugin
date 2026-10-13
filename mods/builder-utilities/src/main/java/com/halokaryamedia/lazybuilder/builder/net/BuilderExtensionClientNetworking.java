@@ -244,8 +244,14 @@ public final class BuilderExtensionClientNetworking {
                     return;
                 }
                 pendingCapabilityRequest = null;
-                WORLD_IDENTITY.set(effectiveHandshakeWorld(
-                        capabilities.worldIdentity(), worldChangedDuringNegotiation));
+                if (!handshakeAgreesWithWorldChange(
+                        capabilities.worldIdentity(), worldChangedDuringNegotiation)) {
+                    // Message delivery order is not proof of world-change ordering.
+                    // Never choose between conflicting authoritative snapshots.
+                    negotiate();
+                    return;
+                }
+                WORLD_IDENTITY.set(capabilities.worldIdentity());
                 worldChangedDuringNegotiation = null;
                 CAPABILITIES.set(new BuilderExtensionCapabilities(
                         true,
@@ -260,8 +266,8 @@ public final class BuilderExtensionClientNetworking {
 
             if (response instanceof BuilderExtensionWireProtocol.WorldIdentity updatedWorld) {
                 if (!CAPABILITIES.get().negotiated()) {
-                    // A later Paper world-change notice can overtake the handshake
-                    // response. Retain it until that response has been accepted.
+                    // An unsolicited world-change notice may arrive during
+                    // negotiation. A disagreement requires a fresh handshake.
                     if (pendingCapabilityRequest != null) {
                         worldChangedDuringNegotiation = updatedWorld;
                     }
@@ -308,12 +314,12 @@ public final class BuilderExtensionClientNetworking {
         }
     }
 
-    static BuilderExtensionWireProtocol.WorldIdentity effectiveHandshakeWorld(
+    static boolean handshakeAgreesWithWorldChange(
             BuilderExtensionWireProtocol.WorldIdentity handshakeWorld,
-            BuilderExtensionWireProtocol.WorldIdentity laterWorldChange
+            BuilderExtensionWireProtocol.WorldIdentity observedWorldChange
     ) {
-        return laterWorldChange != null ? laterWorldChange
-                : Objects.requireNonNull(handshakeWorld, "handshakeWorld");
+        Objects.requireNonNull(handshakeWorld, "handshakeWorld");
+        return observedWorldChange == null || handshakeWorld.equals(observedWorldChange);
     }
 
     private static void reset(String status) {
