@@ -54,6 +54,7 @@ struct PluginMetadata {
     dependencies: Vec<String>,
     provides: Vec<String>,
     load_rules: Vec<LoadRule>,
+    paper_descriptor: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -630,7 +631,10 @@ fn read_metadata_uncached(path: &Path) -> Result<PluginMetadata, String> {
     provides.sort();
     provides.dedup();
 
-    Ok(PluginMetadata { id, name: parsed.name, version, api_version, dependencies, provides, load_rules })
+    Ok(PluginMetadata {
+        id, name: parsed.name, version, api_version, dependencies, provides, load_rules,
+        paper_descriptor: metadata_entry_name == "paper-plugin.yml",
+    })
 }
 
 /// Parse only explicit Paper load rules. OMIT imposes no ordering.
@@ -862,6 +866,13 @@ fn dependency_problem_from_scan(scanned: &[ScannedPlugin], metadata: &PluginMeta
             ));
         }
         if active.contains(&provider.id) {
+            // Paper required=true checks availability, not load order.
+            // Paper-to-Paper OMIT cycles have no explicit order edge; the
+            // dedicated load-order graph checks BEFORE/AFTER separately.
+            // Bukkit depend edges still imply ordering and reject cycles.
+            if current.paper_descriptor && provider.paper_descriptor {
+                continue;
+            }
             return Some(format!(
                 "Cyclic required plugin dependency detected: {} -> {}.", current.name, provider.name
             ));
@@ -1316,6 +1327,7 @@ mod tests {
                 dependencies: required.iter().map(|value| value.to_string()).collect(),
                 provides: Vec::new(),
                 load_rules: Vec::new(),
+                paper_descriptor: false,
             }),
             enabled,
             error: None,
@@ -1621,6 +1633,7 @@ mod tests {
 
         let metadata = super::read_metadata_uncached(&jar).unwrap();
         assert_eq!(metadata.dependencies, vec!["registry"]);
+        assert!(metadata.paper_descriptor);
         assert_eq!(metadata.load_rules.len(), 2);
         assert!(metadata.load_rules.contains(&LoadRule {
             target: "registry".into(), stage: LoadStage::Bootstrap,
@@ -1648,6 +1661,37 @@ mod tests {
             target: "shop".into(), stage: LoadStage::Server,
             direction: LoadDirection::SelfBeforeTarget,
         }));
+    }
+
+    #[test]
+    fn paper_required_cycle_with_omit_order_is_not_falsely_rejected() {
+        let mut alpha = scanned("alpha", true, &["beta"]);
+        let mut beta = scanned("beta", true, &["alpha"]);
+        alpha.metadata.as_mut().unwrap().paper_descriptor = true;
+        beta.metadata.as_mut().unwrap().paper_descriptor = true;
+        let all = [alpha, beta];
+        assert!(dependency_problem_from_scan(&all, all[0].metadata.as_ref().unwrap()).is_none());
+        assert!(load_order_problem_from_scan(&all, all[0].metadata.as_ref().unwrap()).is_none());
+    }
+
+    #[test]
+    fn paper_required_cycle_with_before_order_is_still_rejected() {
+        let mut alpha = scanned("alpha", true, &["beta"]);
+        let mut beta = scanned("beta", true, &["alpha"]);
+        alpha.metadata.as_mut().unwrap().paper_descriptor = true;
+        beta.metadata.as_mut().unwrap().paper_descriptor = true;
+        alpha.metadata.as_mut().unwrap().load_rules.push(LoadRule {
+            target: "beta".into(), stage: LoadStage::Server,
+            direction: LoadDirection::TargetBeforeSelf,
+        });
+        beta.metadata.as_mut().unwrap().load_rules.push(LoadRule {
+            target: "alpha".into(), stage: LoadStage::Server,
+            direction: LoadDirection::TargetBeforeSelf,
+        });
+        let all = [alpha, beta];
+        assert!(dependency_problem_from_scan(&all, all[0].metadata.as_ref().unwrap()).is_none());
+        assert!(load_order_problem_from_scan(&all, all[0].metadata.as_ref().unwrap())
+            .unwrap().contains("Cyclic server"));
     }
 
     #[test]
