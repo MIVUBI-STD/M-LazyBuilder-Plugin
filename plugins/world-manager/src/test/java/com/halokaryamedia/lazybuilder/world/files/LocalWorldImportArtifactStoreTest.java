@@ -42,6 +42,31 @@ class LocalWorldImportArtifactStoreTest {
     }
 
     @Test
+    void inspectionMatchesOnlyTheSelectedWorldRootWithoutCollectingEntryNames() throws Exception {
+        Path imports = Files.createDirectory(tempDir.resolve("imports-root-aware"));
+        Path archive = imports.resolve("Worlds.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(archive))) {
+            put(zip, "Other/db/CURRENT", "other".getBytes(StandardCharsets.UTF_8));
+            for (int index = 0; index < 180; index++) {
+                put(zip, "Build/data/map_" + index + ".dat", new byte[]{1});
+            }
+            put(zip, "Build/level.dat", javaLevelDat(JavaLevelDataVersion.JAVA_1_21_4));
+        }
+        LocalWorldImportArtifactStore store = new LocalWorldImportArtifactStore(imports, 200, 1024 * 1024);
+        assertEquals(WorldImportArtifactStore.DetectedEdition.JAVA,
+                store.inspectArtifact("Worlds.zip").edition());
+
+        Path bedrock = imports.resolve("Selected.mcworld");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(bedrock))) {
+            put(zip, "Other/db/CURRENT", "other".getBytes(StandardCharsets.UTF_8));
+            put(zip, "Build/level.dat", "bedrock-level".getBytes(StandardCharsets.UTF_8));
+            put(zip, "Build/db/CURRENT", "selected".getBytes(StandardCharsets.UTF_8));
+        }
+        assertEquals(WorldImportArtifactStore.DetectedEdition.BEDROCK,
+                store.inspectArtifact("Selected.mcworld").edition());
+    }
+
+    @Test
     void committedCleanupMarkerSurvivesStoreRecreationWithoutGuessingOrdinaryUploads() throws Exception {
         Path imports = Files.createDirectory(tempDir.resolve("imports"));
         Files.writeString(imports.resolve("Committed.zip"), "committed");

@@ -60,7 +60,6 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
     public ImportInspection inspectArtifact(String artifactName) throws IOException {
         requireSafeImportsRoot();
         Path artifact = resolveArtifact(artifactName);
-        List<String> entryNames = new ArrayList<>();
         ZipEntry selectedLevelDat = null;
         String levelPath = null;
         int selectedLevelDepth = Integer.MAX_VALUE;
@@ -74,7 +73,6 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
                 String name = validateArchiveEntryName(entry.getName(), entry.isDirectory());
                 if (name.isBlank()) continue;
                 namespace.register(name, entry.isDirectory());
-                entryNames.add(name);
                 if (entry.isDirectory() || !isLevelDat(name)) continue;
                 int depth = pathDepth(name);
                 if (depth < selectedLevelDepth) {
@@ -92,7 +90,18 @@ public final class LocalWorldImportArtifactStore implements WorldImportArtifactS
             }
             byte[] levelDat = readInspectionEntry(zip, selectedLevelDat);
             String rootPrefix = levelPath.substring(0, levelPath.length() - "level.dat".length());
-            boolean bedrock = entryNames.stream().anyMatch(name -> name.startsWith(rootPrefix + "db/"));
+            // The first pass already validated every archive path and its namespace.
+            // Check the selected world's db/ prefix without retaining a second
+            // collection of all ZIP entry names (large worlds may contain many).
+            boolean bedrock = false;
+            var candidates = zip.entries();
+            while (candidates.hasMoreElements()) {
+                ZipEntry candidate = candidates.nextElement();
+                if (normalizeEntryName(candidate.getName()).startsWith(rootPrefix + "db/")) {
+                    bedrock = true;
+                    break;
+                }
+            }
             DetectedEdition edition = bedrock ? DetectedEdition.BEDROCK : DetectedEdition.JAVA;
             String version = "Unknown";
             if (edition == DetectedEdition.JAVA) {

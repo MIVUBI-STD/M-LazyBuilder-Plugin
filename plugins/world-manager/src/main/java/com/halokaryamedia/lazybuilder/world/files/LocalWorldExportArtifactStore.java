@@ -71,9 +71,7 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
 
                     @Override
                     public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                        if (Files.isSymbolicLink(file)) {
-                            throw new IOException("Symbolic links are not supported in export sources: " + file);
-                        }
+                        requireRegularSourceFile(file, attrs);
                         String entryName = source.relativize(file).toString().replace('\\', '/');
                         ZipEntry entry = new ZipEntry(entryName);
                         entry.setTime(attrs.lastModifiedTime().toMillis());
@@ -118,9 +116,7 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
 
             @Override
             public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                if (Files.isSymbolicLink(file)) {
-                    throw new IOException("Symbolic links are not supported in export sources: " + file);
-                }
+                requireRegularSourceFile(file, attrs);
                 try {
                     totals[0] = Math.addExact(totals[0], attrs.size());
                     totals[1] = Math.addExact(totals[1], 1L);
@@ -131,6 +127,19 @@ public final class LocalWorldExportArtifactStore implements WorldExportArtifactS
             }
         });
         return new SourceEstimate(totals[0], totals[1]);
+    }
+
+    /**
+     * Both preflight estimation and archive writing must reject links and
+     * non-regular entries. Opening a FIFO/device could block the export worker.
+     */
+    static void requireRegularSourceFile(Path file, BasicFileAttributes attrs) throws IOException {
+        if (attrs.isSymbolicLink() || Files.isSymbolicLink(file)) {
+            throw new IOException("Symbolic links are not supported in export sources: " + file);
+        }
+        if (!attrs.isRegularFile()) {
+            throw new IOException("Export source contains a non-regular file: " + file);
+        }
     }
 
     static long requiredFreeBytes(long sourceBytes, long fileCount) throws IOException {

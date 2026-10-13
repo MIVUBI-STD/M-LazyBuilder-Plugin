@@ -6,6 +6,11 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.LinkOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import org.junit.jupiter.api.Assumptions;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -42,6 +47,39 @@ class LocalWorldExportArtifactStoreTest {
                         "Build",
                         ExportArtifactType.JAVA_ZIP
                 ));
+    }
+
+    @Test
+    void rejectsNonRegularSourceEntryBeforeZipReading() throws Exception {
+        Path directory = Files.createDirectory(tempDir.resolve("not-regular"));
+        BasicFileAttributes directoryAttributes = Files.readAttributes(
+                directory, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        assertThrows(java.io.IOException.class,
+                () -> LocalWorldExportArtifactStore.requireRegularSourceFile(directory, directoryAttributes));
+
+        Path ordinaryFile = Files.writeString(tempDir.resolve("ordinary.dat"), "data");
+        BasicFileAttributes fileAttributes = Files.readAttributes(
+                ordinaryFile, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+        assertDoesNotThrow(() ->
+                LocalWorldExportArtifactStore.requireRegularSourceFile(ordinaryFile, fileAttributes));
+    }
+
+    @Test
+    void linkedFileCannotBePackagedOrPublishCompletedExport() throws Exception {
+        Path source = Files.createDirectory(tempDir.resolve("source-with-link"));
+        Files.writeString(source.resolve("level.dat"), "level");
+        Path outside = Files.writeString(tempDir.resolve("outside-file.dat"), "secret");
+        try {
+            Files.createSymbolicLink(source.resolve("linked.dat"), outside);
+        } catch (java.io.IOException | UnsupportedOperationException | SecurityException unsupported) {
+            Assumptions.assumeTrue(false, "Symbolic links unavailable in test environment");
+        }
+
+        Path exports = tempDir.resolve("linked-file-exports");
+        LocalWorldExportArtifactStore store = new LocalWorldExportArtifactStore(exports);
+        assertThrows(java.io.IOException.class,
+                () -> store.packageDirectory(source, "Protected", ExportArtifactType.JAVA_ZIP));
+        assertFalse(Files.exists(exports.resolve("Protected.zip")));
     }
 
     @Test
