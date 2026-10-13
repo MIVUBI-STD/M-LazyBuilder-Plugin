@@ -117,8 +117,10 @@ added.
   on the same Windows/Fabric 1.21.4 environment.
 
 The optional full-drain method remains in the source for explicit lifecycle
-callers but is not used by the normal Settings opt-out path. Native proofs
-and exact-head Gradle remain **pending**.
+callers but is not used by the normal Settings opt-out path. Native proofs remain **pending**. Exact-head focused Windows/Java 21 Gradle
+build and test **passed** for commit `44f2ae1fd939dcc86d98e58962af7e66d741901e`
+in [Performance Manager Verify #38301489061](https://github.com/MIVUBI-STD/M-LazyBuilder-Plugin/actions/runs/38301489061).
+This does not verify a running Minecraft renderer, integrated Verify, or a later SHA.
 
 ## Keep out of scope until test hardware is available
 

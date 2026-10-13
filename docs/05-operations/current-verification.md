@@ -51,7 +51,7 @@ Dedicated workflows
 → not parallel readiness authorities
 ```
 
-All normal verification, source/build proof, preview and benchmark workflows are **manual-only** via `workflow_dispatch`. `push`, `pull_request`, `schedule`, `workflow_run`, release and tag events do not trigger these checks. Focused runs are optional; integrated exact-SHA `Verify` remains the single repository/package readiness gate when explicitly requested.
+The canonical integrated `Verify` and most focused verification/preview/benchmark workflows are invoked manually through `workflow_dispatch`. **Exception:** `Performance Manager Verify` also runs on `push` to `Local` for its narrowly filtered source/toolchain paths. Its successful exact-SHA run is focused Java 21 Gradle build/test evidence only; it does **not** prove a native renderer session, other components, or integrated release readiness. No other automatic trigger should be inferred without inspecting its workflow YAML. Integrated exact-SHA `Verify` remains the single repository/package readiness gate when explicitly requested.
 
 GitHub must first register workflow definitions on its default branch before manual *Run workflow* dispatch can operate on `Local`. Workflow source on `Local` alone does not satisfy this dependency. Changes to default branch, branch protection or promotion require separate authorization. Missing verification for a new SHA is **not** PASS and older run results cannot be reused as proof for the changed SHA.
 

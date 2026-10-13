@@ -206,12 +206,19 @@ python scripts/verify_compatibility.py   # only when module/contract ownership c
 
 The full `Verify` workflow is an **independent final verification layer**, not the inner development loop.
 
-Canonical trigger for **every verification, preview, benchmark, package-smoke, and runtime-proof workflow**:
+Default verification trigger policy:
 
 ```text
-workflow_dispatch → explicit on-demand verification only
-push / pull_request / schedule / workflow_run / release / tag → no automatic verification
+integrated Verify → workflow_dispatch (explicit final gate)
+focused proof / preview / benchmark → workflow_dispatch by default
+Performance Manager Verify → workflow_dispatch + narrowly path-filtered push on Local
 ```
+
+The Performance Manager exception automatically runs its existing Windows/Java 21
+Gradle build and tests only for changes to Performance Manager, its Windows toolchain,
+its manifest, or the focused workflow itself. A focused green run is not an integrated
+readiness signal or proof of a native Minecraft renderer session. Review exact workflow
+YAML before describing triggers; changes to other workflows require their own evidence.
 
 Keep existing source tests, dependency checks, security checks, package evidence and runtime-proof jobs; changing triggers must not reduce coverage. Run focused source checks first, then use integrated exact-commit Verify only if its additional evidence is required. Do not create temporary workflows or proof-only commits as workarounds.
 

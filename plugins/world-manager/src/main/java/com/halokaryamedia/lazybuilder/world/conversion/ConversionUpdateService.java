@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.world.conversion;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Clock;
@@ -57,7 +58,12 @@ public final class ConversionUpdateService {
         if (policy.updateMode() == ConversionRuntimePolicy.UpdateMode.NOTIFY_ONLY) return UpdateResult.UPDATE_AVAILABLE;
 
         Files.createDirectories(downloadRoot);
-        Path downloaded = downloader.download(release.get(), downloadRoot);
+        if (!Files.isDirectory(downloadRoot, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Conversion download root is not a safe directory");
+        }
+        // The downloader is an external boundary. Do not inspect, execute, or
+        // delete a returned path unless it belongs directly to our download root.
+        Path downloaded = requireOwnedDownload(downloader.download(release.get(), downloadRoot));
         try {
             String digest = sha256(downloaded);
             if (policy.checksumRequired() && !digest.equalsIgnoreCase(release.get().sha256())) {
@@ -78,6 +84,19 @@ public final class ConversionUpdateService {
         } finally {
             Files.deleteIfExists(downloaded);
         }
+    }
+
+    private Path requireOwnedDownload(Path returned) throws IOException {
+        if (returned == null) {
+            throw new IOException("Conversion downloader returned no artifact path");
+        }
+        Path absolute = returned.toAbsolutePath();
+        Path candidate = absolute.normalize();
+        if (!absolute.equals(candidate) || !downloadRoot.equals(candidate.getParent())
+                || !Files.isRegularFile(candidate, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Conversion downloader returned an unsafe or unowned artifact path");
+        }
+        return candidate;
     }
 
     private static String sha256(Path file) throws IOException {
