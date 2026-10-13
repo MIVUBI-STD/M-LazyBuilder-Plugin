@@ -1,5 +1,7 @@
 # Final Client Pre-Handoff Audit
 
+> Historical source-review snapshot, not the current protocol or release-readiness authority. The current protocol versions and verification requirements are defined by [System / Ownership](README.md) and [Current Verification](../05-operations/current-verification.md). Do not treat an older pre-handoff checklist as a passing test on today's `Local` HEAD.
+
 ## Purpose
 
 This audit closes the current client architecture/concept pass before implementation is handed to a local/Codex verification workflow.
@@ -144,7 +146,7 @@ The following should be verified when the project moves into the local/Codex imp
 - current-world transition/clear behavior;
 - map selection/export UI;
 - transfer error/retry presentation;
-- current World Control V5 / Map Action V2 interoperability.
+- World Control V5 / Map Action V2 interoperability was an acceptance target at the time of this historical review. For current World Control / Map Action versions, use the canonical system and networking documents.
 
 ### Utility Manager
 
