@@ -1611,6 +1611,29 @@ mod tests {
     }
 
     #[test]
+    fn actual_paper_plugin_jar_parses_scoped_load_order_from_metadata() {
+        let directory = test_directory("paper-load-order");
+        let jar = directory.join("paper.jar");
+        let mut archive = zip::ZipWriter::new(fs::File::create(&jar).unwrap());
+        archive.start_file("paper-plugin.yml", zip::write::SimpleFileOptions::default()).unwrap();
+        write!(archive, "name: PaperSample\nversion: '1'\ndependencies:\n  bootstrap:\n    Registry:\n      required: true\n      load: BEFORE\n  server:\n    Optional:\n      required: false\n      load: AFTER\n    NoOrder:\n      required: false\n      load: OMIT\n").unwrap();
+        archive.finish().unwrap();
+
+        let metadata = super::read_metadata_uncached(&jar).unwrap();
+        assert_eq!(metadata.dependencies, vec!["registry"]);
+        assert_eq!(metadata.load_rules.len(), 2);
+        assert!(metadata.load_rules.contains(&LoadRule {
+            target: "registry".into(), stage: LoadStage::Bootstrap,
+            direction: LoadDirection::TargetBeforeSelf,
+        }));
+        assert!(metadata.load_rules.contains(&LoadRule {
+            target: "optional".into(), stage: LoadStage::Server,
+            direction: LoadDirection::SelfBeforeTarget,
+        }));
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
     fn paper_before_after_and_omit_are_separate_from_required() {
         let yaml: Value = serde_yaml::from_str(
             "bootstrap:\n  Registry:\n    required: true\n    load: BEFORE\nserver:\n  Shop:\n    required: false\n    load: AFTER\n  Unknown:\n    load: OMIT\n",
