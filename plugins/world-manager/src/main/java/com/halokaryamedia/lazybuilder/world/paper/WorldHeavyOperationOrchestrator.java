@@ -179,7 +179,7 @@ public final class WorldHeavyOperationOrchestrator {
             if (failure == null && task.completed() && task.closed() && result != null) {
                 postCommitWarning = true;
                 reporter.update(99,
-                        "Export artifact committed, but source runtime restoration failed; check the source world state.");
+                        "Warning: Export artifact committed, but source runtime restoration failed; check the source world state.");
             } else {
                 failure = combine(failure, finishFailure);
             }
@@ -225,7 +225,10 @@ public final class WorldHeavyOperationOrchestrator {
             failure = combine(failure, finishFailure);
         }
         if (failure != null) throw failure;
-        reporter.update(95, "Import finalized.");
+        boolean publicationPending = task.publicationMarkerCleanupFailure() != null;
+        boolean artifactPending = task.artifactCleanupFailure() != null;
+        reporter.update(publicationPending || artifactPending ? 99 : 95,
+                importCompletionMessage(false, publicationPending, artifactPending));
         return Objects.requireNonNull(imported, "imported");
     }
 
@@ -253,8 +256,28 @@ public final class WorldHeavyOperationOrchestrator {
             failure = combine(failure, finishFailure);
         }
         if (failure != null) throw failure;
-        reporter.update(95, "Backup restored as a separate world.");
+        boolean publicationPending = task.publicationMarkerCleanupFailure() != null;
+        boolean artifactPending = task.artifactCleanupFailure() != null;
+        reporter.update(publicationPending || artifactPending ? 99 : 95,
+                importCompletionMessage(true, publicationPending, artifactPending));
         return Objects.requireNonNull(restored, "restored");
+    }
+
+    /**
+     * Keep post-commit cleanup warnings visible without changing the successful
+     * World Registry / task result into a failure. The caller reports at 99%
+     * to preserve this message when the WorldTaskRunner marks SUCCEEDED.
+     */
+    static String importCompletionMessage(
+            boolean restoredBackup, boolean publicationPending, boolean archivePending
+    ) {
+        if (publicationPending) {
+            return "Warning: World committed, but publication cleanup is pending; review server recovery before another operation.";
+        }
+        if (archivePending) {
+            return "Warning: World committed, but import archive cleanup is pending; check server logs before importing again.";
+        }
+        return restoredBackup ? "Backup restored as a separate world." : "Import finalized.";
     }
 
     private static void requireExportActive(BooleanSupplier cancellationRequested) throws IOException {

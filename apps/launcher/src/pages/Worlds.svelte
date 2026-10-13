@@ -68,6 +68,15 @@
     return value.charAt(0) + value.slice(1).toLowerCase();
   }
 
+  // The Paper task registry remains the sole owner of operation outcomes.
+  // A successful task can still report a post-commit recovery warning.
+  function withCompletedWorldWarning(success: string): string {
+    const detail = operationTask?.state === 'SUCCEEDED' ? operationTask.message?.trim() : '';
+    return detail?.startsWith('Warning: ')
+      ? `${success} ${detail}`
+      : success;
+  }
+
   function visibleWorlds() {
     const query = search.trim().toLowerCase();
     if (!query) return worlds;
@@ -273,9 +282,9 @@
       importOpen = false;
       const completedHere = await pollTask(submittedTask.taskId);
       if (!completedHere || !pageActive) return;
-      notice = backupRestoreMode
+      notice = withCompletedWorldWarning(backupRestoreMode
         ? `World restored as a separate copy: ${displayName}. The original world and backup ZIP were not overwritten.`
-        : `World imported: ${displayName}.`;
+        : `World imported: ${displayName}.`);
       pendingImportArtifact = null;
       pendingImportRequestId = null;
       pendingImportDestinationFolder = null;
@@ -327,6 +336,8 @@
       operationBusyWorldId = active.worldId ?? '__world-task__';
       const completedHere = await pollTask(active.taskId);
       if (!completedHere || !pageActive) return;
+      const recoveryWarning = withCompletedWorldWarning('');
+      if (recoveryWarning.trim()) notice = recoveryWarning.trim();
       operationTask = null;
       operationBusyWorldId = null;
       await refresh();
@@ -458,9 +469,9 @@
       const completed = await pollTask(operationTask.taskId);
       if (completed && pageActive) {
         const artifact = operationTask?.result;
-        notice = artifact
+        notice = withCompletedWorldWarning(artifact
           ? `Export ready: ${artifact}. In the server folder, open world-system/exports.`
-          : `World export completed. In the server folder, open world-system/exports.`;
+          : `World export completed. In the server folder, open world-system/exports.`);
         outputFolderHint = 'exports';
       }
     } catch (value) {
