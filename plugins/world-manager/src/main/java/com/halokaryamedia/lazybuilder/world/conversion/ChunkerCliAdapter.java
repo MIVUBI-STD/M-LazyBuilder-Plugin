@@ -3,6 +3,7 @@ package com.halokaryamedia.lazybuilder.world.conversion;
 import java.io.IOException;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
@@ -294,9 +295,14 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
     }
 
     private static boolean containsNonEmptyRegularFile(Path root) throws IOException {
+        // Large Bedrock databases must not be materialized as a path list.
         try (var paths = Files.walk(root)) {
-            for (Path path : paths.toList()) {
-                if (!Files.isSymbolicLink(path) && Files.isRegularFile(path) && Files.size(path) > 0L) return true;
+            var iterator = paths.iterator();
+            while (iterator.hasNext()) {
+                Path path = iterator.next();
+                if (Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) && Files.size(path) > 0L) {
+                    return true;
+                }
             }
         }
         return false;
@@ -330,25 +336,38 @@ public final class ChunkerCliAdapter implements ConverterAdapter {
         }
 
         Path datapacks = input.resolve("datapacks");
-        if (!Files.isDirectory(datapacks)) return false;
+        if (Files.notExists(datapacks, LinkOption.NOFOLLOW_LINKS)) return false;
+        if (!Files.isDirectory(datapacks, LinkOption.NOFOLLOW_LINKS)) {
+            throw new IOException("Datapack directory is unsafe: " + datapacks);
+        }
 
+        // Only read real entries inside this world; linked ZIPs and directories
+        // are not valid conversion input sources.
         try (var children = Files.list(datapacks)) {
-            for (Path pack : children.toList()) {
-                if (Files.isDirectory(pack) && !Files.isSymbolicLink(pack)) {
+            var packs = children.iterator();
+            while (packs.hasNext()) {
+                Path pack = packs.next();
+                if (Files.isSymbolicLink(pack)) {
+                    throw new IOException("Datapack entry is a symbolic link: " + pack);
+                }
+                if (Files.isDirectory(pack, LinkOption.NOFOLLOW_LINKS)) {
                     try (var paths = Files.walk(pack)) {
-                        boolean found = paths
-                                .filter(Files::isRegularFile)
-                                .map(pack::relativize)
-                                .map(Path::toString)
-                                .map(name -> name.replace('\\', '/'))
-                                .anyMatch(name -> CUSTOM_DIMENSION_ENTRY.matcher(name).matches());
-                        if (found) return true;
+                        var entries = paths.iterator();
+                        while (entries.hasNext()) {
+                            Path entry = entries.next();
+                            if (Files.isSymbolicLink(entry)) {
+                                throw new IOException("Datapack contains a symbolic link: " + entry);
+                            }
+                            if (!Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS)) continue;
+                            String name = pack.relativize(entry).toString().replace('\\', '/');
+                            if (CUSTOM_DIMENSION_ENTRY.matcher(name).matches()) return true;
+                        }
                     }
                     continue;
                 }
 
                 String name = pack.getFileName().toString().toLowerCase(Locale.ROOT);
-                if (!Files.isRegularFile(pack) || !name.endsWith(".zip")) continue;
+                if (!Files.isRegularFile(pack, LinkOption.NOFOLLOW_LINKS) || !name.endsWith(".zip")) continue;
                 try (ZipFile zip = new ZipFile(pack.toFile())) {
                     var entries = zip.entries();
                     while (entries.hasMoreElements()) {

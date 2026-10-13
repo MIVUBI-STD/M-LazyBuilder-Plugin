@@ -41,6 +41,17 @@ class ChunkerOutputValidationTest {
     }
 
     @Test
+    void bedrockOutputAllowsNestedDatabaseDataAfterEmptyFiles() throws Exception {
+        Path root = Files.createDirectory(tempDir.resolve("nested-database"));
+        Files.writeString(root.resolve("level.dat"), "nbt");
+        Files.createFile(Files.createDirectories(root.resolve("db")).resolve("LOCK"));
+        Files.writeString(Files.createDirectories(root.resolve("db/nested")).resolve("000001.ldb"), "data");
+
+        assertDoesNotThrow(() ->
+                ChunkerCliAdapter.validateOutputDirectory(root, "BEDROCK_1_21_80"));
+    }
+
+    @Test
     void emptyLevelDatIsRejectedEvenWhenOutputDirectoryExists() throws Exception {
         Path output = Files.createDirectory(tempDir.resolve("empty-level"));
         Files.createFile(output.resolve("level.dat"));

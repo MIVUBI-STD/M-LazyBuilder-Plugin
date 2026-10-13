@@ -1,5 +1,6 @@
 package com.halokaryamedia.lazybuilder.world.conversion;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -141,6 +142,52 @@ class ChunkerCliAdapterTest {
             out.closeEntry();
         }
         assertTrue(ChunkerCliAdapter.containsCustomDimensionDefinitions(zipWorld));
+    }
+
+    @Test
+    void customDimensionScanRejectsNonDirectoryDatapacks() throws Exception {
+        Path world = Files.createDirectory(tempDir.resolve("invalid-datapack-root"));
+        Files.writeString(world.resolve("datapacks"), "not a directory");
+        assertThrows(IOException.class, () -> ChunkerCliAdapter.containsCustomDimensionDefinitions(world));
+    }
+
+    @Test
+    void customDimensionScanRejectsLinkedDatapackRoot() throws Exception {
+        Path world = Files.createDirectory(tempDir.resolve("linked-datapack-root"));
+        Path outside = Files.createDirectory(tempDir.resolve("external-datapacks"));
+        assumeSymbolicLink(world.resolve("datapacks"), outside);
+        assertThrows(IOException.class, () -> ChunkerCliAdapter.containsCustomDimensionDefinitions(world));
+    }
+
+    @Test
+    void customDimensionScanRejectsLinkedZipPack() throws Exception {
+        Path world = Files.createDirectory(tempDir.resolve("linked-zip-world"));
+        Path datapacks = Files.createDirectory(world.resolve("datapacks"));
+        Path outsideZip = tempDir.resolve("external.zip");
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(outsideZip))) {
+            zip.putNextEntry(new ZipEntry("data/example/dimension/moon.json"));
+            zip.write("{}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        assumeSymbolicLink(datapacks.resolve("linked.zip"), outsideZip);
+        assertThrows(IOException.class, () -> ChunkerCliAdapter.containsCustomDimensionDefinitions(world));
+    }
+
+    @Test
+    void customDimensionScanRejectsLinkedNestedDefinition() throws Exception {
+        Path world = Files.createDirectory(tempDir.resolve("linked-definition-world"));
+        Path definitions = Files.createDirectories(world.resolve("datapacks/custom/data/example/dimension"));
+        Path outside = Files.writeString(tempDir.resolve("external-definition.json"), "{}");
+        assumeSymbolicLink(definitions.resolve("moon.json"), outside);
+        assertThrows(IOException.class, () -> ChunkerCliAdapter.containsCustomDimensionDefinitions(world));
+    }
+
+    private static void assumeSymbolicLink(Path link, Path target) throws Exception {
+        try {
+            Files.createSymbolicLink(link, target);
+        } catch (IOException | UnsupportedOperationException | SecurityException unavailable) {
+            Assumptions.assumeTrue(false, "Symbolic links unavailable in this test environment");
+        }
     }
 
     @Test
