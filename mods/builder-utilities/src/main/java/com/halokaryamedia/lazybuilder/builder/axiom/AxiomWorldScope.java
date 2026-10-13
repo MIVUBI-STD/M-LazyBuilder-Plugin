@@ -1,6 +1,8 @@
 package com.halokaryamedia.lazybuilder.builder.axiom;
 
 import net.minecraft.client.MinecraftClient;
+import com.halokaryamedia.lazybuilder.builder.net.BuilderExtensionClientNetworking;
+import com.halokaryamedia.lazybuilder.builder.wire.BuilderExtensionWireProtocol;
 import net.minecraft.client.network.ServerInfo;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.WorldSavePath;
@@ -32,6 +34,7 @@ public final class AxiomWorldScope {
         Objects.requireNonNull(world, "world");
 
         String endpoint;
+        BuilderExtensionWireProtocol.WorldIdentity serverWorld = null;
         if (client.isInSingleplayer()) {
             var server = client.getServer();
             String saveIdentity = server == null
@@ -49,10 +52,17 @@ public final class AxiomWorldScope {
                     : client.getNetworkHandler().getConnection().getAddress();
             String fallback = address == null ? null : address.toString();
             endpoint = remoteEndpoint(preferred, fallback);
+            serverWorld = BuilderExtensionClientNetworking.serverWorldIdentity();
+            if (serverWorld == null) {
+                throw new IllegalStateException(
+                        "Server-authoritative Paper world identity is unavailable");
+            }
         }
 
         String dimension = world.getRegistryKey().getValue().toString();
-        return digest(endpoint + "|" + dimension);
+        return serverWorld == null
+                ? digest(endpoint + "|" + dimension)
+                : remoteScopeId(endpoint, serverWorld, dimension);
     }
 
     /** Unknown endpoints cannot own recoverable journals or share a synthetic scope. */
@@ -63,6 +73,15 @@ public final class AxiomWorldScope {
                     "Remote server identity is unavailable; Builder durable operations are blocked");
         }
         return "remote|" + address.trim().toLowerCase(Locale.ROOT);
+    }
+
+    static String remoteScopeId(
+            String endpoint,
+            BuilderExtensionWireProtocol.WorldIdentity world,
+            String dimension
+    ) {
+        return digest(endpoint + "|paper-world-v2|" + world.worldId()
+                + "|" + world.worldKey() + "|" + dimension);
     }
 
     private static String digest(String identity) {

@@ -5,8 +5,18 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PaperBuilderExtensionPayloadAdapterTest {
+    @Test
+    void worldIdentityRejectsAnotherPaperWorldWithTheSameDimension() {
+        var identity = new BuilderExtensionWireProtocol.WorldIdentity(
+                "11111111-1111-4111-8111-111111111111", "minecraft:overworld");
+        assertTrue(identity.matches("11111111-1111-4111-8111-111111111111", "minecraft:overworld"));
+        assertFalse(identity.matches("22222222-2222-4222-8222-222222222222", "minecraft:overworld"));
+    }
+
     @Test
     void blockEntityRollbackMutationSwapsBeforeAndAfterExactly() {
         var original = new BuilderExtensionWireProtocol.BlockEntityMutation(

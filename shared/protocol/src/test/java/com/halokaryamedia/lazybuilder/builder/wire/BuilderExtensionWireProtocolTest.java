@@ -17,7 +17,8 @@ class BuilderExtensionWireProtocolTest {
         var response = new BuilderExtensionWireProtocol.Capabilities(
                 "cap-1",
                 BuilderExtensionWireProtocol.CAPABILITY_BIOME,
-                128
+                128,
+                new BuilderExtensionWireProtocol.WorldIdentity("11111111-1111-4111-8111-111111111111", "minecraft:world")
         );
         assertEquals(response,
                 BuilderExtensionWireProtocol.decodeResponse(
@@ -28,10 +29,25 @@ class BuilderExtensionWireProtocolTest {
     }
 
     @Test
+    void rejectsWrongWorldAndRoundTripsWorldChangeEvents() throws Exception {
+        var first = new BuilderExtensionWireProtocol.WorldIdentity("11111111-1111-4111-8111-111111111111", "minecraft:world");
+        var other = new BuilderExtensionWireProtocol.WorldIdentity(
+                "22222222-2222-4222-8222-222222222222", "minecraft:world");
+        assertFalse(first.matches(other.worldId(), other.worldKey()));
+        assertFalse(first.matches(first.worldId(), "minecraft:other_world"));
+        assertTrue(first.matches(first.worldId(), first.worldKey()));
+        assertEquals(other, BuilderExtensionWireProtocol.decodeResponse(
+                BuilderExtensionWireProtocol.encodeResponse(other)));
+        assertThrows(IllegalArgumentException.class,
+                () -> new BuilderExtensionWireProtocol.WorldIdentity("unknown", "minecraft:world"));
+    }
+
+    @Test
     void biomeBatchRoundTripPreservesCompareAndSetStates() throws Exception {
         var batch = new BuilderExtensionWireProtocol.ApplyBiomeBatch(
                 "operation",
                 "minecraft:overworld",
+                new BuilderExtensionWireProtocol.WorldIdentity("11111111-1111-4111-8111-111111111111", "minecraft:world"),
                 List.of(
                         new BuilderExtensionWireProtocol.BiomeMutation(
                                 1, 64, -2,
@@ -58,7 +74,7 @@ class BuilderExtensionWireProtocolTest {
                 BuilderExtensionWireProtocol.MAX_BATCH_ENTRIES + 1, entry);
         assertThrows(IllegalArgumentException.class, () ->
                 new BuilderExtensionWireProtocol.ApplyBiomeBatch(
-                        "too-large", "minecraft:overworld", entries));
+                        "too-large", "minecraft:overworld", new BuilderExtensionWireProtocol.WorldIdentity("11111111-1111-4111-8111-111111111111", "minecraft:world"), entries));
     }
     @Test
     void blockEntityBatchRoundTripsBoundedBinaryPayloads() throws Exception {
@@ -72,6 +88,7 @@ class BuilderExtensionWireProtocolTest {
         var request = new BuilderExtensionWireProtocol.ApplyBlockEntityBatch(
                 "be-op",
                 "minecraft:overworld",
+                new BuilderExtensionWireProtocol.WorldIdentity("11111111-1111-4111-8111-111111111111", "minecraft:world"),
                 java.util.List.of(mutation)
         );
 
@@ -80,6 +97,7 @@ class BuilderExtensionWireProtocolTest {
                         BuilderExtensionWireProtocol.encodeRequest(request));
         assertEquals(request.operationId(), decoded.operationId());
         assertEquals(request.dimensionId(), decoded.dimensionId());
+        assertEquals(request.worldIdentity(), decoded.worldIdentity());
         assertEquals(1, decoded.entries().size());
         assertArrayEquals(mutation.afterNbt(), decoded.entries().get(0).afterNbt());
 
@@ -101,6 +119,7 @@ class BuilderExtensionWireProtocolTest {
         var request = new BuilderExtensionWireProtocol.ApplyBlockEntityBatch(
                 "large-be",
                 "minecraft:overworld",
+                new BuilderExtensionWireProtocol.WorldIdentity("11111111-1111-4111-8111-111111111111", "minecraft:world"),
                 java.util.List.of(new BuilderExtensionWireProtocol.BlockEntityMutation(
                         1, 64, 2,
                         "minecraft:chest[facing=north,type=single,waterlogged=false]",

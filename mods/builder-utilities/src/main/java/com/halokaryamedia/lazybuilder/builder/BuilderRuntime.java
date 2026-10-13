@@ -34,6 +34,7 @@ public final class BuilderRuntime implements AutoCloseable {
     private boolean closing;
     private boolean closed;
     private ClientWorld admittedWorld;
+    private String admittedScope;
 
     private BuilderRuntime(
             HistoryTimeline timeline,
@@ -82,11 +83,14 @@ public final class BuilderRuntime implements AutoCloseable {
         if (closed || closing || !activeOperations.isEmpty()) {
             throw new IllegalStateException("Cannot admit a world while Builder work is unresolved");
         }
-        admittedWorld = java.util.Objects.requireNonNull(world, "world");
+        String scope = AxiomWorldScope.currentScopeId(java.util.Objects.requireNonNull(world, "world"));
+        admittedWorld = world;
+        admittedScope = scope;
     }
 
     public synchronized void suspendWorldAdmission() {
         admittedWorld = null;
+        admittedScope = null;
     }
 
     /** Runs registered operations independently of the selected Axiom tool's render callback. */
@@ -95,17 +99,33 @@ public final class BuilderRuntime implements AutoCloseable {
         synchronized (this) {
             if (world == null || admittedWorld != world
                     || MinecraftClient.getInstance().world != world) return;
+            try {
+                if (!java.util.Objects.equals(admittedScope, AxiomWorldScope.currentScopeId(world))) {
+                    return;
+                }
+            } catch (IllegalStateException unknownWorld) {
+                return;
+            }
             snapshot = java.util.List.copyOf(activeOperations);
         }
         for (RecoverableActiveOperation operation : snapshot) {
             if (MinecraftClient.getInstance().world != world) return;
+            try {
+                if (!java.util.Objects.equals(admittedScope, AxiomWorldScope.currentScopeId(world))) {
+                    return;
+                }
+            } catch (IllegalStateException unknownWorld) {
+                return;
+            }
             operation.pump();
         }
     }
 
     public synchronized void registerActiveOperation(RecoverableActiveOperation operation) {
         if (closed || closing) throw new IllegalStateException("Builder runtime is closing or closed");
-        if (admittedWorld == null || MinecraftClient.getInstance().world != admittedWorld) {
+        if (admittedWorld == null || MinecraftClient.getInstance().world != admittedWorld
+                || !java.util.Objects.equals(admittedScope,
+                        AxiomWorldScope.currentScopeId(admittedWorld))) {
             throw new IllegalStateException("Builder world is not admitted or is changing");
         }
         requireExclusiveAdmission(activeOperations.size());
@@ -155,6 +175,7 @@ public final class BuilderRuntime implements AutoCloseable {
 
     public synchronized void resetWorldTimeline() throws IOException {
         admittedWorld = null;
+        admittedScope = null;
         HistoryTimeline previous = timeline;
         IOException failure = null;
         try {

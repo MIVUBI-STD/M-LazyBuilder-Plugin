@@ -23,6 +23,8 @@ public final class BuilderExtensionClientNetworking {
             Consumer<BuilderExtensionWireProtocol.Response>
             > PENDING = new ConcurrentHashMap<>();
 
+    private static final AtomicReference<BuilderExtensionWireProtocol.WorldIdentity> WORLD_IDENTITY =
+            new AtomicReference<>();
     private static volatile String pendingCapabilityRequest;
     private static boolean registered;
 
@@ -52,6 +54,10 @@ public final class BuilderExtensionClientNetworking {
 
     public static BuilderExtensionCapabilities capabilities() {
         return CAPABILITIES.get();
+    }
+
+    public static BuilderExtensionWireProtocol.WorldIdentity serverWorldIdentity() {
+        return WORLD_IDENTITY.get();
     }
 
     public static boolean canApplyBiomes() {
@@ -174,6 +180,16 @@ public final class BuilderExtensionClientNetworking {
             BuilderExtensionWireProtocol.Request request,
             Consumer<BuilderExtensionWireProtocol.Response> callback
     ) throws IOException {
+        BuilderExtensionWireProtocol.WorldIdentity requested =
+                request instanceof BuilderExtensionWireProtocol.ApplyBiomeBatch batch
+                        ? batch.worldIdentity()
+                        : request instanceof BuilderExtensionWireProtocol.ApplyEntityBatch batch
+                                ? batch.worldIdentity()
+                                : ((BuilderExtensionWireProtocol.ApplyBlockEntityBatch) request)
+                                        .worldIdentity();
+        if (!Objects.equals(requested, WORLD_IDENTITY.get())) {
+            throw new IllegalStateException("Builder world identity changed before request dispatch");
+        }
         if (PENDING.putIfAbsent(operationId, callback) != null) {
             throw new IllegalStateException(
                     "Operation already has a pending extension request: " + operationId);
@@ -227,6 +243,7 @@ public final class BuilderExtensionClientNetworking {
                     return;
                 }
                 pendingCapabilityRequest = null;
+                WORLD_IDENTITY.set(capabilities.worldIdentity());
                 CAPABILITIES.set(new BuilderExtensionCapabilities(
                         true,
                         capabilities.capabilityMask(),
@@ -235,6 +252,15 @@ public final class BuilderExtensionClientNetworking {
                                 ? "server connected; no permitted extension capabilities"
                                 : "server extension authority negotiated"
                 ));
+                return;
+            }
+
+            if (response instanceof BuilderExtensionWireProtocol.WorldIdentity updatedWorld) {
+                if (!CAPABILITIES.get().negotiated()) return;
+                var previous = WORLD_IDENTITY.getAndSet(updatedWorld);
+                if (!Objects.equals(previous, updatedWorld)) {
+                    failPending("Builder world identity changed");
+                }
                 return;
             }
 
@@ -257,6 +283,7 @@ public final class BuilderExtensionClientNetworking {
             pendingCapabilityRequest = null;
             CAPABILITIES.set(
                     BuilderExtensionCapabilities.unavailable(detail));
+            WORLD_IDENTITY.set(null);
 
             // A malformed response must not strand active dispatchers in WAITING.
             // Fail every outstanding request explicitly; callers can then preserve
@@ -272,9 +299,12 @@ public final class BuilderExtensionClientNetworking {
 
     private static void reset(String status) {
         pendingCapabilityRequest = null;
+        WORLD_IDENTITY.set(null);
         CAPABILITIES.set(BuilderExtensionCapabilities.unavailable(status));
+        failPending("Builder extension transport reset: " + status);
+    }
 
-        String detail = "Builder extension transport reset: " + status;
+    private static void failPending(String detail) {
         PENDING.forEach((operationId, callback) -> {
             if (PENDING.remove(operationId, callback)) {
                 callback.accept(new BuilderExtensionWireProtocol.Error(

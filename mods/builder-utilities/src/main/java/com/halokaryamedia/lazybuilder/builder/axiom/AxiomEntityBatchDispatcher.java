@@ -24,6 +24,7 @@ public final class AxiomEntityBatchDispatcher implements AutoCloseable {
     private final StoredExtensionCursor cursor;
     private final CancellationToken cancellation;
     private final String dimensionId;
+    private final BuilderExtensionWireProtocol.WorldIdentity worldIdentity;
     private final String historyOperationId;
     private final int maxBatchEntries;
     private final boolean undo;
@@ -47,9 +48,12 @@ public final class AxiomEntityBatchDispatcher implements AutoCloseable {
     ) {
         Objects.requireNonNull(stored, "stored");
         this.cancellation = Objects.requireNonNull(cancellation, "cancellation");
-        this.dimensionId = Objects.requireNonNull(world, "world")
-                .getRegistryKey().getValue().toString();
+        Objects.requireNonNull(world, "world");
         this.historyOperationId = stored.operationId();
+        this.worldIdentity = Objects.requireNonNull(
+                BuilderExtensionClientNetworking.serverWorldIdentity(),
+                "Server-authoritative Builder world identity is unavailable");
+        this.dimensionId = worldIdentity.worldKey();
         var capabilities = BuilderExtensionClientNetworking.capabilities();
         if (!capabilities.supportsEntity()) {
             throw new IllegalStateException(
@@ -123,7 +127,7 @@ public final class AxiomEntityBatchDispatcher implements AutoCloseable {
         String operationId = "lb-entity-" + UUID.randomUUID() + "-" + batchOrdinal++;
         BuilderExtensionWireProtocol.ApplyEntityBatch batch =
                 new BuilderExtensionWireProtocol.ApplyEntityBatch(
-                        operationId, dimensionId, entries);
+                        operationId, dimensionId, worldIdentity, entries);
         response.set(null);
         requestPending = true;
         pendingOperationId = operationId;

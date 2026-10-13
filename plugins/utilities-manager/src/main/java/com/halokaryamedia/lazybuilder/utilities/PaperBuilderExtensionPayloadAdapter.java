@@ -16,6 +16,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
+import org.bukkit.event.EventPriority;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.IOException;
@@ -70,6 +72,29 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
                 plugin, BuilderExtensionWireProtocol.CHANNEL);
     }
 
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
+        Player player = event.getPlayer();
+        if (player.isOnline()) send(player, identityOf(player.getWorld()));
+    }
+
+    static BuilderExtensionWireProtocol.WorldIdentity identityOf(World world) {
+        return new BuilderExtensionWireProtocol.WorldIdentity(
+                world.getUID().toString(), world.getKey().toString());
+    }
+
+    private boolean requireCurrentWorld(
+            Player player,
+            BuilderExtensionWireProtocol.WorldIdentity requested,
+            String operationId
+    ) {
+        if (requested.matches(player.getWorld().getUID().toString(),
+                player.getWorld().getKey().toString())) return true;
+        send(player, new BuilderExtensionWireProtocol.Error(
+                operationId, "Builder world changed; operation rejected before mutation"));
+        return false;
+    }
+
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
         reassemblers.remove(event.getPlayer().getUniqueId());
@@ -107,7 +132,7 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
                     ? serverCapabilities()
                     : 0;
             send(player, new BuilderExtensionWireProtocol.Capabilities(
-                    capabilities.requestId(), mask, MAX_BATCH));
+                    capabilities.requestId(), mask, MAX_BATCH, identityOf(player.getWorld())));
             return;
         }
 
@@ -144,6 +169,7 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             Player player,
             BuilderExtensionWireProtocol.ApplyBiomeBatch batch
     ) {
+        if (!requireCurrentWorld(player, batch.worldIdentity(), batch.operationId())) return;
         World world = player.getWorld();
         if (!world.getKey().toString().equals(batch.dimensionId())) {
             send(player, new BuilderExtensionWireProtocol.Error(
@@ -249,6 +275,7 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             Player player,
             BuilderExtensionWireProtocol.ApplyBlockEntityBatch batch
     ) {
+        if (!requireCurrentWorld(player, batch.worldIdentity(), batch.operationId())) return;
         if (blockEntities == null) {
             send(player, new BuilderExtensionWireProtocol.Error(
                     batch.operationId(),
@@ -365,6 +392,7 @@ final class PaperBuilderExtensionPayloadAdapter implements PluginMessageListener
             Player player,
             BuilderExtensionWireProtocol.ApplyEntityBatch batch
     ) {
+        if (!requireCurrentWorld(player, batch.worldIdentity(), batch.operationId())) return;
         World world = player.getWorld();
         if (!world.getKey().toString().equals(batch.dimensionId())) {
             send(player, new BuilderExtensionWireProtocol.Error(

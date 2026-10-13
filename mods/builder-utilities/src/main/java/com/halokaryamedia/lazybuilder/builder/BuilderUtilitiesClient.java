@@ -27,6 +27,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
     private static BuilderRuntime runtime;
     private static AxiomRecoveryTool recoveryTool;
     private static ClientWorld observedWorld;
+    private static String observedScope;
     private static int transitionRetryTicks;
 
     @Override
@@ -62,7 +63,17 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
     private static void clientTick(MinecraftClient client) {
         BuilderRuntime current = runtime;
         if (current == null) return;
-        if (client.world != observedWorld) {
+        String scope = null;
+        if (client.world != null) {
+            try {
+                scope = com.halokaryamedia.lazybuilder.builder.axiom.AxiomWorldScope
+                        .currentScopeId(client.world);
+            } catch (IllegalStateException unavailable) {
+                current.suspendWorldAdmission();
+                return;
+            }
+        }
+        if (client.world != observedWorld || !java.util.Objects.equals(scope, observedScope)) {
             current.suspendWorldAdmission();
             if (transitionRetryTicks > 0) {
                 transitionRetryTicks--;
@@ -73,6 +84,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
                 return;
             }
             observedWorld = client.world;
+            observedScope = scope;
             transitionRetryTicks = 0;
             if (observedWorld != null) {
                 current.admitWorld(observedWorld);
@@ -178,6 +190,7 @@ public final class BuilderUtilitiesClient implements ClientModInitializer {
         runtime = null;
         recoveryTool = null;
         observedWorld = null;
+        observedScope = null;
         transitionRetryTicks = 0;
         if (current == null) return;
         current.suspendWorldAdmission();

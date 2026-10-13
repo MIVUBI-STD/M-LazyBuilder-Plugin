@@ -13,7 +13,7 @@ import java.util.Objects;
 
 /** Bounded transport-neutral Fabric↔Paper protocol for Builder non-block authorities. */
 public final class BuilderExtensionWireProtocol {
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
     public static final int MAX_MESSAGE_BYTES = 512 * 1024;
     public static final int MAX_BATCH_ENTRIES = 256;
     public static final int MAX_BLOCK_ENTITY_NBT_BYTES = 240 * 1024;
@@ -26,7 +26,7 @@ public final class BuilderExtensionWireProtocol {
     private BuilderExtensionWireProtocol() {}
 
     public sealed interface Request permits CapabilitiesRequest, ApplyBiomeBatch, ApplyEntityBatch, ApplyBlockEntityBatch {}
-    public sealed interface Response permits Capabilities, BatchResult, EntityBatchResult, BlockEntityBatchResult, Error {}
+    public sealed interface Response permits Capabilities, WorldIdentity, BatchResult, EntityBatchResult, BlockEntityBatchResult, Error {}
 
     public record CapabilitiesRequest(String requestId) implements Request {
         public CapabilitiesRequest { requireId(requestId, "requestId"); }
@@ -48,11 +48,13 @@ public final class BuilderExtensionWireProtocol {
     public record ApplyBiomeBatch(
             String operationId,
             String dimensionId,
+            WorldIdentity worldIdentity,
             List<BiomeMutation> entries
     ) implements Request {
         public ApplyBiomeBatch {
             requireId(operationId, "operationId");
             dimensionId = requireResourceId(dimensionId, "dimensionId");
+            Objects.requireNonNull(worldIdentity, "worldIdentity");
             Objects.requireNonNull(entries, "entries");
             entries = List.copyOf(entries);
             if (entries.isEmpty() || entries.size() > MAX_BATCH_ENTRIES) {
@@ -95,11 +97,13 @@ public final class BuilderExtensionWireProtocol {
     public record ApplyEntityBatch(
             String operationId,
             String dimensionId,
+            WorldIdentity worldIdentity,
             List<EntityMutation> entries
     ) implements Request {
         public ApplyEntityBatch {
             requireId(operationId, "operationId");
             dimensionId = requireResourceId(dimensionId, "dimensionId");
+            Objects.requireNonNull(worldIdentity, "worldIdentity");
             Objects.requireNonNull(entries, "entries");
             entries = List.copyOf(entries);
             if (entries.isEmpty() || entries.size() > MAX_BATCH_ENTRIES) {
@@ -145,11 +149,13 @@ public final class BuilderExtensionWireProtocol {
     public record ApplyBlockEntityBatch(
             String operationId,
             String dimensionId,
+            WorldIdentity worldIdentity,
             List<BlockEntityMutation> entries
     ) implements Request {
         public ApplyBlockEntityBatch {
             requireId(operationId, "operationId");
             dimensionId = requireResourceId(dimensionId, "dimensionId");
+            Objects.requireNonNull(worldIdentity, "worldIdentity");
             Objects.requireNonNull(entries, "entries");
             entries = List.copyOf(entries);
             if (entries.isEmpty() || entries.size() > MAX_BATCH_ENTRIES) {
@@ -160,13 +166,32 @@ public final class BuilderExtensionWireProtocol {
         }
     }
 
+    /** Server-authoritative Paper world identity used by recovery and mutation requests. */
+    public record WorldIdentity(String worldId, String worldKey) implements Response {
+        public WorldIdentity {
+            try {
+                worldId = java.util.UUID.fromString(
+                        Objects.requireNonNull(worldId, "worldId")).toString();
+            } catch (IllegalArgumentException invalid) {
+                throw new IllegalArgumentException("worldId must be a UUID", invalid);
+            }
+            worldKey = requireResourceId(worldKey, "worldKey");
+        }
+
+        public boolean matches(String actualWorldId, String actualWorldKey) {
+            return worldId.equals(actualWorldId) && worldKey.equals(actualWorldKey);
+        }
+    }
+
     public record Capabilities(
             String requestId,
             int capabilityMask,
-            int maxBatchEntries
+            int maxBatchEntries,
+            WorldIdentity worldIdentity
     ) implements Response {
         public Capabilities {
             requireId(requestId, "requestId");
+            Objects.requireNonNull(worldIdentity, "worldIdentity");
             int known = CAPABILITY_BIOME | CAPABILITY_BLOCK_ENTITY | CAPABILITY_ENTITY;
             if ((capabilityMask & ~known) != 0) {
                 throw new IllegalArgumentException("capabilityMask contains unknown bits");
@@ -347,6 +372,7 @@ public final class BuilderExtensionWireProtocol {
                 case 2 -> {
                     String operationId = readString(in, 160);
                     String dimensionId = readString(in, 128);
+                    WorldIdentity worldIdentity = readWorldIdentity(in);
                     int count = in.readUnsignedShort();
                     if (count <= 0 || count > MAX_BATCH_ENTRIES) {
                         throw new IOException("invalid biome batch count");
@@ -361,11 +387,12 @@ public final class BuilderExtensionWireProtocol {
                                 readString(in, 128)
                         ));
                     }
-                    yield new ApplyBiomeBatch(operationId, dimensionId, entries);
+                    yield new ApplyBiomeBatch(operationId, dimensionId, worldIdentity, entries);
                 }
                 case 3 -> {
                     String operationId = readString(in, 160);
                     String dimensionId = readString(in, 128);
+                    WorldIdentity worldIdentity = readWorldIdentity(in);
                     int count = in.readUnsignedShort();
                     if (count <= 0 || count > MAX_BATCH_ENTRIES) {
                         throw new IOException("invalid entity batch count");
@@ -384,11 +411,12 @@ public final class BuilderExtensionWireProtocol {
                                 readLargeString(in, MAX_ENTITY_TEMPLATE_BYTES)
                         ));
                     }
-                    yield new ApplyEntityBatch(operationId, dimensionId, entries);
+                    yield new ApplyEntityBatch(operationId, dimensionId, worldIdentity, entries);
                 }
                 case 4 -> {
                     String operationId = readString(in, 160);
                     String dimensionId = readString(in, 128);
+                    WorldIdentity worldIdentity = readWorldIdentity(in);
                     int count = in.readUnsignedShort();
                     if (count <= 0 || count > MAX_BATCH_ENTRIES) {
                         throw new IOException("invalid block entity batch count");
@@ -405,7 +433,7 @@ public final class BuilderExtensionWireProtocol {
                                 readByteArray(in, MAX_BLOCK_ENTITY_NBT_BYTES)
                         ));
                     }
-                    yield new ApplyBlockEntityBatch(operationId, dimensionId, entries);
+                    yield new ApplyBlockEntityBatch(operationId, dimensionId, worldIdentity, entries);
                 }
                 default -> throw new IOException("unknown Builder extension request");
             };
@@ -421,7 +449,8 @@ public final class BuilderExtensionWireProtocol {
                 case 1 -> new Capabilities(
                         readString(in, 160),
                         in.readInt(),
-                        in.readUnsignedShort()
+                        in.readUnsignedShort(),
+                        readWorldIdentity(in)
                 );
                 case 2 -> {
                     String operationId = readString(in, 160);
@@ -444,6 +473,7 @@ public final class BuilderExtensionWireProtocol {
                     yield new EntityBatchResult(
                             operationId, state, processed, conflictIndex, detail);
                 }
+                case 6 -> readWorldIdentity(in);
                 case 5 -> {
                     String operationId = readString(in, 160);
                     BatchState state = enumValue(
@@ -473,6 +503,7 @@ public final class BuilderExtensionWireProtocol {
             out.writeByte(2);
             writeString(out, batch.operationId());
             writeString(out, batch.dimensionId());
+            writeWorldIdentity(out, batch.worldIdentity());
             out.writeShort(batch.entries().size());
             for (BiomeMutation entry : batch.entries()) {
                 out.writeInt(entry.x());
@@ -487,6 +518,7 @@ public final class BuilderExtensionWireProtocol {
             out.writeByte(3);
             writeString(out, batch.operationId());
             writeString(out, batch.dimensionId());
+            writeWorldIdentity(out, batch.worldIdentity());
             out.writeShort(batch.entries().size());
             for (EntityMutation entry : batch.entries()) {
                 writeString(out, entry.markerId());
@@ -505,6 +537,7 @@ public final class BuilderExtensionWireProtocol {
             out.writeByte(4);
             writeString(out, batch.operationId());
             writeString(out, batch.dimensionId());
+            writeWorldIdentity(out, batch.worldIdentity());
             out.writeShort(batch.entries().size());
             for (BlockEntityMutation entry : batch.entries()) {
                 out.writeInt(entry.x());
@@ -528,6 +561,7 @@ public final class BuilderExtensionWireProtocol {
             writeString(out, capabilities.requestId());
             out.writeInt(capabilities.capabilityMask());
             out.writeShort(capabilities.maxBatchEntries());
+            writeWorldIdentity(out, capabilities.worldIdentity());
             return;
         }
         if (response instanceof BatchResult result) {
@@ -563,7 +597,22 @@ public final class BuilderExtensionWireProtocol {
             writeNullableString(out, result.detail());
             return;
         }
+        if (response instanceof WorldIdentity identity) {
+            out.writeByte(6);
+            writeWorldIdentity(out, identity);
+            return;
+        }
         throw new IOException("unsupported Builder extension response");
+    }
+
+    private static void writeWorldIdentity(DataOutputStream out, WorldIdentity identity)
+            throws IOException {
+        writeString(out, identity.worldId());
+        writeString(out, identity.worldKey());
+    }
+
+    private static WorldIdentity readWorldIdentity(DataInputStream in) throws IOException {
+        return new WorldIdentity(readString(in, 36), readString(in, 128));
     }
 
     private interface Writer {

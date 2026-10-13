@@ -104,19 +104,23 @@ File bytes only.
 
 Import/export UI and world semantics do not create a second transfer implementation.
 
-### `lazybuilder:builder_ext` — Builder Extension V1
+### `lazybuilder:builder_ext` — Builder Extension V2
 
 This is a **separate optional Builder Utilities/Axiom-first extension channel**, not another World Manager or file-transfer implementation. It uses the existing Minecraft connection; no separate socket, third-party network, or duplicate world authority is introduced.
 
 ```text
 Fabric Builder Utilities
 → bounded BuilderExtensionPayload
-→ shared/protocol BuilderExtensionTransport + BuilderExtensionWireProtocol (V1)
+→ shared/protocol BuilderExtensionTransport + BuilderExtensionWireProtocol (V2)
 → Utilities Manager PaperBuilderExtensionPayloadAdapter
 → permission/capability checks and server-authoritative operations
 ```
 
-Its canonical channel is `lazybuilder:builder_ext`, with version `1` in `BuilderExtensionWireProtocol.VERSION`. The shared wire format limits a complete message to 512 KiB; the transport additionally bounds each plugin-message fragment to 32,000 bytes and reassembly to a bounded session. Paper authorizes Builder-specific actions independently; the client may not promote its own capability/proposal into server authority.
+Its canonical channel is `lazybuilder:builder_ext`, with version `2` in `BuilderExtensionWireProtocol.VERSION`. The shared wire format limits a complete message to 512 KiB; the transport additionally bounds each plugin-message fragment to 32,000 bytes and reassembly to a bounded session. Paper authorizes Builder-specific actions independently; the client may not promote its own capability/proposal into server authority.
+
+Builder Extension V2 requires an authoritative Paper world identity (world UUID plus world key) in the capability handshake. Paper emits an unsolicited world-identity update on PlayerChangedWorldEvent. The Fabric client suspends active Builder work on an identity change, preserves the durable operation, clears the old world timeline and only then admits the new scope. Every biome/entity/block-entity batch carries its original world identity; Paper rejects a mismatch before mutation even if the dimension identifier is the same.
+
+This is a breaking V1→V2 wire change: mixed-version clients and servers fail closed. Durable remote History journals using the former endpoint-plus-dimension scope remain unmatched and must **not** be automatically replayed as V2 world journals. Singleplayer scope semantics are unchanged. Block-only mutations via Axiom still require matching real-runtime proof across Paper world changes; wire-side guards protect only negotiated extension batches.
 
 Builder-specific biome, entity and block-entity operations are not World Control, Map Action, or generic file-transfer messages. Keep semantic ownership in Builder Utilities and corresponding Paper Utilities adapter, with neutral bytes/framing in `shared/protocol`. Do not move the behavior into `plugins/world-manager` merely because it crosses the Minecraft connection.
 
