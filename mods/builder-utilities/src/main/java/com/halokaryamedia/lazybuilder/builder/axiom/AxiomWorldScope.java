@@ -43,18 +43,25 @@ public final class AxiomWorldScope {
             endpoint = "singleplayer|" + saveIdentity;
         } else {
             ServerInfo info = client.getCurrentServerEntry();
-            if (info != null && info.address != null && !info.address.isBlank()) {
-                endpoint = "remote|" + info.address.toLowerCase(Locale.ROOT);
-            } else if (client.getNetworkHandler() != null) {
-                endpoint = "remote|"
-                        + client.getNetworkHandler().getConnection().getAddress().toString();
-            } else {
-                endpoint = "remote|<unknown>";
-            }
+            String preferred = info == null ? null : info.address;
+            String fallback = client.getNetworkHandler() == null
+                    ? null
+                    : String.valueOf(client.getNetworkHandler().getConnection().getAddress());
+            endpoint = remoteEndpoint(preferred, fallback);
         }
 
         String dimension = world.getRegistryKey().getValue().toString();
         return digest(endpoint + "|" + dimension);
+    }
+
+    /** Unknown endpoints cannot own recoverable journals or share a synthetic scope. */
+    static String remoteEndpoint(String preferred, String fallback) {
+        String address = preferred != null && !preferred.isBlank() ? preferred : fallback;
+        if (address == null || address.isBlank()) {
+            throw new IllegalStateException(
+                    "Remote server identity is unavailable; Builder durable operations are blocked");
+        }
+        return "remote|" + address.toLowerCase(Locale.ROOT);
     }
 
     private static String digest(String identity) {

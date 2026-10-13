@@ -108,8 +108,17 @@ public final class BuilderRuntime implements AutoCloseable {
         if (admittedWorld == null || MinecraftClient.getInstance().world != admittedWorld) {
             throw new IllegalStateException("Builder world is not admitted or is changing");
         }
+        requireExclusiveAdmission(activeOperations.size());
         if (!activeOperations.add(java.util.Objects.requireNonNull(operation, "operation"))) {
             throw new IllegalStateException("Builder operation is already registered");
+        }
+    }
+
+    /** One mutating Builder operation at a time prevents cross-tool rollback conflicts. */
+    static void requireExclusiveAdmission(int activeCount) {
+        if (activeCount != 0) {
+            throw new IllegalStateException(
+                    "Another Builder operation is running; finish or recover it before starting a new one");
         }
     }
 
