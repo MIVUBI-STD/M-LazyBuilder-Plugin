@@ -1,139 +1,103 @@
-use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::{ErrorKind, Write};
-use std::path::PathBuf;
+use crate::engine::persistence;
+use serde::Deserialize;
+use std::fs::{self, File, OpenOptions, TryLockError};
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
 
-const MAX_ACQUIRE_ATTEMPTS: u8 = 8;
 const START_IN_PROGRESS_MESSAGE: &str = "A LazyBuilder server lifecycle change is currently in progress. Wait for it to finish before changing the active server or starting, stopping, or recovering another server.";
+const MAX_LEGACY_MARKER_BYTES: u64 = 4096;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct StartLockMarker {
+struct LegacyStartLockMarker {
     launcher_pid: u32,
     process_start_time: u64,
 }
 
-/// Global lifecycle/selection lease for the bounded three-server runtime.
+/// One OS-backed exclusive lock for server lifecycle and active selection.
 ///
-/// Running Paper processes still coexist independently. The lease serializes
-/// lifecycle transitions and active-workspace selection so a controller cannot
-/// be removed or rebound midway through Start/Stop/Restart/Recovery.
+/// Keep the underlying file in place. Removing a locked pathname would allow a
+/// second process to create and lock a different file at the same path. The
+/// operating system releases the lock automatically when its handle closes,
+/// including after an unclean process exit.
 pub struct ServerStartLease {
-    path: PathBuf,
-    marker: StartLockMarker,
+    _file: File,
 }
 
 impl ServerStartLease {
     pub fn acquire() -> Result<Self, String> {
-        let path = lock_path()?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        Self::acquire_at(&lock_path()?)
+    }
+
+    fn acquire_at(path: &Path) -> Result<Self, String> {
+        let parent = path.parent().ok_or_else(|| "Server lifecycle lock has no parent directory".to_string())?;
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("Could not prepare server lifecycle lock directory: {error}"))?;
+        persistence::safe_path::ensure_real_directory(parent, "server lifecycle lock directory")?;
+        if persistence::safe_path::entry_exists(path, "server lifecycle lock")? {
+            persistence::safe_path::ensure_regular_file(path, "server lifecycle lock")?;
         }
 
-        let marker = current_launcher_marker()?;
-        for attempt in 0..MAX_ACQUIRE_ATTEMPTS {
-            match try_create(&path, &marker) {
-                Ok(()) => return Ok(Self { path, marker }),
-                Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-                    if lock_owner_is_alive(&path)? {
-                        return Err(START_IN_PROGRESS_MESSAGE.into());
-                    }
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)
+            .map_err(|error| format!("Could not open server lifecycle lock: {error}"))?;
 
-                    // Never delete a stale-looking lock in place. Another launcher may
-                    // have replaced it after our liveness check. Atomically renaming the
-                    // exact pathname means only one contender can retire the stale file;
-                    // everyone else retries and observes the newly created owner.
-                    let quarantine = stale_lock_path(&path, marker.launcher_pid, attempt);
-                    let _ = fs::remove_file(&quarantine);
-                    match fs::rename(&path, &quarantine) {
-                        Ok(()) => {
-                            let _ = fs::remove_file(&quarantine);
-                            continue;
-                        }
-                        Err(rename_error) if rename_error.kind() == ErrorKind::NotFound => continue,
-                        Err(rename_error) => {
-                            if lock_owner_is_alive(&path)? {
-                                return Err(START_IN_PROGRESS_MESSAGE.into());
-                            }
-                            return Err(format!("Could not retire stale server lifecycle lock: {rename_error}"));
-                        }
-                    }
-                }
-                Err(error) => return Err(format!("Could not acquire server lifecycle lock: {error}")),
+        match file.try_lock() {
+            Ok(()) => {}
+            Err(TryLockError::WouldBlock) => return Err(START_IN_PROGRESS_MESSAGE.into()),
+            Err(TryLockError::Error(error)) => {
+                return Err(format!("Could not acquire operating-system server lifecycle lock: {error}"));
             }
         }
 
-        Err("Could not acquire the server lifecycle lock after repeated concurrent changes. Retry the server action.".into())
-    }
-}
-
-impl Drop for ServerStartLease {
-    fn drop(&mut self) {
-        let Ok(text) = fs::read_to_string(&self.path) else {
-            return;
-        };
-        let Ok(existing) = serde_json::from_str::<StartLockMarker>(&text) else {
-            return;
-        };
-        if existing.launcher_pid == self.marker.launcher_pid
-            && existing.process_start_time == self.marker.process_start_time
-        {
-            let _ = fs::remove_file(&self.path);
+        // A running pre-migration Launcher may still use the old PID marker
+        // instead of the OS lock. Refuse that transition rather than silently
+        // allowing two versions to mutate the same workspace concurrently.
+        if legacy_owner_is_alive(&mut file)? {
+            return Err(START_IN_PROGRESS_MESSAGE.into());
         }
+
+        // Clear the old marker only while this process holds exclusive OS
+        // ownership. Future leases never treat their own old PID as active.
+        file.set_len(0)
+            .map_err(|error| format!("Could not reset legacy server lifecycle marker: {error}"))?;
+        file.sync_all()
+            .map_err(|error| format!("Could not flush server lifecycle lock metadata: {error}"))?;
+        Ok(Self { _file: file })
     }
 }
 
-fn try_create(path: &PathBuf, marker: &StartLockMarker) -> Result<(), std::io::Error> {
-    let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
-    let result = (|| {
-        let text = serde_json::to_string(marker).map_err(std::io::Error::other)?;
-        file.write_all(text.as_bytes())?;
-        file.sync_data()
-    })();
-    if result.is_err() {
-        drop(file);
-        let _ = fs::remove_file(path);
+fn legacy_owner_is_alive(file: &mut File) -> Result<bool, String> {
+    let size = file.metadata()
+        .map_err(|error| format!("Could not inspect previous server lifecycle lock: {error}"))?
+        .len();
+    if size == 0 {
+        return Ok(false);
     }
-    result
-}
-
-fn stale_lock_path(path: &PathBuf, launcher_pid: u32, attempt: u8) -> PathBuf {
-    let parent = path.parent().map(PathBuf::from).unwrap_or_default();
-    parent.join(format!("server-start.stale.{launcher_pid}.{attempt}"))
-}
-
-fn current_launcher_marker() -> Result<StartLockMarker, String> {
-    let launcher_pid = std::process::id();
-    let pid = Pid::from_u32(launcher_pid);
-    let mut system = System::new_all();
-    system.refresh_process(pid);
-    let process_start_time = system
-        .process(pid)
-        .map(|process| process.start_time())
-        .ok_or_else(|| "Could not inspect the LazyBuilder launcher process for lifecycle coordination.".to_string())?;
-    Ok(StartLockMarker {
-        launcher_pid,
-        process_start_time,
-    })
-}
-
-fn lock_owner_is_alive(path: &PathBuf) -> Result<bool, String> {
-    let text = match fs::read_to_string(path) {
-        Ok(value) => value,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.to_string()),
-    };
-    let marker = match serde_json::from_str::<StartLockMarker>(&text) {
-        Ok(value) => value,
-        Err(_) => return Ok(false),
-    };
-
+    if size > MAX_LEGACY_MARKER_BYTES {
+        return Err("Previous server lifecycle lock is oversized. It was preserved for explicit recovery.".into());
+    }
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("Could not seek previous server lifecycle lock: {error}"))?;
+    let mut text = String::new();
+    file.read_to_string(&mut text)
+        .map_err(|error| format!("Could not read previous server lifecycle lock: {error}"))?;
+    if text.trim().is_empty() {
+        return Ok(false);
+    }
+    let marker: LegacyStartLockMarker = serde_json::from_str(&text)
+        .map_err(|_| "Previous server lifecycle lock is incomplete or malformed; it was preserved for explicit recovery.".to_string())?;
+    if marker.launcher_pid == 0 || marker.process_start_time == 0 {
+        return Err("Previous server lifecycle lock has an invalid process identity; it was preserved for explicit recovery.".into());
+    }
     let pid = Pid::from_u32(marker.launcher_pid);
     let mut system = System::new_all();
     system.refresh_process(pid);
-    Ok(system
-        .process(pid)
+    Ok(system.process(pid)
         .map(|process| process.start_time() == marker.process_start_time)
         .unwrap_or(false))
 }
@@ -148,24 +112,71 @@ fn lock_path() -> Result<PathBuf, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{stale_lock_path, StartLockMarker};
-    use std::path::PathBuf;
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
-    #[test]
-    fn start_lock_marker_round_trips() {
-        let marker = StartLockMarker {
-            launcher_pid: 42,
-            process_start_time: 1234,
-        };
-        let encoded = serde_json::to_string(&marker).expect("serialize marker");
-        let decoded: StartLockMarker = serde_json::from_str(&encoded).expect("deserialize marker");
-        assert_eq!(decoded.launcher_pid, 42);
-        assert_eq!(decoded.process_start_time, 1234);
+    static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
+
+    fn test_path(label: &str) -> PathBuf {
+        let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "lazybuilder-server-lifecycle-{label}-{}-{id}",
+            std::process::id()
+        )).join("server-start.lock")
     }
 
     #[test]
-    fn stale_lock_quarantine_is_unique_per_attempt() {
-        let path = PathBuf::from("C:/Temp/LazyBuilder/server-start.lock");
-        assert_ne!(stale_lock_path(&path, 42, 0), stale_lock_path(&path, 42, 1));
+    fn exclusive_lock_releases_on_drop_without_deleting_the_lock_file() {
+        let path = test_path("exclusive");
+        let first = ServerStartLease::acquire_at(&path).unwrap();
+        assert!(ServerStartLease::acquire_at(&path).is_err());
+        drop(first);
+        assert!(path.exists(), "the locked pathname must not be unlinked");
+        let next = ServerStartLease::acquire_at(&path).unwrap();
+        drop(next);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn malformed_legacy_marker_is_preserved_instead_of_treated_as_stale() {
+        let path = test_path("malformed");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "partial legacy marker").unwrap();
+        let error = match ServerStartLease::acquire_at(&path) {
+            Ok(_) => panic!("malformed marker must fail closed"),
+            Err(error) => error,
+        };
+        assert!(error.contains("preserved"));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "partial legacy marker");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn stale_legacy_pid_migrates_under_exclusive_os_lock() {
+        let path = test_path("stale");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, r#"{"launcherPid":4294967295,"processStartTime":1}"#).unwrap();
+        let lease = ServerStartLease::acquire_at(&path).unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().len(), 0);
+        drop(lease);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn live_legacy_pid_must_not_be_superseded() {
+        let path = test_path("legacy-live");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let pid = Pid::from_u32(std::process::id());
+        let mut system = System::new_all();
+        system.refresh_process(pid);
+        let started = system.process(pid).unwrap().start_time();
+        let previous = format!(
+            "{{\"launcherPid\":{},\"processStartTime\":{started}}}",
+            std::process::id()
+        );
+        fs::write(&path, &previous).unwrap();
+        assert!(ServerStartLease::acquire_at(&path).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), previous);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }
