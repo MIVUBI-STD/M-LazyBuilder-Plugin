@@ -1,6 +1,6 @@
 use crate::engine::{paths, persistence};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -53,6 +53,20 @@ struct PluginMetadata {
     api_version: String,
     dependencies: Vec<String>,
     provides: Vec<String>,
+    load_rules: Vec<LoadRule>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoadStage { Bootstrap, Server }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoadDirection { TargetBeforeSelf, SelfBeforeTarget }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LoadRule {
+    target: String,
+    stage: LoadStage,
+    direction: LoadDirection,
 }
 
 #[derive(Deserialize)]
@@ -65,6 +79,10 @@ struct PluginYaml {
     depend: Vec<String>,
     #[serde(default)]
     provides: Vec<String>,
+    #[serde(default)]
+    softdepend: Vec<String>,
+    #[serde(default)]
+    loadbefore: Vec<String>,
     #[serde(default)]
     dependencies: Option<serde_yaml::Value>,
 }
@@ -110,6 +128,9 @@ impl PluginManagerState {
         if let Some(problem) = dependency_problem(&workspace, &incoming)? {
             return Ok(failed_result(incoming.id, problem));
         }
+        if let Some(problem) = load_order_problem_from_scan(&scan_all(&workspace)?, &incoming) {
+            return Ok(failed_result(incoming.id, problem));
+        }
 
         let destination = plugins_directory(&workspace).join(safe_jar_name(&incoming.name, &incoming.version));
         if destination.exists() {
@@ -150,6 +171,11 @@ impl PluginManagerState {
         }
 
         let current = &existing[0];
+        if current.enabled {
+            if let Some(problem) = load_order_problem_from_scan(&scanned, &incoming) {
+                return Ok(failed_result(canonical_id, problem));
+            }
+        }
         if let Some(old) = current.metadata.as_ref() {
             if let Some(problem) = update_provider_breakage_from_scan(&scanned, old, &incoming) {
                 return Ok(failed_result(canonical_id, problem));
@@ -228,6 +254,9 @@ impl PluginManagerState {
                 return Err(problem);
             }
             if let Some(problem) = dependency_problem_from_scan(&scanned, metadata) {
+                return Err(problem);
+            }
+            if let Some(problem) = load_order_problem_from_scan(&scanned, metadata) {
                 return Err(problem);
             }
         } else {
@@ -439,7 +468,8 @@ fn list_plugins_inner(workspace: &Path) -> Result<Vec<PluginSummary>, String> {
             candidate_files = Some(files);
         } else if primary.enabled {
             if let Some(reason) = identity_conflict_from_scan(&scanned, metadata)
-                .or_else(|| dependency_problem_from_scan(&scanned, metadata)) {
+                .or_else(|| dependency_problem_from_scan(&scanned, metadata))
+                .or_else(|| load_order_problem_from_scan(&scanned, metadata)) {
                 state = "Problem".into();
                 problem = Some(reason);
             }
@@ -558,6 +588,30 @@ fn read_metadata_uncached(path: &Path) -> Result<PluginMetadata, String> {
     let parsed: PluginYaml = serde_yaml::from_str(&text)
         .map_err(|error| format!("Invalid plugin metadata: {error}"))?;
 
+    // Explicit ordering is separate from required dependency availability.
+    let load_rules = if metadata_entry_name == "paper-plugin.yml" {
+        parse_paper_load_rules(parsed.dependencies.as_ref())?
+    } else {
+        let mut rules = Vec::new();
+        for target in parsed.depend.iter().chain(parsed.softdepend.iter()) {
+            if !target.trim().is_empty() {
+                rules.push(LoadRule {
+                    target: normalize_id(target), stage: LoadStage::Server,
+                    direction: LoadDirection::TargetBeforeSelf,
+                });
+            }
+        }
+        for target in &parsed.loadbefore {
+            if !target.trim().is_empty() {
+                rules.push(LoadRule {
+                    target: normalize_id(target), stage: LoadStage::Server,
+                    direction: LoadDirection::SelfBeforeTarget,
+                });
+            }
+        }
+        rules
+    };
+
     let version = yaml_scalar_to_string(&parsed.version);
     if version.trim().is_empty() {
         return Err("Plugin metadata version is blank.".into());
@@ -576,7 +630,69 @@ fn read_metadata_uncached(path: &Path) -> Result<PluginMetadata, String> {
     provides.sort();
     provides.dedup();
 
-    Ok(PluginMetadata { id, name: parsed.name, version, api_version, dependencies, provides })
+    Ok(PluginMetadata { id, name: parsed.name, version, api_version, dependencies, provides, load_rules })
+}
+
+/// Parse only explicit Paper load rules. OMIT imposes no ordering.
+fn parse_paper_load_rules(value: Option<&serde_yaml::Value>) -> Result<Vec<LoadRule>, String> {
+    let Some(serde_yaml::Value::Mapping(root)) = value else { return Ok(Vec::new()); };
+    let mut rules = Vec::new();
+    let has_scopes = root.keys().any(|key| {
+        key.as_str().is_some_and(|name| matches!(name.to_ascii_lowercase().as_str(), "bootstrap" | "server"))
+    });
+    for (name, config) in root {
+        let Some(name) = name.as_str() else { continue; };
+        if has_scopes {
+            match name.to_ascii_lowercase().as_str() {
+                "bootstrap" => parse_paper_load_scope(config, LoadStage::Bootstrap, &mut rules)?,
+                "server" => parse_paper_load_scope(config, LoadStage::Server, &mut rules)?,
+                _ => {},
+            }
+        } else {
+            parse_paper_load_rule(name, config, LoadStage::Server, &mut rules)?;
+        }
+    }
+    Ok(rules)
+}
+
+fn parse_paper_load_scope(
+    value: &serde_yaml::Value, stage: LoadStage, rules: &mut Vec<LoadRule>,
+) -> Result<(), String> {
+    let serde_yaml::Value::Mapping(entries) = value else {
+        return Err("Paper dependency scope must contain plugin names.".into());
+    };
+    for (name, value) in entries {
+        if let Some(name) = name.as_str() {
+            parse_paper_load_rule(name, value, stage, rules)?;
+        }
+    }
+    Ok(())
+}
+
+fn parse_paper_load_rule(
+    target: &str, config: &serde_yaml::Value, stage: LoadStage, rules: &mut Vec<LoadRule>,
+) -> Result<(), String> {
+    if target.trim().is_empty() { return Err("Paper dependency name is blank.".into()); }
+    let serde_yaml::Value::Mapping(fields) = config else { return Ok(()); };
+    for (key, value) in fields {
+        if key.as_str().is_some_and(|key| key.eq_ignore_ascii_case("load")) {
+            let Some(value) = value.as_str() else {
+                return Err(format!("Paper dependency {target} has invalid non-string load order."));
+            };
+            let direction = match value.to_ascii_uppercase().as_str() {
+                "BEFORE" => Some(LoadDirection::TargetBeforeSelf),
+                "AFTER" => Some(LoadDirection::SelfBeforeTarget),
+                "OMIT" => None,
+                _ => return Err(format!(
+                    "Paper dependency {target} has unsupported load order {value}; use BEFORE, AFTER or OMIT."
+                )),
+            };
+            if let Some(direction) = direction {
+                rules.push(LoadRule { target: normalize_id(target), stage, direction });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn parse_paper_dependencies(value: Option<&serde_yaml::Value>) -> Vec<String> {
@@ -756,6 +872,77 @@ fn dependency_problem_from_scan(scanned: &[ScannedPlugin], metadata: &PluginMeta
         }
     }
     None
+}
+
+/// Detect cycles from explicit ordering edges only, independently for
+/// bootstrap and server phases. Paper remains the native load authority.
+fn load_order_problem_from_scan(scanned: &[ScannedPlugin], incoming: &PluginMetadata) -> Option<String> {
+    let mut installed = scanned.iter()
+        .filter(|item| item.enabled)
+        .filter_map(|item| item.metadata.as_ref())
+        .filter(|meta| meta.id != incoming.id)
+        .cloned().collect::<Vec<_>>();
+    installed.push(incoming.clone());
+    for stage in [LoadStage::Bootstrap, LoadStage::Server] {
+        let mut edges = Vec::<(String, String)>::new();
+        for plugin in &installed {
+            for rule in plugin.load_rules.iter().filter(|rule| rule.stage == stage) {
+                let providers = installed.iter()
+                    .filter(|other| claims_identity(other, &rule.target))
+                    .collect::<Vec<_>>();
+                if providers.is_empty() { continue; } // optional missing: no edge
+                if providers.len() > 1 {
+                    return Some(format!(
+                        "Ambiguous load-order target {} used by {}.", rule.target, plugin.name
+                    ));
+                }
+                let target = providers[0];
+                let (before, after) = match rule.direction {
+                    LoadDirection::TargetBeforeSelf => (&target.id, &plugin.id),
+                    LoadDirection::SelfBeforeTarget => (&plugin.id, &target.id),
+                };
+                if before == after {
+                    return Some(format!("Cyclic {} load order: {} refers to itself.",
+                        if stage == LoadStage::Bootstrap { "bootstrap" } else { "server" }, plugin.name));
+                }
+                edges.push((before.clone(), after.clone()));
+            }
+        }
+        if let Some(node) = detect_order_cycle(&edges) {
+            return Some(format!("Cyclic {} plugin load order detected involving {node}.",
+                if stage == LoadStage::Bootstrap { "bootstrap" } else { "server" }));
+        }
+    }
+    None
+}
+
+/// Kahn's algorithm over known plugin identities; no second persisted graph.
+fn detect_order_cycle(edges: &[(String, String)]) -> Option<String> {
+    let mut graph = BTreeMap::<String, Vec<String>>::new();
+    let mut indegrees = BTreeMap::<String, usize>::new();
+    let mut distinct = edges.to_vec();
+    distinct.sort();
+    distinct.dedup();
+    for (from, to) in distinct {
+        graph.entry(from.clone()).or_default().push(to.clone());
+        indegrees.entry(from).or_insert(0);
+        *indegrees.entry(to).or_insert(0) += 1;
+    }
+    let mut queue = indegrees.iter().filter(|(_, count)| **count == 0)
+        .map(|(id, _)| id.clone()).collect::<VecDeque<_>>();
+    let mut visited = 0usize;
+    while let Some(id) = queue.pop_front() {
+        visited += 1;
+        if let Some(successors) = graph.get(&id) {
+            for next in successors {
+                let degree = indegrees.get_mut(next).expect("order graph node exists");
+                *degree -= 1;
+                if *degree == 0 { queue.push_back(next.clone()); }
+            }
+        }
+    }
+    if visited == indegrees.len() { return None; }
+    indegrees.iter().find(|(_, count)| **count > 0).map(|(id, _)| id.clone())
 }
 
 fn enabled_dependents_from_scan(scanned: &[ScannedPlugin], identities: &HashSet<String>, except: &str) -> Vec<String> {
@@ -1126,6 +1313,7 @@ mod tests {
                 api_version: "1.21".into(),
                 dependencies: required.iter().map(|value| value.to_string()).collect(),
                 provides: Vec::new(),
+                load_rules: Vec::new(),
             }),
             enabled,
             error: None,
