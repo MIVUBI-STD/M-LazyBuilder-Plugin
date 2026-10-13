@@ -37,13 +37,12 @@ public final class AxiomWorldScope {
         BuilderExtensionWireProtocol.WorldIdentity serverWorld = null;
         if (client.isInSingleplayer()) {
             var server = client.getServer();
-            String saveIdentity = server == null
-                    ? "<singleplayer>"
-                    : server.getSavePath(WorldSavePath.ROOT)
-                            .toAbsolutePath()
-                            .normalize()
-                            .toString();
-            endpoint = "singleplayer|" + saveIdentity;
+            if (server == null) {
+                throw new IllegalStateException(
+                        "Singleplayer save identity is unavailable; Builder durable operations are blocked");
+            }
+            endpoint = singleplayerEndpoint(server.getSavePath(WorldSavePath.ROOT)
+                    .toAbsolutePath().normalize().toString());
         } else {
             ServerInfo info = client.getCurrentServerEntry();
             String preferred = info == null ? null : info.address;
@@ -63,6 +62,15 @@ public final class AxiomWorldScope {
         return serverWorld == null
                 ? digest(endpoint + "|" + dimension)
                 : remoteScopeId(endpoint, serverWorld, dimension);
+    }
+
+    /** Never let two unknown singleplayer saves share the same durable History scope. */
+    static String singleplayerEndpoint(String saveIdentity) {
+        if (saveIdentity == null || saveIdentity.isBlank()) {
+            throw new IllegalStateException(
+                    "Singleplayer save identity is unavailable; Builder durable operations are blocked");
+        }
+        return "singleplayer|" + saveIdentity;
     }
 
     /** Unknown endpoints cannot own recoverable journals or share a synthetic scope. */

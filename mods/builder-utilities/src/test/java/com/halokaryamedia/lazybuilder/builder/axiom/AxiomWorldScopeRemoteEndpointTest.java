@@ -31,6 +31,18 @@ class AxiomWorldScopeRemoteEndpointTest {
     }
 
     @Test
+    void singleplayerSavePathMustBeIdentifiableForDurableHistory() {
+        assertEquals("singleplayer|/saves/world-a",
+                AxiomWorldScope.singleplayerEndpoint("/saves/world-a"));
+        assertNotEquals(AxiomWorldScope.singleplayerEndpoint("/saves/world-a"),
+                AxiomWorldScope.singleplayerEndpoint("/saves/world-b"));
+        assertThrows(IllegalStateException.class,
+                () -> AxiomWorldScope.singleplayerEndpoint(null));
+        assertThrows(IllegalStateException.class,
+                () -> AxiomWorldScope.singleplayerEndpoint(" "));
+    }
+
+    @Test
     void rejectsUnavailableRemoteServerIdentity() {
         assertThrows(IllegalStateException.class,
                 () -> AxiomWorldScope.remoteEndpoint(null, null));
