@@ -1192,6 +1192,16 @@ fn stage_validated_plugin(source: &Path, staged: &Path, expected: &PluginMetadat
 /// Staging lives next to the destination, so it cannot cross filesystems.
 fn publish_staged_if_absent(staged: &Path, destination: &Path) -> Result<(), String> {
     persistence::safe_path::ensure_regular_file(staged, "staged plugin JAR")?;
+    // Even with a missing destination, an interrupted replace_file() may
+    // retain the only surviving previous JAR under .swap.previous. No new
+    // install/recovery publication may bypass that unresolved transaction.
+    let previous = destination.with_extension("swap.previous");
+    if persistence::metadata_entry_exists(&previous, "previous plugin swap")? {
+        return Err(format!(
+            "Unresolved previous plugin swap at {}; preserve the recovery file before retrying.",
+            previous.display()
+        ));
+    }
     fs::hard_link(staged, destination).map_err(|error| {
         format!(
             "Could not publish plugin JAR without replacing an existing destination {}: {error}",
@@ -1227,7 +1237,16 @@ fn publish_recovery_backup(source: &Path, destination: &Path) -> Result<(), Stri
             destination.display()
         ));
     }
-    publish_backup(source, destination)
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    let staged = destination.with_extension("jar.incoming");
+    stage_copy(source, &staged)?;
+    // A second owner can create the backup after the preflight above. Unlike
+    // replace_file(), a hard-link publish never replaces that recovery JAR.
+    let result = publish_staged_if_absent(&staged, destination);
+    let _ = fs::remove_file(&staged);
+    result
 }
 
 fn move_file_verified(source: &Path, destination: &Path) -> Result<(), String> {
@@ -2075,6 +2094,72 @@ mod tests {
         replace_file(&staged, &destination).unwrap();
         assert_eq!(fs::read(&destination).unwrap(), b"new JAR");
         assert!(!destination.with_extension("swap.previous").exists());
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn new_install_refuses_missing_destination_with_pending_swap_recovery() {
+        let directory = test_directory("install-pending-swap");
+        let source = directory.join("source.jar");
+        let installed = directory.join("new-install.jar");
+        let previous = installed.with_extension("swap.previous");
+        write_test_plugin_jar(&source, "ExamplePlugin", "1.0");
+        let expected = super::read_metadata_uncached(&source).unwrap();
+        fs::write(&previous, b"only surviving previous JAR").unwrap();
+
+        assert!(copy_atomic(&source, &installed, &expected).unwrap_err()
+            .contains("Unresolved previous plugin swap"));
+        assert!(!installed.exists());
+        assert!(!installed.with_extension("jar.incoming").exists());
+        assert_eq!(fs::read(&previous).unwrap(), b"only surviving previous JAR");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn unresolved_swap_recovery_blocks_duplicate_cleanup_publication() {
+        let directory = test_directory("backup-pending-swap");
+        let source = directory.join("source.jar");
+        let backup = directory.join("recovery.rollback.jar");
+        let previous = backup.with_extension("swap.previous");
+        fs::write(&source, b"new attempt").unwrap();
+        fs::write(&previous, b"only previous recovery").unwrap();
+
+        assert!(publish_recovery_backup(&source, &backup).unwrap_err()
+            .contains("Unresolved previous plugin swap"));
+        assert!(!backup.exists());
+        assert!(!backup.with_extension("jar.incoming").exists());
+        assert_eq!(fs::read(&previous).unwrap(), b"only previous recovery");
+        assert_eq!(fs::read(&source).unwrap(), b"new attempt");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn recovery_backup_is_created_only_once_and_staged_file_is_cleaned() {
+        let directory = test_directory("backup-safe-once");
+        let source = directory.join("source.jar");
+        let backup = directory.join("problem.rollback.jar");
+        fs::write(&source, b"original bytes").unwrap();
+
+        publish_recovery_backup(&source, &backup).unwrap();
+        assert_eq!(fs::read(&backup).unwrap(), b"original bytes");
+        assert!(!backup.with_extension("jar.incoming").exists());
+        fs::write(&source, b"changed bytes").unwrap();
+        assert!(publish_recovery_backup(&source, &backup).is_err());
+        assert_eq!(fs::read(&backup).unwrap(), b"original bytes");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn backup_candidate_cannot_overwrite_destination_created_after_preflight() {
+        let directory = test_directory("backup-publish-race");
+        let staged = directory.join("recovery.jar.incoming");
+        let destination = directory.join("recovery.jar");
+        fs::write(&staged, b"new candidate").unwrap();
+        // Simulate another owner publishing after the initial exists check.
+        fs::write(&destination, b"existing recovery bytes").unwrap();
+        assert!(super::publish_staged_if_absent(&staged, &destination).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"existing recovery bytes");
+        assert_eq!(fs::read(&staged).unwrap(), b"new candidate");
         let _ = fs::remove_dir_all(directory);
     }
 
