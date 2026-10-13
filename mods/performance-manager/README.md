@@ -12,6 +12,22 @@ The target is to replace the external performance stack gradually with independe
 
 Performance Manager owns client performance behavior only: frame timing/pressure, background FPS policy, conservative culling, immediate rendering efficiency, targeted memory reduction, chunk rebuild/mesh/render-region/upload/visibility/submission/buffer efficiency, and builder-render compatibility policy.
 
+## Client startup and shader catalog
+
+The installed Fabric client constructs the shader runtime without scanning the
+`shaderpacks/` folder or opening shader ZIP files on the mod initialization thread.
+At `CLIENT_STARTED`, it uses the existing asynchronous catalog worker. A
+persisted enabled selection is compiled only after successful catalog resolution;
+with an external renderer owner, discovery remains asynchronous and first-party
+shader compilation remains disabled. The ordinary eager constructor is retained
+for explicit synchronous use and deterministic tests. A missing pack is never
+removed from persisted preferences before the first catalog resolution.
+
+This is a source-level startup contention reduction, **not** a measured reduction
+in Minecraft launch time. Validate both cold and warm launch with empty,
+populated and invalid shader pack directories, including a saved enabled selection,
+and verify that the first displayed menu is not blocked by shader discovery.
+
 ## Compatibility fallback safety
 
 The optimization ownership policy is fail-closed for incomplete/missing domains: a domain not explicitly claimed by the policy is treated as externally owned, not automatically first-party. Likewise a mixin not registered in the existing domain mapping is refused by the mixin plugin. The packaged client mixin list is regression-checked against the declared domain map. These source guards do not establish Minecraft/driver runtime compatibility and do not change the user-selected rendering settings.

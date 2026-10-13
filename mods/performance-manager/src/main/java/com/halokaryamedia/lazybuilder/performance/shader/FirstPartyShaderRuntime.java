@@ -32,6 +32,9 @@ public final class FirstPartyShaderRuntime {
     private volatile Thread preparationThread;
     private volatile Thread catalogRefreshThread;
     private volatile boolean catalogRefreshRequested;
+    // The production client defers disk/ZIP catalog discovery until CLIENT_STARTED.
+    private boolean catalogLoaded;
+    private boolean activateOnCatalogRefresh;
     private volatile boolean stagedOptionsRequireCompile;
     private volatile boolean lastFrameApplied;
     private volatile boolean terrainVertexCompiled;
@@ -50,16 +53,30 @@ public final class FirstPartyShaderRuntime {
     private FirstPartyShadowRenderer shadowRenderer;
 
     public FirstPartyShaderRuntime(Path shaderpacksDirectory, Path configDirectory) {
+        this(shaderpacksDirectory, configDirectory, true);
+    }
+
+    /**
+     * Production-only startup path: do not traverse shaderpacks or open ZIP files
+     * while Fabric is initializing. CLIENT_STARTED triggers the existing async scan.
+     * The eager constructor remains available for callers requiring an immediate
+     * catalog, including deterministic source tests.
+     */
+    public static FirstPartyShaderRuntime deferredForClient(Path shaderpacksDirectory, Path configDirectory) {
+        return new FirstPartyShaderRuntime(shaderpacksDirectory, configDirectory, false);
+    }
+
+    private FirstPartyShaderRuntime(
+            Path shaderpacksDirectory, Path configDirectory, boolean scanImmediately
+    ) {
         this.catalog = new ShaderPackCatalog(shaderpacksDirectory);
         this.configStore = new ShaderRuntimeConfigStore(configDirectory);
         this.persisted = configStore.load();
         this.selectedPackId = persisted.selectedPackId();
-        refresh();
-        if (!selectedPackId.isBlank()
-                && packs.stream().noneMatch(pack -> pack.id().equals(selectedPackId))) {
-            selectedPackId = "";
-            persisted = persisted.withSelectedPack("");
-            configStore.save(persisted);
+        if (scanImmediately) {
+            refresh();
+        } else {
+            stage = "catalog-deferred";
         }
     }
 
@@ -150,6 +167,7 @@ public final class FirstPartyShaderRuntime {
     }
 
     private void applyCatalogScan(long generation, CatalogScan scan) {
+        boolean activatePending;
         synchronized (this) {
             if (generation != catalogRefreshGeneration || "stopped".equals(stage)) return;
 
@@ -189,6 +207,11 @@ public final class FirstPartyShaderRuntime {
             }
 
             health.catalog("");
+            catalogLoaded = true;
+            activatePending = activateOnCatalogRefresh
+                    && persisted.enabled()
+                    && !selectedPackId.isBlank();
+            activateOnCatalogRefresh = false;
 
             if (pipeline == null) {
                 stage = health.primary().isBlank() ? "source-ready" : "degraded";
@@ -199,6 +222,9 @@ public final class FirstPartyShaderRuntime {
             }
             revision++;
         }
+        // Compile request is queued only after the scanned catalog has resolved
+        // the persisted selection. Preparation still runs on its existing worker.
+        if (activatePending) compileSelected();
     }
 
     public synchronized boolean select(String packId) {
@@ -471,6 +497,17 @@ public final class FirstPartyShaderRuntime {
     }
 
     public void activateConfiguredSelection() {
+        boolean needsCatalog;
+        synchronized (this) {
+            if ("stopped".equals(stage)) return;
+            needsCatalog = !catalogLoaded;
+            if (needsCatalog) activateOnCatalogRefresh = true;
+        }
+        if (needsCatalog) {
+            refreshAsync();
+            return;
+        }
+
         ShaderRuntimePreferences preferences = persisted;
         if (preferences.enabled() && !preferences.selectedPackId().isBlank()) {
             compileSelected();
@@ -1516,6 +1553,7 @@ public final class FirstPartyShaderRuntime {
         compileRequestGeneration++;
         catalogRefreshGeneration++;
         catalogRefreshRequested = false;
+        activateOnCatalogRefresh = false;
         cancelPreparationLocked();
         Thread catalogWorker = catalogRefreshThread;
         catalogRefreshThread = null;

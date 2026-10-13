@@ -121,4 +121,46 @@ final class FirstPartyShaderRuntimeTest {
         assertTrue(persisted.enabled());
         assertEquals(secondId, runtime.snapshot().selectedPackId());
     }
+    @Test
+    void deferredClientStartupDoesNotTouchShaderDirectoryUntilExplicitRefresh() {
+        Path shaderpacks = temp.resolve("not-created");
+        Path config = temp.resolve("config");
+
+        FirstPartyShaderRuntime runtime = FirstPartyShaderRuntime.deferredForClient(shaderpacks, config);
+
+        assertEquals("catalog-deferred", runtime.snapshot().stage());
+        assertTrue(runtime.snapshot().packIds().isEmpty());
+        assertFalse(Files.exists(shaderpacks));
+
+        runtime.refresh();
+
+        assertTrue(Files.isDirectory(shaderpacks));
+        assertEquals("source-ready", runtime.snapshot().stage());
+    }
+
+    @Test
+    void deferredStartupPreservesPersistedSelectionUntilCatalogIsResolved() throws IOException {
+        Path shaderpacks = temp.resolve("shaderpacks");
+        Path pack = shaderpacks.resolve("Selected");
+        Files.createDirectories(pack.resolve("shaders"));
+        Files.writeString(pack.resolve("shaders/terrain.vsh"), "#version 150\\nvoid main(){}\\n");
+        Files.writeString(pack.resolve("shaders/terrain.fsh"), "#version 150\\nvoid main(){}\\n");
+        String selectedId = new ShaderPackCatalog(shaderpacks).scan().getFirst().id();
+
+        Path config = temp.resolve("config");
+        ShaderRuntimeConfigStore store = new ShaderRuntimeConfigStore(config);
+        store.save(new ShaderRuntimePreferences(selectedId, true));
+
+        FirstPartyShaderRuntime runtime = FirstPartyShaderRuntime.deferredForClient(shaderpacks, config);
+        assertEquals(selectedId, runtime.snapshot().selectedPackId());
+        assertTrue(runtime.snapshot().packIds().isEmpty());
+        assertEquals(selectedId, store.load().selectedPackId());
+
+        runtime.refresh();
+
+        assertEquals(selectedId, runtime.snapshot().selectedPackId());
+        assertEquals(java.util.List.of(selectedId), runtime.snapshot().packIds());
+        assertEquals(selectedId, store.load().selectedPackId());
+        assertTrue(store.load().enabled());
+    }
 }

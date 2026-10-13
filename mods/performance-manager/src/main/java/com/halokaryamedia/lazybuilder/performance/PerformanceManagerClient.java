@@ -51,7 +51,7 @@ public final class PerformanceManagerClient implements ClientModInitializer {
     public void onInitializeClient() {
         FabricLoader loader = FabricLoader.getInstance();
         runtime = new PerformanceRuntime(loader.getConfigDir());
-        shaderRuntime = new FirstPartyShaderRuntime(
+        shaderRuntime = FirstPartyShaderRuntime.deferredForClient(
                 loader.getGameDir().resolve("shaderpacks"),
                 loader.getConfigDir()
         );
@@ -113,8 +113,14 @@ public final class PerformanceManagerClient implements ClientModInitializer {
                 .registerReloadListener(new PerformanceShaderReloadInvalidator());
 
         ClientLifecycleEvents.CLIENT_STARTED.register(client -> {
-            if (shaderRuntime != null && firstPartyShaderOwnershipAllowed()) {
-                shaderRuntime.activateConfiguredSelection();
+            FirstPartyShaderRuntime shaders = shaderRuntime;
+            if (shaders == null) return;
+            if (firstPartyShaderOwnershipAllowed()) {
+                shaders.activateConfiguredSelection();
+            } else {
+                // Catalog remains visible for diagnostics/UI, without claiming
+                // the external renderer or compiling first-party shaders.
+                shaders.refreshAsync();
             }
         });
 
