@@ -227,6 +227,7 @@ impl OperationRegistry {
         let result = self.mutate(id, |entry| {
             ensure_active(entry)?;
             let now = now_unix_seconds();
+            let succeeded = state == OperationState::Succeeded;
             entry.state = state;
             entry.status = status.trim().to_string();
             entry.error = error;
@@ -235,7 +236,7 @@ impl OperationRegistry {
             // A terminal state is not necessarily successful. Keep the
             // observed partial progress for failure/cancellation/recovery;
             // only successful completion may report the full workload.
-            if state == OperationState::Succeeded {
+            if succeeded {
                 if let Some(progress) = entry.progress.as_mut() {
                     if let Some(total) = progress.total {
                         progress.current = total;
