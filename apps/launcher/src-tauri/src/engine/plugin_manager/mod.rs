@@ -564,10 +564,13 @@ fn read_metadata(path: &Path) -> Result<PluginMetadata, String> {
 fn read_metadata_uncached(path: &Path) -> Result<PluginMetadata, String> {
     let file = File::open(path).map_err(|error| error.to_string())?;
     let mut archive = ZipArchive::new(file).map_err(|error| format!("Invalid plugin JAR: {error}"))?;
-    let metadata_entry_name = if archive.file_names().any(|name| name == "plugin.yml") {
-        "plugin.yml"
-    } else if archive.file_names().any(|name| name == "paper-plugin.yml") {
+    // Paper 1.21.4 uses the Paper descriptor when a JAR contains both.
+    // Inspecting Bukkit fallback metadata instead would silently ignore its
+    // actual bootstrap/server dependencies and load-order rules.
+    let metadata_entry_name = if archive.file_names().any(|name| name == "paper-plugin.yml") {
         "paper-plugin.yml"
+    } else if archive.file_names().any(|name| name == "plugin.yml") {
+        "plugin.yml"
     } else {
         return Err("JAR does not contain plugin.yml or paper-plugin.yml".into());
     };
@@ -758,16 +761,34 @@ fn yaml_scalar_to_string(value: &serde_yaml::Value) -> String {
 }
 
 fn validate_target_compatibility(metadata: &PluginMetadata) -> Result<(), String> {
-    if metadata.api_version.trim().is_empty() { return Ok(()); }
-    let mut parts = metadata.api_version.split('.');
-    let major = parts.next().and_then(|value| value.parse::<u32>().ok());
-    let minor = parts.next().and_then(|value| value.parse::<u32>().ok()).unwrap_or(0);
-    if let Some(major) = major {
-        if major > 1 || (major == 1 && minor > 21) {
-            return Err(format!(
-                "Plugin targets API {}, newer than LazyBuilder's Paper 1.21.4 baseline.", metadata.api_version
-            ));
-        }
+    let version = metadata.api_version.trim();
+    if version.is_empty() { return Ok(()); } // Paper legacy-plugin behavior
+    let components = version.split('.').collect::<Vec<_>>();
+    let parsed = match components.as_slice() {
+        [major, minor] => major.parse::<u32>().ok()
+            .zip(minor.parse::<u32>().ok())
+            .map(|(major, minor)| (major, minor, 0)),
+        [major, minor, patch] => major.parse::<u32>().ok()
+            .zip(minor.parse::<u32>().ok())
+            .zip(patch.parse::<u32>().ok())
+            .map(|((major, minor), patch)| (major, minor, patch)),
+        _ => None,
+    };
+    let Some((major, minor, patch)) = parsed else {
+        return Err(format!("Invalid plugin api-version {version}; expected numeric major.minor[.patch]."));
+    };
+    if major != 1 || minor < 13 {
+        return Err(format!(
+            "Unsupported plugin api-version {version} for LazyBuilder's Paper 1.21.4 baseline."
+        ));
+    }
+    // Paper supports patch-specific api-version declarations since 1.20.5.
+    // Comparing only 1.21 (and discarding .5) would approve a plugin that
+    // Paper 1.21.4 itself must refuse to load.
+    if (major, minor, patch) > (1, 21, 4) {
+        return Err(format!(
+            "Plugin targets API {}, newer than LazyBuilder's Paper 1.21.4 baseline.", metadata.api_version
+        ));
     }
     Ok(())
 }
@@ -1801,6 +1822,61 @@ mod tests {
             scanned("gamma", true, &[]),
         ];
         assert!(dependency_problem_from_scan(&plugins, plugins[0].metadata.as_ref().unwrap()).is_none());
+    }
+
+    #[test]
+    fn paper_descriptor_takes_precedence_when_both_metadata_files_exist() {
+        let directory = test_directory("dual-descriptor-precedence");
+        let path = directory.join("dual.jar");
+        let mut archive = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        archive.start_file("plugin.yml", zip::write::SimpleFileOptions::default()).unwrap();
+        write!(archive, "name: BukkitFallback\nversion: '1'\ndepend: [MissingLegacy]\n").unwrap();
+        archive.start_file("paper-plugin.yml", zip::write::SimpleFileOptions::default()).unwrap();
+        write!(archive,
+            "name: PaperNative\nversion: '1'\ndependencies:\n  server:\n    Optional:\n      required: false\n      load: BEFORE\n"
+        ).unwrap();
+        archive.finish().unwrap();
+
+        let metadata = super::read_metadata_uncached(&path).unwrap();
+        assert!(metadata.paper_descriptor);
+        assert_eq!(metadata.id, "papernative");
+        assert!(metadata.dependencies.is_empty(),
+            "Bukkit-only hard dependency cannot override the active Paper descriptor");
+        assert!(metadata.load_rules.contains(&LoadRule {
+            target: "optional".into(), stage: LoadStage::Server,
+            direction: LoadDirection::TargetBeforeSelf,
+        }));
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn plugin_api_version_accepts_paper_1214_and_older_valid_versions() {
+        let mut metadata = scanned("api", true, &[]).metadata.unwrap();
+        for version in ["", "1.13", "1.20.5", "1.21", "1.21.4"] {
+            metadata.api_version = version.into();
+            assert!(super::validate_target_compatibility(&metadata).is_ok(),
+                "expected supported {version}");
+        }
+    }
+
+    #[test]
+    fn plugin_api_version_rejects_newer_patch_and_future_minor() {
+        let mut metadata = scanned("api", true, &[]).metadata.unwrap();
+        for version in ["1.21.5", "1.22", "26.3"] {
+            metadata.api_version = version.into();
+            assert!(super::validate_target_compatibility(&metadata).is_err(),
+                "must reject newer API {version} on Paper 1.21.4");
+        }
+    }
+
+    #[test]
+    fn plugin_api_version_rejects_malformed_or_unsupported_shapes() {
+        let mut metadata = scanned("api", true, &[]).metadata.unwrap();
+        for version in ["invalid", "1", "1.21.", "1.21.4.1", "0.0", "1.12", "1.21-beta"] {
+            metadata.api_version = version.into();
+            assert!(super::validate_target_compatibility(&metadata).is_err(),
+                "must reject malformed/unsupported {version}");
+        }
     }
 
     #[test]
