@@ -1,21 +1,20 @@
+use crate::engine::persistence;
 use serde::{Deserialize, Serialize};
-use std::fs::{self, OpenOptions};
-use std::io::{ErrorKind, Write};
+use std::fs::{self, File, OpenOptions, TryLockError};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use sysinfo::{Pid, System};
-#[cfg(windows)]
-use std::os::windows::fs::MetadataExt;
 
-const MAX_ACQUIRE_ATTEMPTS: u8 = 8;
 const MAX_INSTANCE_MARKER_BYTES: u64 = 4096;
-#[cfg(windows)]
-const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x00000400;
+const OS_LOCK_LEASE_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct InstanceMarker {
     launcher_pid: u32,
     process_start_time: u64,
+    #[serde(default)]
+    lease_version: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -23,80 +22,77 @@ pub struct InstanceStartupState {
     pub previous_session_unclean: bool,
 }
 
+/// An OS-exclusive single-instance lease. Keep the pathname stable and let
+/// closing this handle release ownership, even following an abrupt exit.
 pub struct LauncherInstanceLease {
-    path: PathBuf,
-    marker: InstanceMarker,
+    file: File,
 }
 
 pub fn acquire() -> Result<(LauncherInstanceLease, InstanceStartupState), String> {
-    let path = instance_path()?;
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| format!("Could not prepare Launcher instance state: {error}"))?;
+    acquire_at(&instance_path()?)
+}
+
+fn acquire_at(path: &Path) -> Result<(LauncherInstanceLease, InstanceStartupState), String> {
+    let parent = path.parent().ok_or_else(|| "Launcher instance state has no parent directory".to_string())?;
+    fs::create_dir_all(parent)
+        .map_err(|error| format!("Could not prepare Launcher instance state: {error}"))?;
+    persistence::safe_path::ensure_real_directory(parent, "Launcher instance directory")?;
+    if persistence::safe_path::entry_exists(path, "Launcher instance state")? {
+        persistence::safe_path::ensure_regular_file(path, "Launcher instance state")?;
     }
 
-    let marker = current_launcher_marker()?;
-    let mut previous_session_unclean = false;
-
-    for attempt in 0..MAX_ACQUIRE_ATTEMPTS {
-        match try_create(&path, &marker) {
-            Ok(()) => {
-                return Ok((
-                    LauncherInstanceLease { path, marker },
-                    InstanceStartupState { previous_session_unclean },
-                ));
-            }
-            Err(error) if error.kind() == ErrorKind::AlreadyExists => {
-                if instance_owner_is_alive(&path)? {
-                    return Err("LazyBuilder is already running. Use the existing Launcher window instead of opening a second instance.".into());
-                }
-
-                previous_session_unclean = true;
-                let quarantine = stale_instance_path(&path, marker.launcher_pid, attempt);
-                let _ = fs::remove_file(&quarantine);
-                match fs::rename(&path, &quarantine) {
-                    Ok(()) => {
-                        let _ = fs::remove_file(&quarantine);
-                        continue;
-                    }
-                    Err(rename_error) if rename_error.kind() == ErrorKind::NotFound => continue,
-                    Err(rename_error) => {
-                        if instance_owner_is_alive(&path)? {
-                            return Err("LazyBuilder is already running. Use the existing Launcher window instead of opening a second instance.".into());
-                        }
-                        return Err(format!("Could not retire stale Launcher instance state: {rename_error}"));
-                    }
-                }
-            }
-            Err(error) => return Err(format!("Could not acquire Launcher instance authority: {error}")),
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(path)
+        .map_err(|error| format!("Could not open Launcher instance state: {error}"))?;
+    match file.try_lock() {
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => {
+            return Err("LazyBuilder is already running. Use the existing Launcher window instead of opening a second instance.".into());
+        }
+        Err(TryLockError::Error(error)) => {
+            return Err(format!("Could not acquire exclusive Launcher instance lock: {error}"));
         }
     }
 
-    Err("Could not acquire Launcher instance authority after repeated concurrent changes. Close other LazyBuilder windows and try again.".into())
+    let previous = read_instance_marker(&mut file)?;
+    if let Some(marker) = &previous {
+        if marker.lease_version > OS_LOCK_LEASE_VERSION {
+            return Err("Launcher instance marker belongs to a newer unsupported version; it was preserved for recovery.".into());
+        }
+        // Older Launchers used only a PID marker. An active older process
+        // does not participate in the OS lock and must still be respected.
+        if marker.lease_version < OS_LOCK_LEASE_VERSION && instance_owner_is_alive(marker) {
+            return Err("LazyBuilder is already running under the previous Launcher instance protocol.".into());
+        }
+    }
+    let marker = current_launcher_marker()?;
+    file.set_len(0)
+        .map_err(|error| format!("Could not reset Launcher instance marker: {error}"))?;
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("Could not seek Launcher instance marker: {error}"))?;
+    serde_json::to_writer(&mut file, &marker)
+        .map_err(|error| format!("Could not serialize Launcher instance marker: {error}"))?;
+    file.sync_all()
+        .map_err(|error| format!("Could not flush Launcher instance marker: {error}"))?;
+
+    Ok((
+        LauncherInstanceLease { file },
+        InstanceStartupState { previous_session_unclean: previous.is_some() },
+    ))
 }
 
 impl Drop for LauncherInstanceLease {
     fn drop(&mut self) {
-        let Ok(Some(existing)) = read_instance_marker(&self.path) else { return; };
-        if existing.launcher_pid == self.marker.launcher_pid
-            && existing.process_start_time == self.marker.process_start_time
-        {
-            let _ = fs::remove_file(&self.path);
+        // Do not unlink the locked pathname. A second process could otherwise
+        // open a different file at the same path while this one is still live.
+        // Truncation marks a normal exit; the OS releases the lock on close.
+        if self.file.set_len(0).is_ok() {
+            let _ = self.file.sync_all();
         }
     }
-}
-
-fn try_create(path: &Path, marker: &InstanceMarker) -> Result<(), std::io::Error> {
-    let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
-    let result = (|| {
-        let text = serde_json::to_string(marker).map_err(std::io::Error::other)?;
-        file.write_all(text.as_bytes())?;
-        file.sync_all()
-    })();
-    if result.is_err() {
-        drop(file);
-        let _ = fs::remove_file(path);
-    }
-    result
 }
 
 fn current_launcher_marker() -> Result<InstanceMarker, String> {
@@ -108,53 +104,50 @@ fn current_launcher_marker() -> Result<InstanceMarker, String> {
         .process(pid)
         .map(|process| process.start_time())
         .ok_or_else(|| "Could not inspect the LazyBuilder process for single-instance coordination.".to_string())?;
-    Ok(InstanceMarker { launcher_pid, process_start_time })
+    Ok(InstanceMarker {
+        launcher_pid,
+        process_start_time,
+        lease_version: OS_LOCK_LEASE_VERSION,
+    })
 }
 
-fn instance_owner_is_alive(path: &Path) -> Result<bool, String> {
-    let Some(marker) = read_instance_marker(path)? else { return Ok(false); };
-
+fn instance_owner_is_alive(marker: &InstanceMarker) -> bool {
     let pid = Pid::from_u32(marker.launcher_pid);
     let mut system = System::new_all();
     system.refresh_process(pid);
-    Ok(system
+    system
         .process(pid)
         .map(|process| process.start_time() == marker.process_start_time)
-        .unwrap_or(false))
+        .unwrap_or(false)
 }
 
-fn read_instance_marker(path: &Path) -> Result<Option<InstanceMarker>, String> {
-    let metadata = match fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("Could not inspect Launcher instance state: {error}")),
-    };
-    if metadata.file_type().is_symlink() || is_reparse_point(&metadata) || !metadata.file_type().is_file() {
-        return Err("LazyBuilder refused unsafe Launcher instance state.".into());
+fn read_instance_marker(file: &mut File) -> Result<Option<InstanceMarker>, String> {
+    let size = file.metadata()
+        .map_err(|error| format!("Could not inspect Launcher instance state: {error}"))?
+        .len();
+    if size == 0 {
+        return Ok(None);
     }
-    if metadata.len() > MAX_INSTANCE_MARKER_BYTES {
+    if size > MAX_INSTANCE_MARKER_BYTES {
         return Err(format!(
             "Launcher instance state exceeds the {} byte limit.",
             MAX_INSTANCE_MARKER_BYTES
         ));
     }
-    let text = fs::read_to_string(path)
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| format!("Could not seek Launcher instance state: {error}"))?;
+    let mut text = String::new();
+    file.read_to_string(&mut text)
         .map_err(|error| format!("Could not read Launcher instance state: {error}"))?;
-    let marker = match serde_json::from_str::<InstanceMarker>(&text) {
-        Ok(marker) => marker,
-        Err(_) => return Ok(None),
-    };
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    let marker: InstanceMarker = serde_json::from_str(&text)
+        .map_err(|_| "Launcher instance state is incomplete or malformed and was preserved for explicit recovery.".to_string())?;
+    if marker.launcher_pid == 0 || marker.process_start_time == 0 {
+        return Err("Launcher instance state has an invalid process identity and was preserved for explicit recovery.".into());
+    }
     Ok(Some(marker))
-}
-
-#[cfg(windows)]
-fn is_reparse_point(metadata: &fs::Metadata) -> bool {
-    metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-}
-
-#[cfg(not(windows))]
-fn is_reparse_point(_metadata: &fs::Metadata) -> bool {
-    false
 }
 
 fn instance_path() -> Result<PathBuf, String> {
@@ -165,43 +158,91 @@ fn instance_path() -> Result<PathBuf, String> {
     Ok(base.join("LazyBuilder").join("launcher-instance.json"))
 }
 
-fn stale_instance_path(path: &Path, launcher_pid: u32, attempt: u8) -> PathBuf {
-    let parent = path.parent().map(PathBuf::from).unwrap_or_default();
-    parent.join(format!("launcher-instance.stale.{launcher_pid}.{attempt}.json"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_TEST_ID: AtomicU64 = AtomicU64::new(1);
+
+    fn temp_path(label: &str) -> PathBuf {
+        let id = NEXT_TEST_ID.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir()
+            .join(format!("lazybuilder-instance-{label}-{}-{id}", std::process::id()))
+            .join("launcher-instance.json")
+    }
 
     #[test]
-    fn instance_marker_round_trips() {
-        let marker = InstanceMarker { launcher_pid: 42, process_start_time: 1234 };
-        let encoded = serde_json::to_string(&marker).expect("serialize marker");
-        let decoded: InstanceMarker = serde_json::from_str(&encoded).expect("deserialize marker");
-        assert_eq!(decoded.launcher_pid, 42);
-        assert_eq!(decoded.process_start_time, 1234);
+    fn serializes_legacy_and_native_markers() {
+        let legacy: InstanceMarker = serde_json::from_str(
+            r#"{"launcherPid":42,"processStartTime":1234}"#
+        ).unwrap();
+        assert_eq!(legacy.lease_version, 0);
+        let current = InstanceMarker { launcher_pid: 42, process_start_time: 1234, lease_version: OS_LOCK_LEASE_VERSION };
+        let decoded: InstanceMarker = serde_json::from_str(&serde_json::to_string(&current).unwrap()).unwrap();
+        assert_eq!(decoded.lease_version, OS_LOCK_LEASE_VERSION);
+    }
+
+    #[test]
+    fn exclusive_instance_lock_is_reusable_after_clean_drop() {
+        let path = temp_path("exclusive");
+        let (lease, status) = acquire_at(&path).unwrap();
+        assert!(!status.previous_session_unclean);
+        assert!(acquire_at(&path).is_err());
+        drop(lease);
+        assert!(path.exists(), "the locked pathname must remain stable");
+        let (again, status) = acquire_at(&path).unwrap();
+        assert!(!status.previous_session_unclean);
+        drop(again);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn leftover_native_marker_is_reported_as_unclean() {
+        let path = temp_path("unclean");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let marker = current_launcher_marker().unwrap();
+        fs::write(&path, serde_json::to_vec(&marker).unwrap()).unwrap();
+        let (lease, startup) = acquire_at(&path).unwrap();
+        assert!(startup.previous_session_unclean);
+        drop(lease);
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn legacy_live_process_cannot_be_superseded() {
+        let path = temp_path("legacy-live");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let current = current_launcher_marker().unwrap();
+        let legacy = InstanceMarker { lease_version: 0, ..current };
+        fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+        assert!(acquire_at(&path).is_err());
+        assert_eq!(fs::read_to_string(&path).unwrap(), serde_json::to_string(&legacy).unwrap());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn malformed_marker_preserves_evidence() {
+        let path = temp_path("malformed");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "incomplete").unwrap();
+        let error = match acquire_at(&path) {
+            Ok(_) => panic!("incomplete marker must not silently be retired"),
+            Err(error) => error,
+        };
+        assert!(error.contains("preserved"));
+        assert_eq!(fs::read_to_string(&path).unwrap(), "incomplete");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]
     fn oversized_instance_marker_is_rejected_before_parse() {
-        let directory = std::env::temp_dir().join(format!(
-            "lazybuilder-instance-limit-{}",
-            std::process::id()
-        ));
-        fs::create_dir_all(&directory).unwrap();
-        let path = directory.join("launcher-instance.json");
-        let file = fs::File::create(&path).unwrap();
+        let path = temp_path("oversized");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let file = File::create(&path).unwrap();
         file.set_len(MAX_INSTANCE_MARKER_BYTES + 1).unwrap();
-
-        assert!(read_instance_marker(&path).is_err());
-
-        let _ = fs::remove_dir_all(directory);
-    }
-
-    #[test]
-    fn stale_instance_quarantine_is_unique_per_attempt() {
-        let path = Path::new("C:/Temp/LazyBuilder/launcher-instance.json");
-        assert_ne!(stale_instance_path(path, 42, 0), stale_instance_path(path, 42, 1));
+        drop(file);
+        assert!(acquire_at(&path).is_err());
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }
