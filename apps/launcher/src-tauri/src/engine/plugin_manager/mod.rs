@@ -213,9 +213,9 @@ impl PluginManagerState {
         };
         if let Err(error) = update_result {
             let _ = fs::remove_file(&staged);
-            if !same_destination {
-                let _ = fs::remove_file(&destination);
-            }
+            // Only the publisher may undo the candidate it actually created.
+            // The destination might belong to another process if publication
+            // failed on an already-existing file; deleting it here loses data.
             let rollback = restore_from_backup(&backup, &current.path);
             return match rollback {
                 Ok(()) => Err(format!("Plugin update failed and previous JAR was restored: {error}")),
@@ -1187,10 +1187,27 @@ fn stage_validated_plugin(source: &Path, staged: &Path, expected: &PluginMetadat
     Ok(())
 }
 
+/// Stage and publish without ever replacing an unknown destination.
+/// A hard link is an atomic no-replace directory entry on the same volume.
+/// Staging lives next to the destination, so it cannot cross filesystems.
+fn publish_staged_if_absent(staged: &Path, destination: &Path) -> Result<(), String> {
+    persistence::safe_path::ensure_regular_file(staged, "staged plugin JAR")?;
+    fs::hard_link(staged, destination).map_err(|error| {
+        format!(
+            "Could not publish plugin JAR without replacing an existing destination {}: {error}",
+            destination.display()
+        )
+    })
+}
+
 fn copy_atomic(source: &Path, destination: &Path, expected: &PluginMetadata) -> Result<(), String> {
     let temporary = destination.with_extension("jar.incoming");
     stage_validated_plugin(source, &temporary, expected)?;
-    replace_file(&temporary, destination)
+    let result = publish_staged_if_absent(&temporary, destination);
+    // The temporary was created by this operation. If publication was
+    // rejected, the old destination must remain untouched.
+    let _ = fs::remove_file(&temporary);
+    result
 }
 
 fn publish_backup(source: &Path, destination: &Path) -> Result<(), String> {
@@ -1230,11 +1247,21 @@ fn move_file_verified(source: &Path, destination: &Path) -> Result<(), String> {
 }
 
 fn publish_new_then_retire_old(staged: &Path, destination: &Path, current: &Path) -> Result<(), String> {
-    fs::rename(staged, destination).map_err(|error| format!("Could not publish the new plugin JAR: {error}"))?;
+    publish_staged_if_absent(staged, destination)?;
     if let Err(error) = fs::remove_file(current) {
-        let _ = fs::remove_file(destination);
-        return Err(format!("Could not retire the previous plugin JAR: {error}"));
+        // Only this successful hard-link creation owns the new destination.
+        // Preserve the original and report cleanup failure if undo is blocked.
+        return match fs::remove_file(destination) {
+            Ok(()) => Err(format!("Could not retire the previous plugin JAR: {error}")),
+            Err(cleanup) => Err(format!(
+                "Could not retire previous plugin JAR ({error}) or undo new candidate ({cleanup}). Recovery requires review of {}.",
+                destination.display()
+            )),
+        };
     }
+    // Publication and retirement are committed. A failed removal of the
+    // remaining same-inode staging link must not report a failed update.
+    let _ = fs::remove_file(staged);
     Ok(())
 }
 
@@ -1326,7 +1353,7 @@ mod tests {
         copy_atomic, dependency_problem_from_scan, enabled_dependents_from_scan,
         ensure_no_enabled_dependents, identity_conflict_from_scan, load_order_problem_from_scan, parse_paper_load_rules,
         parse_paper_dependencies, read_metadata,
-        publish_recovery_backup, restore_from_backup, replace_file, stage_copy,
+        publish_new_then_retire_old, publish_recovery_backup, restore_from_backup, replace_file, stage_copy,
         unique_duplicate_selection, update_provider_breakage_from_scan,
         LoadDirection, LoadRule, LoadStage, PluginMetadata, ScannedPlugin,
         MAX_PLUGIN_METADATA_BYTES,
@@ -1921,6 +1948,74 @@ mod tests {
         restore_from_backup(&backup, &destination).unwrap();
         assert_eq!(fs::read(&destination).unwrap(), b"verified previous plugin");
         assert_eq!(fs::read(&backup).unwrap(), b"verified previous plugin");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn installing_new_jar_never_replaces_external_destination() {
+        let directory = test_directory("install-race-no-replace");
+        let source = directory.join("new.jar");
+        let destination = directory.join("installed.jar");
+        write_test_plugin_jar(&source, "SafePlugin", "1.0");
+        let expected = super::read_metadata_uncached(&source).unwrap();
+        fs::write(&destination, b"external data must survive").unwrap();
+
+        let failure = copy_atomic(&source, &destination, &expected).unwrap_err();
+        assert!(failure.contains("without replacing"));
+        assert_eq!(fs::read(&destination).unwrap(), b"external data must survive");
+        assert_eq!(super::read_metadata_uncached(&source).unwrap(), expected);
+        assert!(!destination.with_extension("jar.incoming").exists());
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn different_name_update_rejects_raced_destination_without_retiring_old() {
+        let directory = test_directory("update-race-no-replace");
+        let previous = directory.join("plugin-v1.jar");
+        let staged = directory.join("plugin-v2.jar.incoming");
+        let destination = directory.join("plugin-v2.jar");
+        fs::write(&previous, b"old JAR must survive").unwrap();
+        fs::write(&staged, b"new candidate").unwrap();
+        fs::write(&destination, b"external data must survive").unwrap();
+
+        assert!(publish_new_then_retire_old(&staged, &destination, &previous).is_err());
+        assert_eq!(fs::read(&previous).unwrap(), b"old JAR must survive");
+        assert_eq!(fs::read(&destination).unwrap(), b"external data must survive");
+        assert_eq!(fs::read(&staged).unwrap(), b"new candidate");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn different_name_update_retires_original_only_after_safe_publication() {
+        let directory = test_directory("update-safe-retirement");
+        let previous = directory.join("plugin-v1.jar");
+        let staged = directory.join("plugin-v2.jar.incoming");
+        let destination = directory.join("plugin-v2.jar");
+        fs::write(&previous, b"old JAR").unwrap();
+        fs::write(&staged, b"new candidate").unwrap();
+
+        publish_new_then_retire_old(&staged, &destination, &previous).unwrap();
+        assert!(!previous.exists());
+        assert_eq!(fs::read(&destination).unwrap(), b"new candidate");
+        assert!(!staged.exists());
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn retirement_failure_undoes_only_its_newly_published_candidate() {
+        let directory = test_directory("update-undo-new-candidate");
+        let previous = directory.join("plugin-v1.jar");
+        let staged = directory.join("plugin-v2.jar.incoming");
+        let destination = directory.join("plugin-v2.jar");
+        // Deliberately non-regular old path injects fs::remove_file failure.
+        fs::create_dir(&previous).unwrap();
+        fs::write(&staged, b"new candidate").unwrap();
+
+        let error = publish_new_then_retire_old(&staged, &destination, &previous).unwrap_err();
+        assert!(error.contains("Could not retire"));
+        assert!(previous.is_dir());
+        assert!(!destination.exists());
+        assert_eq!(fs::read(&staged).unwrap(), b"new candidate");
         let _ = fs::remove_dir_all(directory);
     }
 
