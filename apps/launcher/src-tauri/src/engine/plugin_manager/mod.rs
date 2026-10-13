@@ -1099,7 +1099,7 @@ fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstall
 mod tests {
     use super::{
         copy_atomic, dependency_problem_from_scan, enabled_dependents_from_scan,
-        identity_conflict_from_scan, parse_paper_dependencies, read_metadata,
+        ensure_no_enabled_dependents, identity_conflict_from_scan, parse_paper_dependencies, read_metadata,
         publish_recovery_backup, restore_from_backup, replace_file, stage_copy,
         unique_duplicate_selection, update_provider_breakage_from_scan,
         PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
@@ -1242,6 +1242,60 @@ mod tests {
         assert_eq!(fs::read(&outside).unwrap(), b"preserve original");
         assert!(!workspace.join("tools/lazybuilder/disabled-plugins/fake.jar").exists());
         let _ = fs::remove_dir_all(workspace);
+    }
+
+    #[test]
+    fn actual_plugin_yaml_provides_alias_is_parsed_and_normalized() {
+        let directory = test_directory("declared-provides");
+        let jar = directory.join("provider.jar");
+        let file = fs::File::create(&jar).unwrap();
+        let mut archive = zip::ZipWriter::new(file);
+        archive.start_file("plugin.yml", zip::write::SimpleFileOptions::default()).unwrap();
+        write!(archive,
+            "name: ProviderPlugin\nversion: '1.0'\napi-version: '1.21'\nprovides: [Compat_API, Compat_API, '']\n"
+        ).unwrap();
+        archive.finish().unwrap();
+        let metadata = super::read_metadata_uncached(&jar).unwrap();
+        assert_eq!(metadata.provides, vec!["compat-api"]);
+        assert_eq!(metadata.id, "providerplugin");
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn real_installed_provider_cannot_be_disabled_while_alias_is_required() {
+        let directory = test_directory("provider-dependent");
+        let plugin_dir = directory.join("server/plugins");
+        fs::create_dir_all(&plugin_dir).unwrap();
+        let provider_jar = plugin_dir.join("provider.jar");
+        let consumer_jar = plugin_dir.join("consumer.jar");
+        let file = fs::File::create(&provider_jar).unwrap();
+        let mut archive = zip::ZipWriter::new(file);
+        archive.start_file("plugin.yml", zip::write::SimpleFileOptions::default()).unwrap();
+        write!(archive,
+            "name: ProviderPlugin\nversion: '1.0'\nprovides: [Compat_API]\n"
+        ).unwrap();
+        archive.finish().unwrap();
+        let file = fs::File::create(&consumer_jar).unwrap();
+        let mut archive = zip::ZipWriter::new(file);
+        archive.start_file("plugin.yml", zip::write::SimpleFileOptions::default()).unwrap();
+        write!(archive,
+            "name: ConsumerPlugin\nversion: '1.0'\ndepend: [Compat_API]\n"
+        ).unwrap();
+        archive.finish().unwrap();
+        let problem = ensure_no_enabled_dependents(&directory, "providerplugin").unwrap_err();
+        assert!(problem.contains("ConsumerPlugin"));
+        assert!(fs::is_dir(&plugin_dir));
+        assert!(provider_jar.exists() && consumer_jar.exists());
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn alias_to_self_is_reported_as_a_cycle() {
+        let mut node = scanned("provider", true, &["compat-api"]);
+        node.metadata.as_mut().unwrap().provides.push("compat-api".into());
+        let all = vec![node];
+        assert!(dependency_problem_from_scan(&all, all[0].metadata.as_ref().unwrap())
+            .unwrap().contains("Cyclic required"));
     }
 
     #[test]
