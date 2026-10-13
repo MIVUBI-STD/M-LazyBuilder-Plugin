@@ -106,6 +106,14 @@ public final class WorldImportService {
         UUID discardId = UUID.randomUUID();
         reserveArtifact(artifactName, discardId);
         try {
+            // A completed import's cleanup marker is authoritative even if this
+            // service instance has not yet performed startup recovery. A
+            // case-only alias is the same path on supported Windows hosts.
+            refreshPendingCommittedCleanup();
+            if (hasPendingCommittedCleanup(artifactName)) {
+                throw new IllegalStateException(
+                        "Import upload has pending committed cleanup: " + artifactName);
+            }
             retryPendingCommittedArtifactCleanup();
             try {
                 imports.deleteArtifact(artifactName);
@@ -140,12 +148,8 @@ public final class WorldImportService {
             retryPendingCommittedArtifactCleanup();
             // The persisted cleanup marker is authoritative after a restart,
             // even if startup recovery has not yet populated the in-memory set.
-            try {
-                pendingCommittedArtifactCleanup.addAll(imports.pendingCommittedCleanupArtifacts());
-            } catch (IOException exception) {
-                throw new IllegalStateException("Could not verify pending committed import cleanup", exception);
-            }
-            if (pendingCommittedArtifactCleanup.contains(artifactName)) {
+            refreshPendingCommittedCleanup();
+            if (hasPendingCommittedCleanup(artifactName)) {
                 throw new IllegalStateException("Import upload has pending committed cleanup: " + artifactName);
             }
             if (requestId != null && registry.findByImportRequestId(requestId).isPresent()) {
@@ -352,6 +356,24 @@ public final class WorldImportService {
 
     int pendingCommittedArtifactCleanupCount() {
         return pendingCommittedArtifactCleanup.size();
+    }
+
+    private void refreshPendingCommittedCleanup() {
+        try {
+            pendingCommittedArtifactCleanup.addAll(imports.pendingCommittedCleanupArtifacts());
+        } catch (IOException | RuntimeException exception) {
+            throw new IllegalStateException("Could not verify pending committed import cleanup", exception);
+        }
+    }
+
+    private boolean hasPendingCommittedCleanup(String artifactName) {
+        String key = artifactKey(artifactName);
+        // Persist original spellings for exact on-disk cleanup, but compare
+        // admissions using the same case-insensitive key as the active claim.
+        for (String pending : pendingCommittedArtifactCleanup) {
+            if (artifactKey(pending).equals(key)) return true;
+        }
+        return false;
     }
 
     private void reserveArtifact(String artifactName, UUID operationId) {

@@ -208,6 +208,42 @@ class WorldImportServiceTest {
     }
 
     @Test
+    void committedSourceCaseAliasCannotBeReimportedOrDiscarded() {
+        WorldRegistry registry = new WorldRegistry();
+        FakeImports imports = new FakeImports(
+                WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        imports.cleanupMarkers.add("Committed.zip");
+        // No startup recovery was called. The durable cleanup marker is the
+        // only evidence; a case variant still addresses the same Windows file.
+        WorldImportService service = nativeService(registry, imports);
+
+        IllegalStateException importFailure = assertThrows(IllegalStateException.class,
+                () -> service.prepare("committed.zip", "AnotherWorld", "Another World"));
+        assertTrue(importFailure.getMessage().contains("pending committed cleanup"));
+
+        IllegalStateException discardFailure = assertThrows(IllegalStateException.class,
+                () -> service.discard("COMMITTED.zip"));
+        assertTrue(discardFailure.getMessage().contains("pending committed cleanup"));
+        assertEquals(Set.of("Committed.zip"), imports.cleanupMarkers);
+        assertTrue(imports.deletedArtifacts.isEmpty());
+        assertTrue(registry.all().isEmpty());
+    }
+
+    @Test
+    void discardFailsClosedWhenCommittedCleanupMarkersCannotBeRead() {
+        FakeImports imports = new FakeImports(
+                WorldImportArtifactStore.DetectedEdition.JAVA, WorldImportService.TARGET_FORMAT);
+        imports.failCleanupMarkerRead = true;
+        WorldImportService service = nativeService(new WorldRegistry(), imports);
+
+        assertThrows(IllegalStateException.class, () -> service.discard("Review.zip"));
+        assertEquals(0, imports.deleteAttempts);
+        imports.failCleanupMarkerRead = false;
+        service.discard("Review.zip");
+        assertEquals(List.of("Review.zip"), imports.deletedArtifacts);
+    }
+
+    @Test
     void prepareReadsDurableCommittedCleanupMarkersEvenWithoutStartupRecovery() {
         WorldRegistry registry = new WorldRegistry();
         MemoryPersistence persistence = new MemoryPersistence();
