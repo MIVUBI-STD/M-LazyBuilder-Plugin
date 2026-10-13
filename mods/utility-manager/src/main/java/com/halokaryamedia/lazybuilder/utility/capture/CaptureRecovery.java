@@ -36,8 +36,18 @@ final class CaptureRecovery {
             LOGGER.warn("Cannot inspect video recovery directory safely", unsafePath);
             return;
         }
-        if (directory == null || !hasPartialRecording(directory)) {
+        if (directory == null) {
             status = "No recovery needed";
+            return;
+        }
+        try {
+            if (!hasPartialRecording(directory)) {
+                status = "No recovery needed";
+                return;
+            }
+        } catch (IOException unreadable) {
+            status = "Recording recovery check failed";
+            LOGGER.warn("Unable to inspect interrupted recordings", unreadable);
             return;
         }
 
@@ -57,17 +67,15 @@ final class CaptureRecovery {
     static synchronized void shutdown() {
         Thread current = worker;
         worker = null;
+        if (current != null) status = "Recording recovery stopped";
         if (current != null && current != Thread.currentThread() && current.isAlive()) {
             current.interrupt();
         }
     }
 
-    private static boolean hasPartialRecording(Path directory) {
+    static boolean hasPartialRecording(Path directory) throws IOException {
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory, "*.mkv.partial")) {
             return stream.iterator().hasNext();
-        } catch (IOException error) {
-            LOGGER.debug("Unable to inspect capture recovery directory {}", directory, error);
-            return false;
         }
     }
 
@@ -75,6 +83,7 @@ final class CaptureRecovery {
         int recovered = 0;
         int preserved = 0;
         int failed = 0;
+        boolean scanFailed = false;
         String ffmpeg = FfmpegCapabilities.findExecutable(gameDirectory);
 
         try (DirectoryStream<Path> stream = Files.newDirectoryStream(directory, "*.mkv.partial")) {
@@ -102,6 +111,9 @@ final class CaptureRecovery {
                     continue;
                 }
 
+                // An interrupted ffmpeg run must not fall through and rename
+                // the partial recording during client shutdown.
+                if (Thread.currentThread().isInterrupted()) return;
                 Path mkv = uniqueTarget(directory, stem + "_recovered", ".mkv");
                 try {
                     preservePartial(partial, mkv);
@@ -113,20 +125,27 @@ final class CaptureRecovery {
             }
         } catch (IOException error) {
             LOGGER.warn("Unable to scan interrupted recordings in {}", directory, error);
-            status = "Recovery check failed";
-            return;
+            scanFailed = true;
         } finally {
+            // Publish status and release ownership atomically. A worker stopped
+            // or superseded by start()/shutdown() cannot overwrite the newer
+            // status, even when it completes its last IO action later.
             synchronized (CaptureRecovery.class) {
-                if (worker == Thread.currentThread()) worker = null;
+                if (worker == Thread.currentThread()) {
+                    if (!Thread.currentThread().isInterrupted()) {
+                        if (scanFailed) {
+                            status = "Recovery check failed";
+                        } else if (failed > 0) {
+                            status = "Recovery finished · " + failed + " failed";
+                        } else if (recovered > 0 || preserved > 0) {
+                            status = "Recovered " + recovered + " · preserved " + preserved;
+                        } else {
+                            status = "No recovery needed";
+                        }
+                    }
+                    worker = null;
+                }
             }
-        }
-
-        if (failed > 0) {
-            status = "Recovery finished · " + failed + " failed";
-        } else if (recovered > 0 || preserved > 0) {
-            status = "Recovered " + recovered + " · preserved " + preserved;
-        } else {
-            status = "No recovery needed";
         }
     }
 

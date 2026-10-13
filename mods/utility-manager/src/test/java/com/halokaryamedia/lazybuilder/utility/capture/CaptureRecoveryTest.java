@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
@@ -14,6 +15,18 @@ import java.io.IOException;
 final class CaptureRecoveryTest {
     @TempDir
     Path tempDir;
+
+    @Test
+    void recoveryDirectoryScanDistinguishesEmptyFromUnreadable() throws Exception {
+        assertFalse(CaptureRecovery.hasPartialRecording(tempDir));
+        Path partial = tempDir.resolve("test.mkv.partial");
+        Files.writeString(partial, "partial recording");
+        assertTrue(CaptureRecovery.hasPartialRecording(tempDir));
+
+        assertThrows(IOException.class, () ->
+                CaptureRecovery.hasPartialRecording(tempDir.resolve("missing-folder")));
+        assertEquals("partial recording", Files.readString(partial));
+    }
 
     @Test
     void recoveredTargetsNeverOverwriteExistingFiles() throws Exception {
