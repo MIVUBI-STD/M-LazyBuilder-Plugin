@@ -1292,10 +1292,12 @@ fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstall
 mod tests {
     use super::{
         copy_atomic, dependency_problem_from_scan, enabled_dependents_from_scan,
-        ensure_no_enabled_dependents, identity_conflict_from_scan, parse_paper_dependencies, read_metadata,
+        ensure_no_enabled_dependents, identity_conflict_from_scan, load_order_problem_from_scan, parse_paper_load_rules,
+        parse_paper_dependencies, read_metadata,
         publish_recovery_backup, restore_from_backup, replace_file, stage_copy,
         unique_duplicate_selection, update_provider_breakage_from_scan,
-        PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
+        LoadDirection, LoadRule, LoadStage, PluginMetadata, ScannedPlugin,
+        MAX_PLUGIN_METADATA_BYTES,
     };
     use std::{collections::HashSet, fs, io::Write, path::PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -1585,6 +1587,110 @@ mod tests {
         incoming.metadata.as_mut().unwrap().provides.push("world-manager".into());
         assert!(identity_conflict_from_scan(&[], incoming.metadata.as_ref().unwrap())
             .unwrap().contains("reserved"));
+    }
+
+    #[test]
+    fn bukkit_softdepend_and_loadbefore_are_optional_order_constraints() {
+        let directory = test_directory("bukkit-order");
+        let path = directory.join("plugin.jar");
+        let mut zip = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        zip.start_file("plugin.yml", zip::write::SimpleFileOptions::default()).unwrap();
+        write!(zip, "name: Example\nversion: '1'\ndepend: [Required]\nsoftdepend: [Optional]\nloadbefore: [Later]\n").unwrap();
+        zip.finish().unwrap();
+        let m = super::read_metadata_uncached(&path).unwrap();
+        assert_eq!(m.dependencies, vec!["required"]);
+        assert!(m.load_rules.contains(&LoadRule {
+            target: "optional".into(), stage: LoadStage::Server,
+            direction: LoadDirection::TargetBeforeSelf,
+        }));
+        assert!(m.load_rules.contains(&LoadRule {
+            target: "later".into(), stage: LoadStage::Server,
+            direction: LoadDirection::SelfBeforeTarget,
+        }));
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn paper_before_after_and_omit_are_separate_from_required() {
+        let yaml: Value = serde_yaml::from_str(
+            "bootstrap:\n  Registry:\n    required: true\n    load: BEFORE\nserver:\n  Shop:\n    required: false\n    load: AFTER\n  Unknown:\n    load: OMIT\n",
+        ).unwrap();
+        let rules = parse_paper_load_rules(Some(&yaml)).unwrap();
+        assert_eq!(rules.len(), 2);
+        assert!(rules.contains(&LoadRule {
+            target: "registry".into(), stage: LoadStage::Bootstrap,
+            direction: LoadDirection::TargetBeforeSelf,
+        }));
+        assert!(rules.contains(&LoadRule {
+            target: "shop".into(), stage: LoadStage::Server,
+            direction: LoadDirection::SelfBeforeTarget,
+        }));
+    }
+
+    #[test]
+    fn a_server_load_order_cycle_is_rejected() {
+        let mut first = scanned("first", true, &[]);
+        let mut second = scanned("second", true, &[]);
+        first.metadata.as_mut().unwrap().load_rules.push(LoadRule {
+            target: "second".into(), stage: LoadStage::Server,
+            direction: LoadDirection::TargetBeforeSelf,
+        });
+        second.metadata.as_mut().unwrap().load_rules.push(LoadRule {
+            target: "first".into(), stage: LoadStage::Server,
+            direction: LoadDirection::TargetBeforeSelf,
+        });
+        let plugins = [first, second];
+        assert!(load_order_problem_from_scan(&plugins, plugins[0].metadata.as_ref().unwrap())
+            .unwrap().contains("Cyclic server"));
+    }
+
+    #[test]
+    fn bootstrap_and_server_opposing_orders_do_not_form_one_cycle() {
+        let mut first = scanned("first", true, &[]);
+        let mut second = scanned("second", true, &[]);
+        first.metadata.as_mut().unwrap().load_rules.push(LoadRule {
+            target: "second".into(), stage: LoadStage::Bootstrap,
+            direction: LoadDirection::TargetBeforeSelf,
+        });
+        second.metadata.as_mut().unwrap().load_rules.push(LoadRule {
+            target: "first".into(), stage: LoadStage::Server,
+            direction: LoadDirection::TargetBeforeSelf,
+        });
+        let plugins = [first, second];
+        assert!(load_order_problem_from_scan(&plugins, plugins[0].metadata.as_ref().unwrap()).is_none());
+    }
+
+    #[test]
+    fn absent_optional_load_target_does_not_block_plugin() {
+        let mut first = scanned("first", true, &[]);
+        first.metadata.as_mut().unwrap().load_rules.push(LoadRule {
+            target: "not-installed".into(), stage: LoadStage::Server,
+            direction: LoadDirection::TargetBeforeSelf,
+        });
+        assert!(load_order_problem_from_scan(&[first.clone()], first.metadata.as_ref().unwrap()).is_none());
+    }
+
+    #[test]
+    fn invalid_paper_loading_flag_is_not_silently_treated_as_omit() {
+        let yaml: Value = serde_yaml::from_str("server:\n  Other:\n    load: SOMETIME\n").unwrap();
+        assert!(parse_paper_load_rules(Some(&yaml)).unwrap_err().contains("unsupported load order"));
+    }
+
+    #[test]
+    fn paper_after_rules_can_form_explicit_cycle() {
+        let mut first = scanned("first", true, &[]);
+        let mut second = scanned("second", true, &[]);
+        first.metadata.as_mut().unwrap().load_rules.push(LoadRule {
+            target: "second".into(), stage: LoadStage::Server,
+            direction: LoadDirection::SelfBeforeTarget,
+        });
+        second.metadata.as_mut().unwrap().load_rules.push(LoadRule {
+            target: "first".into(), stage: LoadStage::Server,
+            direction: LoadDirection::SelfBeforeTarget,
+        });
+        let plugins = [first, second];
+        assert!(load_order_problem_from_scan(&plugins, plugins[0].metadata.as_ref().unwrap())
+            .unwrap().contains("Cyclic server"));
     }
 
     #[test]
