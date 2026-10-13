@@ -28,6 +28,8 @@ public final class LazyBuilderShaderPackScreen extends Screen {
     private String query = "";
     private int scrollOffset;
     private int maxScroll;
+    private long observedRevision = Long.MIN_VALUE;
+    private String observedStage = "runtime-unavailable";
 
     public LazyBuilderShaderPackScreen(Screen parent) {
         super(Text.literal("Shader Packs"));
@@ -59,6 +61,8 @@ public final class LazyBuilderShaderPackScreen extends Screen {
         setInitialFocus(searchField);
 
         ShaderState state = shaderState();
+        observedRevision = state.revision();
+        observedStage = state.stage();
         rebuildEntries(state);
 
         int viewportBottom = height - FOOTER_HEIGHT - 6;
@@ -113,6 +117,16 @@ public final class LazyBuilderShaderPackScreen extends Screen {
         filtered.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(a.name(), b.name()));
     }
 
+    @Override
+    public void tick() {
+        long revision = snapshotRevision();
+        if (revision != observedRevision) {
+            // The async Performance Manager catalog can finish after this
+            // selector opens; retain search text and scrolling across refresh.
+            clearAndInit();
+        }
+    }
+
     @SuppressWarnings("unchecked")
     private void select(String id) {
         Object shared = FabricLoader.getInstance().getObjectShare()
@@ -121,6 +135,16 @@ public final class LazyBuilderShaderPackScreen extends Screen {
             ((Consumer<String>) consumer).accept(id);
         }
         if (client != null) client.setScreen(parent);
+    }
+
+    private long snapshotRevision() {
+        Object shared = FabricLoader.getInstance().getObjectShare()
+                .get("lazybuilder-performance-manager:shader-snapshot");
+        if (!(shared instanceof Supplier<?> supplier)) return Long.MIN_VALUE;
+        Object value = supplier.get();
+        if (!(value instanceof Map<?, ?> map)) return Long.MIN_VALUE;
+        Object revision = map.get("revision");
+        return revision instanceof Number number ? number.longValue() : Long.MIN_VALUE;
     }
 
     @SuppressWarnings("unchecked")
@@ -134,13 +158,22 @@ public final class LazyBuilderShaderPackScreen extends Screen {
         return new ShaderState(
                 stringValue(map, "selectedPackId"),
                 stringList(map.get("packIds")),
-                stringList(map.get("packNames"))
+                stringList(map.get("packNames")),
+                map.get("revision") instanceof Number number ? number.longValue() : Long.MIN_VALUE,
+                stringValue(map, "stage")
         );
     }
 
     private static String stringValue(Map<?, ?> map, String key) {
         Object value = map.get(key);
         return value instanceof String text ? text : "";
+    }
+
+    static boolean catalogPending(String stage) {
+        return "catalog-deferred".equals(stage)
+                || "catalog-refresh-queued".equals(stage)
+                || "catalog-refresh-pending".equals(stage)
+                || "catalog-scanning".equals(stage);
     }
 
     private static List<String> stringList(Object value) {
@@ -187,7 +220,9 @@ public final class LazyBuilderShaderPackScreen extends Screen {
         if (filtered.isEmpty()) {
             context.drawCenteredTextWithShadow(
                     textRenderer,
-                    Text.literal(query.isBlank() ? "No shader packs found." : "No matching shader packs."),
+                    Text.literal(!query.isBlank() ? "No matching shader packs."
+                            : catalogPending(observedStage) ? "Loading shader packs..."
+                            : "No shader packs found."),
                     width / 2,
                     108,
                     LazyBuilderSettingsScreen.TEXT_MUTED
@@ -207,14 +242,19 @@ public final class LazyBuilderShaderPackScreen extends Screen {
     private record ShaderState(
             String selectedPackId,
             List<String> packIds,
-            List<String> packNames
+            List<String> packNames,
+            long revision,
+            String stage
     ) {
-        private static final ShaderState EMPTY = new ShaderState("", List.of(), List.of());
+        private static final ShaderState EMPTY = new ShaderState(
+                "", List.of(), List.of(), Long.MIN_VALUE, "runtime-unavailable"
+        );
 
         private ShaderState {
             selectedPackId = selectedPackId == null ? "" : selectedPackId;
             packIds = packIds == null ? List.of() : List.copyOf(packIds);
             packNames = packNames == null ? List.of() : List.copyOf(packNames);
+            stage = stage == null ? "runtime-unavailable" : stage;
         }
     }
 }

@@ -285,7 +285,9 @@ public final class LazyBuilderShaderScreen extends Screen {
             );
         }
 
-        if (state.packs().isEmpty() && state.invalidPacks().isEmpty() && state.available()) {
+        if (state.packs().isEmpty() && state.invalidPacks().isEmpty()
+                && state.available()
+                && !LazyBuilderShaderPackScreen.catalogPending(state.stage())) {
             context.drawCenteredTextWithShadow(
                     textRenderer,
                     Text.literal("No LazyBuilder shader packs found."),
@@ -430,10 +432,8 @@ public final class LazyBuilderShaderScreen extends Screen {
                     + (state.compatibilityOwner().isBlank() ? "external renderer" : state.compatibilityOwner());
         }
         if (!state.lastError().isBlank()) return "Error: " + state.lastError();
-        if ("catalog-refresh-queued".equals(state.stage())
-                || "catalog-refresh-pending".equals(state.stage())
-                || "catalog-scanning".equals(state.stage())) {
-            return "Refreshing shader packs...";
+        if (LazyBuilderShaderPackScreen.catalogPending(state.stage())) {
+            return "Loading shader packs...";
         }
         if ("preparing".equals(state.stage()) || "prepare-queued".equals(state.stage())) {
             return "Preparing shader sources...";
