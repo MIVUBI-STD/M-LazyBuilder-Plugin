@@ -45,7 +45,7 @@ pub struct PluginInstallResult {
     pub restart_required: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct PluginMetadata {
     id: String,
     name: String,
@@ -109,7 +109,7 @@ impl PluginManagerState {
         if destination.exists() {
             return Ok(failed_result(incoming.id, "Target plugin filename already exists."));
         }
-        copy_atomic(&source, &destination)?;
+        copy_atomic(&source, &destination, &incoming)?;
         Ok(success_result(incoming.id, "Plugin installed. Restart required."))
     }
 
@@ -156,7 +156,7 @@ impl PluginManagerState {
         }
 
         let staged = destination.with_extension("jar.incoming");
-        stage_copy(&source, &staged)?;
+        stage_validated_plugin(&source, &staged, &incoming)?;
 
         let backup = rollback_backup_path(&workspace, &canonical_id);
         if let Err(error) = publish_backup(&current.path, &backup) {
@@ -318,11 +318,9 @@ impl PluginManagerState {
         if existing.len() < 2 {
             return Ok(failed_result(canonical_id, "No duplicate plugin JARs were found."));
         }
-        let Some(keep_index) = existing.iter().position(|item| {
-            item.path.file_name().and_then(|value| value.to_str())
-                .map(|value| value.eq_ignore_ascii_case(&requested)).unwrap_or(false)
-        }) else {
-            return Ok(failed_result(canonical_id, "Selected JAR is not one of the duplicate candidates."));
+        let keep_index = match unique_duplicate_selection(&existing, &requested) {
+            Ok(index) => index,
+            Err(reason) => return Ok(failed_result(canonical_id, reason)),
         };
 
         let backup_dir = backup_directory(&workspace);
@@ -708,6 +706,20 @@ fn ensure_third_party_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn unique_duplicate_selection(existing: &[ScannedPlugin], requested: &str) -> Result<usize, String> {
+    let mut matching = existing.iter().enumerate().filter(|(_, item)| {
+        item.path.file_name().and_then(|value| value.to_str())
+            .is_some_and(|value| value.eq_ignore_ascii_case(requested))
+    });
+    let Some((keep_index, _)) = matching.next() else {
+        return Err("Selected JAR is not one of the duplicate candidates.".into());
+    };
+    if matching.next().is_some() {
+        return Err("Multiple plugin JARs share this filename across directories. Resolve ambiguous files outside Plugin Manager before removing any version.".into());
+    }
+    Ok(keep_index)
+}
+
 fn ensure_plugin_manager_layout(workspace: &Path) -> Result<(), String> {
     let disabled = disabled_directory(workspace);
     let backups = backup_directory(workspace);
@@ -720,15 +732,25 @@ fn ensure_plugin_manager_layout(workspace: &Path) -> Result<(), String> {
     )?;
 
     let legacy_disabled = legacy_disabled_directory(workspace);
-    if legacy_disabled.is_dir() {
-        for entry in fs::read_dir(&legacy_disabled).map_err(|error| error.to_string())? {
-            let source = entry.map_err(|error| error.to_string())?.path();
-            if !is_jar(&source) { continue; }
-            let Some(file_name) = source.file_name() else { continue; };
-            let destination = disabled.join(file_name);
-            if destination.exists() { continue; }
-            move_file_verified(&source, &destination)?;
+    match fs::symlink_metadata(&legacy_disabled) {
+        Ok(_) => {
+            // A linked/junction migration directory must never import JARs
+            // from outside the current workspace.
+            paths::ensure_existing_owned_directory(
+                workspace, &legacy_disabled, "legacy disabled plugin directory",
+            )?;
+            for entry in fs::read_dir(&legacy_disabled).map_err(|error| error.to_string())? {
+                let source = entry.map_err(|error| error.to_string())?.path();
+                if !is_jar(&source) { continue; }
+                persistence::safe_path::ensure_regular_file(&source, "legacy disabled plugin JAR")?;
+                let Some(file_name) = source.file_name() else { continue; };
+                let destination = disabled.join(file_name);
+                if destination.exists() { continue; }
+                move_file_verified(&source, &destination)?;
+            }
         }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("Cannot inspect legacy disabled plugin directory: {error}")),
     }
     Ok(())
 }
@@ -820,9 +842,31 @@ fn stage_copy(source: &Path, staged: &Path) -> Result<(), String> {
     result
 }
 
-fn copy_atomic(source: &Path, destination: &Path) -> Result<(), String> {
+fn verify_staged_plugin(staged: &Path, expected: &PluginMetadata) -> Result<(), String> {
+    // The candidate being published must have the identity checked at admission.
+    // Uncached ZIP parsing avoids stale same-size/same-mtime metadata snapshots.
+    let actual = read_metadata_uncached(staged)?;
+    validate_target_compatibility(&actual)?;
+    if &actual != expected {
+        return Err("Selected plugin JAR changed while staging; no plugin was published.".into());
+    }
+    Ok(())
+}
+
+fn stage_validated_plugin(source: &Path, staged: &Path, expected: &PluginMetadata) -> Result<(), String> {
+    stage_copy(source, staged)?;
+    if let Err(error) = verify_staged_plugin(staged, expected) {
+        // This operation created this candidate, so cleanup cannot destroy
+        // pre-existing recovery evidence.
+        let _ = fs::remove_file(staged);
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn copy_atomic(source: &Path, destination: &Path, expected: &PluginMetadata) -> Result<(), String> {
     let temporary = destination.with_extension("jar.incoming");
-    stage_copy(source, &temporary)?;
+    stage_validated_plugin(source, &temporary, expected)?;
     replace_file(&temporary, destination)
 }
 
@@ -956,11 +1000,11 @@ fn failed_result(plugin_id: String, message: impl Into<String>) -> PluginInstall
 #[cfg(test)]
 mod tests {
     use super::{
-        dependency_problem_from_scan, parse_paper_dependencies, read_metadata,
+        copy_atomic, dependency_problem_from_scan, parse_paper_dependencies, read_metadata,
         publish_recovery_backup, restore_from_backup, replace_file, stage_copy,
-        PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
+        unique_duplicate_selection, PluginMetadata, ScannedPlugin, MAX_PLUGIN_METADATA_BYTES,
     };
-    use std::{fs, path::PathBuf};
+    use std::{fs, io::Write, path::PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(1);
@@ -979,6 +1023,70 @@ mod tests {
             enabled,
             error: None,
         }
+    }
+
+    fn test_directory(label: &str) -> PathBuf {
+        let sequence = NEXT_TEST.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "lazybuilder-plugin-{label}-{}-{sequence}", std::process::id()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    fn write_test_plugin_jar(path: &std::path::Path, name: &str, version: &str) {
+        let file = fs::File::create(path).unwrap();
+        let mut archive = zip::ZipWriter::new(file);
+        archive.start_file("plugin.yml", zip::write::SimpleFileOptions::default()).unwrap();
+        write!(archive, "name: {name}\nversion: '{version}'\napi-version: '1.21'\n").unwrap();
+        archive.finish().unwrap();
+    }
+
+    #[test]
+    fn duplicate_filename_across_enabled_and_disabled_is_ambiguous() {
+        let mut a = scanned("sample", true, &[]);
+        let mut b = scanned("sample", false, &[]);
+        a.path = PathBuf::from("server/plugins/sample.jar");
+        b.path = PathBuf::from("tools/lazybuilder/disabled-plugins/sample.jar");
+        assert!(unique_duplicate_selection(&[a, b], "sample.jar").unwrap_err().contains("share this filename"));
+    }
+
+    #[test]
+    fn duplicate_selection_accepts_only_one_matching_candidate() {
+        let mut a = scanned("sample", true, &[]);
+        let mut b = scanned("sample", false, &[]);
+        a.path = PathBuf::from("server/plugins/sample-v1.jar");
+        b.path = PathBuf::from("tools/lazybuilder/disabled-plugins/sample-v2.jar");
+        assert_eq!(unique_duplicate_selection(&[a.clone(), b.clone()], "sample-v2.jar"), Ok(1));
+        assert!(unique_duplicate_selection(&[a, b], "missing.jar").is_err());
+    }
+
+    #[test]
+    fn staged_jar_change_never_replaces_existing_install() {
+        let directory = test_directory("changed-stage");
+        let validated = directory.join("validated.jar");
+        let changed = directory.join("changed.jar");
+        let installed = directory.join("installed.jar");
+        write_test_plugin_jar(&validated, "VerifiedPlugin", "1.0");
+        write_test_plugin_jar(&changed, "ChangedPlugin", "1.0");
+        let expected = super::read_metadata_uncached(&validated).unwrap();
+        fs::write(&installed, b"previous JAR").unwrap();
+        assert!(copy_atomic(&changed, &installed, &expected).unwrap_err().contains("changed while staging"));
+        assert_eq!(fs::read(&installed).unwrap(), b"previous JAR");
+        assert!(!installed.with_extension("jar.incoming").exists());
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn matching_staged_metadata_is_published() {
+        let directory = test_directory("matching-stage");
+        let source = directory.join("source.jar");
+        let installed = directory.join("installed.jar");
+        write_test_plugin_jar(&source, "VerifiedPlugin", "1.0");
+        let expected = super::read_metadata_uncached(&source).unwrap();
+        copy_atomic(&source, &installed, &expected).unwrap();
+        assert_eq!(super::read_metadata_uncached(&installed).unwrap(), expected);
+        let _ = fs::remove_dir_all(directory);
     }
 
     #[test]
