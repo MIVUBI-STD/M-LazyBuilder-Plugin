@@ -45,16 +45,20 @@ A green final CI means **CI-proven**, not **Local-PC-proven**.
 
 Local PC acceptance remains a separate later gate and must not begin until the source audit and final Launcher CI are clean and explicit approval is given.
 
-## Product work that is still intentionally separate
+## Product surfaces beyond the foundation (source review: 2026-10-13)
 
-The foundation does not mean these product surfaces are implemented yet:
+The F0-F5 foundation is not a statement that later product surfaces are absent. The current `Local` source already contains the following implementations; presence in source is **not** live Windows or end-to-end acceptance proof.
 
-- Activity Center UI
-- Launcher self-update UI/activation flow
-- full server Backup/Restore product flow
-- Health/Repair UI and repair executor
-- complete central Settings UI
-- missing-location/relocate UX
-- support-package export
+| Product surface | Source observation | Remaining boundary |
+|---|---|---|
+| Activity Center | `src/pages/Activity.svelte` presents active/recent tracked work using the existing Rust operation owner. | Verify navigation, cancellation and interrupted-operation recovery in the installed app. |
+| Server Backup / Restore | `src/pages/BackupPanel.svelte` and `src-tauri/src/engine/server_backups.rs` implement listing, estimates, backup, restore and retention-related UI feedback. | Prove real large-workspace backup/restore and failure recovery; do not infer scheduled backups. |
+| Health / Repair | `src/pages/HealthPanel.svelte` and `src-tauri/src/engine/server_repair.rs` implement readiness checks, repair planning and supported repair execution. | Verify repair boundaries on target Windows, including blocked/manual cases. |
+| Launcher Settings | `src/pages/LauncherSettings.svelte` exposes implemented settings and support controls. | This is not evidence of a general-purpose settings platform or an active signed updater. |
+| Missing-location / Reconnect | `src/pages/ServersLibrary.svelte` includes locating and reconnecting a moved registered server. | Verify moved/missing directory and identity safety with actual workspaces. |
+| Support-package export | `src/pages/LauncherSettings.svelte` calls the existing support-bundle implementation in `src-tauri/src/engine/support_bundle.rs`. | Check archive contents, redaction and permissions under a real installation; no automatic upload. |
+| Launcher self-update | Signed in-app updater activation remains intentionally disabled; Settings states that updates are manual. | Do not advertise automatic update checks or enable unsigned update paths. |
 
-Those features should now be built on the F0-F5 authorities rather than introducing parallel state systems.
+These product surfaces must extend the F0-F5 authorities, not introduce parallel operation, readiness, filesystem or recovery owners.
+
+This is a dated **source-alignment note**, not a mutable completion tracker. The actual proof and release gate are owned by [Current Verification](../05-operations/current-verification.md) and the exact `Local` revision.
